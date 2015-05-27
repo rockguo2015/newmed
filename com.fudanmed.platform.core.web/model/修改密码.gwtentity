@@ -1,0 +1,162 @@
+package com.fudanmed.platform.core.web feature organization{
+	
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.sencha.gxt.widget.core.client.form.*
+	import  com.sencha.gxt.widget.core.client.form.FormPanel
+	ui-datatype UIChangePasswdData{
+		user: proxy of User
+		orgPasswd : String "原密码"
+		newPasswd : String "新密码"
+		newPasswdAgain : String "新密码"
+		 
+		constraints ChangePasswdDataValidator{
+			rule Required on orgPasswd
+			rule Required on newPasswd
+			rule Required on newPasswdAgain
+			constraint C1 on orgPasswd "旧密码不符"{
+				(resolve entity.user).passwd == entity.orgPasswd
+			}
+			constraint C2 on newPasswd, newPasswdAgain "两次密码输入不一致"{
+				entity.newPasswd == entity.newPasswdAgain 
+			}
+		}
+		
+		ui-component ChangePasswdDataForm as GXTForm{
+			binding{orgPasswd as PasswordItem, newPasswd as PasswordItem, newPasswdAgain as PasswordItem}
+			op createWidget():Widget{
+				widgets.VLayout=>[
+					addFill(orgPasswd.asWidget)
+					addFill(newPasswd.asWidget)
+					addFill(newPasswdAgain.asWidget)
+				]
+			}
+		}
+	}
+	
+	presenter ChangePasswdPresenter for UIChangePasswdData{
+		view interface{
+		}
+		
+		interaction{
+			user : proxy of User
+			input prepare.setup(){
+				service.getCurrentUser(onSuccess[
+					this.user = it
+					this.activate[
+						done
+					]
+				])
+			}
+			input form-commit{
+				val data = getView().value=>[
+					it.user = user
+				]
+				service.changePasswd(data,onSuccess[
+					//do nothing with success
+					notifier.success
+				])
+			}
+		}
+		
+		service{
+			@Inject ^validator : ChangePasswdDataValidator
+			@Inject systemUserService : ISystemUserService
+			op changePasswd(data : UIChangePasswdData):void{
+				data.validateWith(^validator)
+				(resolve data.user).passwd = data.newPasswd
+			}
+			op getCurrentUser() : proxy of User{
+				systemUserService.currentUser.toProxy
+			}
+		}
+	}
+	
+	view ChangePasswdView<ChangePasswdDataForm> for ChangePasswdPresenter ui-title:"修改密码" ui-size:(250,200){
+		initializer{
+			this += form.asWidget
+		}
+	}
+	
+	
+	ui-datatype UIResetPasswdData{
+		user : proxy of User
+		newPasswd : String "新密码"
+		
+		constraints ResetPasswdDataValidator{
+			rule Required on newPasswd
+		}
+		
+		ui-component ResetPasswdDataForm as GXTForm{
+			binding{newPasswd}
+			op createWidget():Widget{
+				widgets.VLayout=>[
+					addFill(newPasswd.asWidget)
+				]
+			}
+		}
+	}
+	
+	presenter ResetPasswdPresenter for UIResetPasswdData{
+		view interface{
+			signal in setDefaultNewPasswd(newPasswd : String)
+		}
+		
+		interaction{
+			user : proxy of User
+			input prepare.setup(user : proxy of User){
+				this.user = user
+				this.activate[
+					service.getUserId(user,onSuccess[
+						getView().setDefaultNewPasswd(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit{
+				service.changePasswd(getView().value=>[it.user = user],onSuccess[
+					notifier.success
+				])
+			}
+		}
+	
+		service{
+			@Inject ^validator : ResetPasswdDataValidator
+			
+			op getUserId(user : proxy of User):String{
+				(resolve user).userid
+			}
+			op changePasswd(data : UIResetPasswdData ):void{
+				data.validateWith(^validator)
+				(resolve data.user).passwd = data.newPasswd
+			}
+		}
+	}
+	
+	view ResetPasswdView<ResetPasswdDataForm> for ResetPasswdPresenter ui-title:"重置密码" ui-size:(250,200){
+		initializer{
+			this += form.asWidget
+			
+			val FormPanel formPanel = new FormPanel()
+			formPanel.action="/fudanmedcoreweb/restservice/upload"
+			formPanel.encoding = FormPanel$Encoding::MULTIPART
+			formPanel.method = FormPanel$Method::POST
+			val FileUploadField file = new  FileUploadField()
+			file.setName("uploadedfile")
+			
+			formPanel.add(widgets.VLayout=>[
+				add(new FieldLabel(file,"File"))
+				add(widgets.TextButton("submit")[
+					formPanel.submit
+				])				
+			])
+			this += formPanel
+		}
+		
+		op setDefaultNewPasswd(newPasswd : String):void{
+			form.newPasswd.value = newPasswd
+		}
+	}
+		
+}

@@ -1,0 +1,180 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.Date
+	import java.util.Collection
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.web.*
+	import com.sencha.gxt.widget.core.client.Component
+	
+	
+	ui-datatype UIPMWorkItemEvaluate for RCPMWorkItemEvaluate{
+		worker : String "维保人员"
+		notifyDate : Date "通知日期"
+		arriveDate : Date "维保日期"
+		price : Double "维保价格"
+		materials : String "更换材料"
+		
+		arrivalOnTime : Integer "到达及时性"
+		attitude : Integer "服务态度"
+		frequency : Integer "同一问题频度"
+		quality : Integer "维保质量"
+		problemsRemains : String "需要解决问题"
+		comment : String "意见与建议"
+
+		map PMWorkItemEvaluateMapper{
+			direct{worker,notifyDate,arriveDate,
+				price,materials,arrivalOnTime,
+				attitude, frequency , quality ,
+				problemsRemains, comment }
+		}
+		
+		ui-component PMWorkItemEvaluateForm as GXTForm{
+			binding{
+				worker,notifyDate,arriveDate,price,materials,
+				arrivalOnTime as ScoreItem(5),attitude as ScoreItem(5), frequency as ScoreItem(5), quality as ScoreItem(5),
+				problemsRemains as TextAreaItem, comment as TextAreaItem
+				
+			}
+			op disableAll():void{
+				worker.asWidget.disable
+				notifyDate.asWidget.disable
+				arriveDate.asWidget.disable
+				price.asWidget.disable
+				materials.asWidget.disable
+				problemsRemains.asWidget.disable
+				comment.asWidget.disable
+				arrivalOnTime.asWidget.disable
+				attitude.asWidget.disable
+				frequency.asWidget.disable
+				quality.asWidget.disable
+//				this.allProperties.^map[asWidget].filter(typeof(com.sencha.gxt.widget.core.client.container.Container)).forEach[disable]
+			}
+			op enableAll():void{
+				worker.asWidget.enable
+				notifyDate.asWidget.enable
+				arriveDate.asWidget.enable
+				price.asWidget.enable
+				materials.asWidget.enable
+				problemsRemains.asWidget.enable
+				comment.asWidget.enable
+				arrivalOnTime.asWidget.enable
+				attitude.asWidget.enable
+				frequency.asWidget.enable
+				quality.asWidget.enable
+//				this.allProperties.^map[asWidget].filter(typeof(com.sencha.gxt.widget.core.client.container.Container)).forEach[enable]
+			}
+			op createWidget():Widget{
+				TABLE=>[
+					tr=>[
+						td=>[it += worker.asWidget]
+						td=>[it += notifyDate.asWidget]
+					]
+					tr=>[
+						td=>[it += arriveDate.asWidget]
+						td=>[it += price.asWidget]
+					]
+					tr=>[
+						td=>[it += materials.asWidget]
+						td=>[]
+					]
+					tr=>[
+						td=>[it+=arrivalOnTime.asWidget]
+						td=>[it+=attitude.asWidget]
+					]
+					tr=>[
+						td=>[it+=frequency.asWidget]
+						td=>[it+=quality.asWidget]
+					]
+					tr=>[
+						td=>[colSpan=2 it += problemsRemains.asWidget=>[width = 500 height=80]]
+					]
+					tr=>[
+						td=>[colSpan=2 it += comment.asWidget=>[width = 500 height=80]]
+					]
+				]
+			}
+		}
+		
+		ui-component PMWorkItemEvaluatePropertyView as GXTPropertyView{
+			binding{
+				worker,notifyDate,arriveDate,
+				price,materials,arrivalOnTime,
+				attitude, frequency , quality ,
+				problemsRemains as PropertyItem(3), comment as PropertyItem(3) 
+			}
+			op getCols() : Integer{
+				3
+			}
+		}
+	}
+	
+	presenter PMWorkItemEvaluatePropertyViewPresenter{
+		
+		view interface{
+			signal in setValue(value : UIPMWorkItemEvaluate)
+		}
+		
+		interaction{
+			value : proxy of RCPMWorkItem
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(value : proxy of RCPMWorkItem){
+				this.value = value
+				this.activate[
+					service.loadValue(value,onSuccess[
+						fire view.setValue(it)
+						done
+					])
+				]
+			}
+			input call.setPMWorkItem(value : proxy of RCPMWorkItem){
+				service.loadValue(value,onSuccess[
+					fire view.setValue(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject mapper : PMWorkItemEvaluateMapper
+			op loadValue(value : proxy of RCPMWorkItem): UIPMWorkItemEvaluate{
+				mapper.transform((resolve value).evaluate)
+			}
+		}
+	}
+	
+	view PMWorkItemEvaluatePropertyViewView for PMWorkItemEvaluatePropertyViewPresenter implements IHasSize, IHasTitle{
+		con : Widget
+		@Inject propertyView : PMWorkItemEvaluatePropertyView
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = con.lazy[
+				propertyView.asWidget
+			]
+		}
+		op getSize():Size{
+			new Size(750,250)
+		}
+		op getTitle():String{
+			"服务评价"
+		}
+		interaction{
+			input view.setValue(value : UIPMWorkItemEvaluate){
+				if(value==null)
+					propertyView.value = new UIPMWorkItemEvaluate
+				else
+					propertyView.value = value
+			}
+		}
+	}
+
+}

@@ -1,0 +1,397 @@
+package com.fudanmed.platform.core.web feature measure{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.measure.*
+	import com.fudanmed.platform.core.measure.^proxy.*
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import  com.fudanmed.platform.core.web.shared.measure.*
+	
+	ui-entity UIMeasureDeviceType for RCMeasureDeviceType{
+		name : String "类型"
+		map MeasureDeviceTypeMapper{
+			direct{name}
+		}
+	
+		ui-component MeasureDeviceTypeListGrid as GXTGrid{
+			binding{name}
+		}
+	}
+	
+	presenter MeasureDeviceTypeListPresenter{
+		view interface{
+			signal in setResults(results : UIMeasureDeviceType[*])
+			op getActionContext():ActionContext<UIMeasureDeviceType>
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.refresh(){
+				service.loadMeasureDeviceTypeList(onSuccess[items|
+					fire view.setResults(items)
+				])
+			}
+		}
+		
+		service{
+			@Inject mapper : MeasureDeviceTypeMapper
+			@Inject dao : RCMeasureDeviceTypeDAO
+			op loadMeasureDeviceTypeList() : UIMeasureDeviceType[*]{
+				dao.getAllMeasureDeviceTypes().^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+
+	view MeasureDeviceTypeListView for MeasureDeviceTypeListPresenter{
+		con : Widget
+		@Inject listGrid : MeasureDeviceTypeListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		op getActionContext():ActionContext<UIMeasureDeviceType>{
+			listGrid.createActionContext
+		}
+		interaction{
+			input view.setResults(results : UIMeasureDeviceType[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+	
+	ui-entity UIMeasureDevice for RCMeasureDevice{
+		sid : String "编号"
+		name:String "名称"
+		location : String "安装位置"
+		map MeasureDeviceMapper validate by MeasureDeviceValidator{
+			direct{sid,name,location}
+		}
+	
+		constraints MeasureDeviceValidator{
+			rule Required on sid
+			rule Required on name
+		}
+	
+		ui-component MeasureDeviceForm as GXTForm{
+			binding{sid,name,location}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(sid.asWidget)
+						addFill(name.asWidget)
+						addFill(location.asWidget)
+					]
+				]
+			}			
+		}
+	
+		ui-component MeasureDeviceListGrid as GXTGrid{
+			binding{sid,name,location}
+			op initializeComponent():void{
+				this.asWidget
+				this.keepSelection
+			}
+		}
+	}
+	
+//	signal MeasureDevicesChanged
+//	ui-command CreateMeasureDeviceCommand require proxy of RCMeasureDeviceType "新建" @measureDeviceManagementPresenter{
+//		factory createOrUpdateMeasureDevicePresenter : CreateOrUpdateMeasureDevicePresenter
+//		execute{
+//			createOrUpdateMeasureDevicePresenter.get.setup4Create(value)[
+//				popup(it)
+//			]
+//		}
+//	}
+//	ui-command UpdateMeasureDeviceCommand require proxy of RCMeasureDevice "修改"{
+//		factory createOrUpdateMeasureDevicePresenter : CreateOrUpdateMeasureDevicePresenter
+//		execute{
+//			createOrUpdateMeasureDevicePresenter.get.setup4Update(value)[
+//				popup(it)
+//			]
+//		}
+//	}
+//	ui-command DeleteMeasureDeviceCommand require proxy of RCMeasureDevice "删除" @measureDeviceManagementPresenter{
+//		execute{
+//			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+//				service.delete(value,onSuccess[
+//					fire eventbus.MeasureDevicesChanged
+//				])
+//			].show
+//		}
+//		service{
+//			@Inject dao : RCMeasureDeviceDAO
+//			op delete(value : proxy of RCMeasureDevice):void{
+//				dao.delete(resolve value)
+//			}
+//		}
+//	}
+
+//	presenter CreateOrUpdateMeasureDevicePresenter for UIMeasureDevice{
+//		view interface{
+//		}
+//		
+//		interaction{
+//			commiter : (CommitResultNotifier)=>void
+//			input prepare.setup4Create(parent : proxy of RCMeasureDeviceType){
+//				commiter=[notifier|
+//					service.createValue(getView().value,parent,onSuccess[
+//						fire eventbus.MeasureDevicesChanged()
+//						notifier.success
+//					])
+//				]
+//				this.activate[
+//					done
+//				]
+//			}
+//			
+//			input prepare.setup4Update(value : proxy of RCMeasureDevice){
+//				commiter=[notifier|
+//					service.updateValue(getView().value,onSuccess[
+//						fire eventbus.MeasureDevicesChanged()
+//						notifier.success
+//					])
+//				]
+//				this.activate[
+//					service.loadValue(value,onSuccess[
+//						getView().setValue(it)
+//						done
+//					])
+//				]
+//			}
+//			
+//			input form-commit {
+//				commiter.apply(notifier)
+//			}			
+//		}
+//		
+//		service{
+//			
+//			@Inject mapper : MeasureDeviceMapper
+//			@Inject v : MeasureDeviceValidator
+//			op loadValue(pvalue : proxy of RCMeasureDevice) : UIMeasureDevice{
+//				mapper.transform(resolve pvalue)
+//			}
+//			
+//			op updateValue(uivalue : UIMeasureDevice) : void{
+//				mapper.transform(uivalue,(resolve uivalue))
+//			}
+//			
+//			op createValue(uivalue : UIMeasureDevice, parent : proxy of RCMeasureDeviceType) : void{
+//				uivalue.validateWith(v)
+//				(resolve parent).createDevice(uivalue.name)=>[
+//					it.location = uivalue.location
+//				]
+//			}
+//		}
+//	}
+	
+//	view CreateOrUpdateMeasureDeviceView<MeasureDeviceForm> for CreateOrUpdateMeasureDevicePresenter ui-size:(300,200) ui-title:"抄表设备维护"{
+//		initializer{
+//			this += widgets.DialogContent(form.asWidget)
+//		}
+//	}
+
+	presenter MeasureDeviceListPresenter require proxy of RCMeasureDeviceType{
+		view interface{
+			signal in setResults(results : UIMeasureDevice[*])
+			op getActionContext() : ActionContext< UIMeasureDevice>		
+			op clear():void
+		}
+		
+		interaction{
+			context : proxy of RCMeasureDeviceType
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(context : proxy of RCMeasureDeviceType){
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.setMeasureDeviceType(context : proxy of RCMeasureDeviceType){
+				this.context = context
+				refresh
+			}
+			input call.setContext(ac : ActionContext<RCMeasureDeviceTypeProxy>){
+				ac.addSelectionChangedListener[Iterable<RCMeasureDeviceTypeProxy> selections|
+					if(selections.size==1){
+						setMeasureDeviceType(selections.head)
+					}else{
+						getView().clear
+					}
+				]
+			}			
+			input call.refresh(){
+				if(context!=null){
+					service.loadMeasureDeviceList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+//			input eventbus.MeasureDevicesChanged(){
+//				refresh
+//			}
+		}
+		
+		service{
+			@Inject mapper : MeasureDeviceMapper
+			
+			op loadMeasureDeviceList(context : proxy of RCMeasureDeviceType) : UIMeasureDevice[*]{
+				(resolve context).measureDevices.^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view MeasureDeviceListView for MeasureDeviceListPresenter{
+		con : Widget
+		@Inject listGrid : MeasureDeviceListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		
+		interaction{
+			input view.setResults(results : UIMeasureDevice[*]){
+				listGrid.objects = results
+			}
+		}
+		op getActionContext() : ActionContext< UIMeasureDevice>{
+				listGrid.createActionContext
+		}
+		op clear():void{
+			listGrid.objects = newArrayList
+		}
+	}
+	
+	ui-command ShowMeasureDeviceManagementPresenterCommand "抄表设备维护" @measureDeviceManagementPresenter{
+		factory measureDeviceManagementPresenter : MeasureDeviceManagementPresenter
+		execute{
+			measureDeviceManagementPresenter.get.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}
+	
+	ui-command DeviceListDispatcher require  proxy of RCMeasureDeviceType ""{
+		factory phasedElectricMeasureDeviceManagementPresenter : PhasedElectricMeasureDeviceManagementPresenter
+		factory electricMeasureDeviceManagementPresenter : ElectricMeasureDeviceManagementPresenter
+		factory waterMeasureDeviceManagementPresenter : WaterMeasureDeviceManagementPresenter
+		factory gasMeasureDeviceManagementPresenter : GasMeasureDeviceManagementPresenter
+		public container : IPresenterContainer
+		
+		execute{
+			switch(value){
+				RCPhasedElectricMeasureDeviceTypeProxy:{
+					phasedElectricMeasureDeviceManagementPresenter.get.setup(value)[
+						container.showActivatedPresenter(it)
+					]
+				}
+				RCElectricMeasureDeviceTypeProxy:{
+					electricMeasureDeviceManagementPresenter.get.setup(value)[
+						container.showActivatedPresenter(it)
+					]
+				}
+				RCWaterMeasureDeviceTypeProxy:{
+					waterMeasureDeviceManagementPresenter.get.setup(value)[
+						container.showActivatedPresenter(it)
+					]
+				}
+				RCGasMeasureDeviceTypeProxy:{
+					gasMeasureDeviceManagementPresenter.get.setup(value)[
+						container.showActivatedPresenter(it)
+					]
+				}
+			}
+		}
+		
+	}
+	
+	presenter MeasureDeviceManagementPresenter{
+		view interface{
+		}
+		
+		interaction{
+			part measureDeviceTypeListPresenter : MeasureDeviceTypeListPresenter
+			part measureDeviceListPresenter : MeasureDeviceListPresenter
+			
+			input prepare.setup(){
+				initPart(measureDeviceTypeListPresenter).setup[
+//					initPart(measureDeviceListPresenter).setup[
+						this.activate[
+//							measureDeviceListPresenter.setContext(
+//								measureDeviceTypeListPresenter.getView().getActionContext().adapt[toProxy]
+//							)
+							done
+//						]
+					]
+				]
+			}
+		}
+	}
+	
+	view MeasureDeviceManagementView for MeasureDeviceManagementPresenter{
+//		@Inject createMeasureDeviceCommand :CreateMeasureDeviceCommand
+//		@Inject updateMeasureDeviceCommand :UpdateMeasureDeviceCommand
+//		@Inject deleteMeasureDeviceCommand :DeleteMeasureDeviceCommand
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}
+		deviceListEditorContainer : IPresenterContainer
+		@Inject dispatcher : DeviceListDispatcher
+		layout{
+			val deviceTypeAc = measureDeviceTypeListPresenter.getView().getActionContext.adapt[toProxy]
+			con = widgets.FramedPanel("抄表设备维护")=>[
+				widget=widgets.HLayout=>[
+					add(measureDeviceTypeListPresenter.getView.asWidget,widgets.HLayoutData(0.4,1))
+					add((deviceListEditorContainer = widgets.PresenterContainer).asWidget,widgets.HLayoutData(0.6,1))
+					dispatcher.container = deviceListEditorContainer
+					deviceTypeAc.addSelectionChangedListener[
+						dispatcher.^execute(it.head)
+					]
+//					add(widgets.ContentPanel=>[
+//						widget = measureDeviceListPresenter.getView.asWidget
+//						addCommand(deviceTypeAc,createMeasureDeviceCommand)
+//						addCommand(deviceAc,updateMeasureDeviceCommand)
+//						addCommand(deviceAc,deleteMeasureDeviceCommand)
+//					],widgets.HLayoutData(0.6,1))
+				]
+			]	
+		}
+	}
+}

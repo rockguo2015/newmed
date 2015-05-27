@@ -1,0 +1,189 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.web.*
+	
+	ui-enum UITaskSourceType for DLTaskSourceType{
+		title{
+			curtomerRequest = "科室请求"
+			imported = "HIS系统导入"
+		}
+	} 
+	
+	ui-entity UITask for DLTask{
+		sid : String "任务编号"
+		createTime : Date "生成时间"
+		performers : proxy of RCEmployee[*] "运送人"
+		operator : proxy of RCEmployee "操作员"
+		taskSource : UITaskSourceType "任务来源"
+		
+		map TaskMapper{
+			direct{sid readonly,createTime readonly,performers readonly,operator readonly,{taskSource,entity.taskSource.type} readonly}
+		}
+	
+		ui-component TaskListGrid as GXTGrid{
+			binding{sid,createTime,performers,operator,taskSource}
+		}
+	}
+	
+
+	ui-criteria UITaskCriteria for DLTaskCriteria{
+		sid : String "任务编号"
+		createTimeFrom : Date "开始时间"
+		createTimeTo : Date "结束时间"
+		performer : proxy of RCEmployee "运送人"
+		taskSourceType : UITaskSourceType "任务来源"
+		
+		map TaskCriteriaMapper{
+			direct{sid,createTimeFrom,createTimeTo,performer,taskSourceType}
+		}
+		ui-component TaskCriteriaForm as GXTForm{
+			binding{sid,createTimeFrom,createTimeTo,performer as SuggestionItem content from client.organization.AllEmployeesAsyncContentProvider,taskSourceType}
+		}
+	}
+	
+	presenter TaskQueryListPresenter provide UITask{
+		view interface{
+			signal in showResults(results : IPagedResult<UITask>)
+			signal in refresh()
+
+			signal out filterRequest(c : UITaskCriteria)
+			op getActionContext():ActionContext<UITask>
+		}
+
+		interaction{
+			
+			input prepare.setup(){
+				this.activate[
+					fire view.refresh
+					done
+				]
+			}
+			input view.filterRequest(c : UITaskCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+		}
+		service{
+			@Inject criteriaMapper : TaskCriteriaMapper
+			@Inject mapper : TaskMapper
+			op filter(uicriteria : UITaskCriteria) : IPagedResult<UITask>{
+				var c = uicriteria.createPagedCriteria(typeof(DLTaskCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+		}
+	}
+	
+	view TaskQueryListView for TaskQueryListPresenter{
+		@Inject listGrid : TaskListGrid
+		@Inject criteriaForm : TaskCriteriaForm
+		
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.VLayout=>[
+				add(
+					TABLE=>[
+						tr=>[
+							td=>[it += criteriaForm.sid.asWidget]
+							td=>[it += criteriaForm.createTimeFrom.asWidget]
+							td=>[it += criteriaForm.createTimeTo.asWidget]
+						]
+						tr=>[
+							td=>[it += criteriaForm.performer.asWidget]
+							td=>[it += criteriaForm.taskSourceType.asWidget]
+							td=>[it += widgets.TextButton("查找")=>[
+								setWidth("80px")
+								addSelectHandler[
+									fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+										page = 1
+									])
+								]
+							]]
+						]
+					]
+				)
+
+				pager = listGrid.createPager=>[
+					pagerHandler = [int pageNum, int recordsPerPage|
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = pageNum
+							pageSize = recordsPerPage
+						])							
+					]
+				]
+				
+				add(listGrid.asWidget,widgets.VLayoutData(1,1))
+				add(pager.asWidget)
+			]
+		}
+		
+		op showResults(results : IPagedResult<UITask>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		
+		op getActionContext():ActionContext<UITask>{
+			listGrid.createActionContext
+		}
+	}	
+
+ 	
+	ui-command ShowDLTaskManagementCommand "运送任务清单" @dlTaskManagementPresenter{
+		factory managementPresenter : DLTaskManagementPresenter
+		execute{
+			managementPresenter.get.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}	
+	presenter DLTaskManagementPresenter{
+		view interface{
+		}
+		interaction{
+			part queryListPresenter : TaskQueryListPresenter
+			input prepare.setup(){
+				initPart(queryListPresenter).setup[
+					this.activate[
+						done
+					]
+				]
+			}
+		}
+	}
+	
+	view DLTaskManagementView for DLTaskManagementPresenter{
+		con: Widget
+		asWidget() : Widget{
+			con
+		}	
+		layout{
+			val ac = queryListPresenter.getView().actionContext
+			con = widgets.FramedPanel("运送任务清单")=>[
+				widget = queryListPresenter.getView().asWidget
+			]
+		}
+		
+	}	
+}

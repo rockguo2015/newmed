@@ -1,0 +1,290 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	
+	ui-entity UIInHospitalLocation for DLInHospitalLocation{
+		code : String "病区代码"
+		name : String "病区名称"
+		location : proxy of RCOnsitePosition "位置"
+		
+		map InHospitalLocationMapper validate by InHospitalLocationValidator{
+			direct{code,name,location}
+		}
+	
+		constraints InHospitalLocationValidator{
+			rule Required on code
+			rule Required on name
+		}
+	
+		ui-component InHospitalLocationForm as GXTForm{
+			binding{code,name,location as SuggestionItem content from client.organization.AllOnsitePositionAyncContentProvider}
+			
+			op createWidget() : Widget{
+				widgets.VLayout=>[
+					addFill(code.asWidget)
+					addFill(name.asWidget)
+					addFill(location.asWidget)
+				]
+			}			
+		}
+	
+		ui-component InHospitalLocationListGrid as GXTGrid{
+			binding{code,name,location}
+		}
+	
+	}
+	signal InHospitalLocationsChanged
+	
+	ui-command CreateInHospitalLocationCommand "新建"{
+		factory createOrUpdateInHospitalLocationPresenter : CreateOrUpdateInHospitalLocationPresenter
+		execute{
+			createOrUpdateInHospitalLocationPresenter.get.setup4Create()[
+				popup(it)
+			]
+		}
+	}
+	
+	//require UIInHospitalLocation
+	ui-command UpdateInHospitalLocationCommand require proxy of DLInHospitalLocation "修改"{
+		factory createOrUpdateInHospitalLocationPresenter : CreateOrUpdateInHospitalLocationPresenter
+		execute{
+			createOrUpdateInHospitalLocationPresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeleteInHospitalLocationCommand require proxy of DLInHospitalLocation "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.InHospitalLocationsChanged
+				])
+			].show
+		}
+		service{
+			@Inject dao : DLInHospitalLocationDAO
+			op delete(value : proxy of DLInHospitalLocation):void{
+				dao.delete(resolve value)
+			}
+		}
+	}
+
+	presenter CreateOrUpdateInHospitalLocationPresenter for UIInHospitalLocation{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(){
+				commiter=[notifier|
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.InHospitalLocationsChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of DLInHospitalLocation){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.InHospitalLocationsChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : InHospitalLocationMapper
+			@Inject dao : DLInHospitalLocationDAO
+			op loadValue(pvalue : proxy of DLInHospitalLocation) : UIInHospitalLocation{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIInHospitalLocation) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIInHospitalLocation) : void{
+				dao.create[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateInHospitalLocationView<InHospitalLocationForm> for CreateOrUpdateInHospitalLocationPresenter ui-size:(350,200) ui-title:"病区信息维护"{
+		factory onsiteLocationOutlinePresenter : OnsiteLocationOutlinePresenter
+		initializer{
+			this += widgets.DialogContent(
+				TABLE=>[
+					tr=>[
+						td=>[it += form.code.asWidget]
+					]
+					tr=>[
+						td=>[it += form.name.asWidget]
+					]
+					tr=>[
+						td=>[
+								it += TABLE=>[tr=>[
+									td=>[ 
+										it += form.location.asWidget
+									]
+									td=>[
+										it += widgets.TextButton("选择")=>[
+											addSelectHandler[
+												onsiteLocationOutlinePresenter.get.setupAsSimpleTree[
+														asSelector("选择区域位置",300,500)[
+															form.location.value = it.toProxy
+														].show
+													]
+												]
+											]
+										]
+									]
+								]
+							
+							
+						]
+					]
+				]
+//				form.asWidget
+			)
+		}
+	}
+
+	
+	ui-criteria UIInHospitalLocationCriteria for DLInHospitalLocationCriteria{
+		info : String "病区信息"
+		map InHospitalLocationCriteriaMapper{
+			direct{info}
+		}
+		ui-component InHospitalLocationCriteriaForm as GXTForm{
+			binding{info as EscapedTextItem}
+		}
+	}
+	
+	presenter InHospitalLocationQueryListPresenter provide UIInHospitalLocation{
+		view interface{
+			signal in showResults(results : IPagedResult<UIInHospitalLocation>)
+			signal in refresh()
+
+			signal out filterRequest(c : UIInHospitalLocationCriteria)
+			op getActionContext():ActionContext<UIInHospitalLocation>
+		}
+
+		interaction{
+			
+			input prepare.setup(){
+				this.activate[
+					fire view.refresh
+					done
+				]
+			}
+			input view.filterRequest(c : UIInHospitalLocationCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.InHospitalLocationsChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : InHospitalLocationCriteriaMapper
+			@Inject mapper : InHospitalLocationMapper
+			op filter(uicriteria : UIInHospitalLocationCriteria) : IPagedResult<UIInHospitalLocation>{
+				var c = uicriteria.createPagedCriteria(typeof(DLInHospitalLocationCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+		}
+	}
+	
+	view InHospitalLocationQueryListView for InHospitalLocationQueryListPresenter{
+		@Inject listGrid : InHospitalLocationListGrid
+		@Inject criteriaForm : InHospitalLocationCriteriaForm
+		
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.VLayout=>[
+				add(
+					TABLE=>[
+						tr=>[
+							td=>[it += criteriaForm.info.asWidget]
+							td=>[it += widgets.TextButton("查找")=>[
+								setWidth("80px")
+								addSelectHandler[
+									fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+										page = 1
+									])
+								]
+							]]
+						]
+					]
+				)
+
+				pager = listGrid.createPager=>[
+					pagerHandler = [int pageNum, int recordsPerPage|
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = pageNum
+							pageSize = recordsPerPage
+						])							
+					]
+				]
+				
+				add(listGrid.asWidget,widgets.VLayoutData(1,1))
+				add(pager.asWidget)
+			]
+		}
+		
+		op showResults(results : IPagedResult<UIInHospitalLocation>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		
+		op getActionContext():ActionContext<UIInHospitalLocation>{
+			listGrid.createActionContext
+		}
+	}	
+	
+
+ 
+}

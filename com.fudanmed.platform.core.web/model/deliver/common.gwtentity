@@ -1,0 +1,12 @@
+//package com.fudanmed.platform.deliver.web feature common{
+//	ui-datatype JustTest{
+//		
+//	}
+//	
+//	ui-command HelloFromDeliverCommand "运送系统测试"{
+//		execute{
+//			display("Hi","hello from deliver")
+//		}
+//	}
+//	
+//}

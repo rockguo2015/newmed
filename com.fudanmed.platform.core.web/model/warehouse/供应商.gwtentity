@@ -1,0 +1,332 @@
+package com.fudanmed.platform.core.web feature organization{
+	
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.organization.*
+	
+	ui-enum UISupplierType for RCSupplierType{
+		title{
+			maintenanceProvider ="设备及服务提供商"
+			materialSupplier ="材料供应商"
+		}
+	}
+	 
+	ui-entity UISupplier for RCSupplier{
+		code : String	"代码"
+		phone : String	"联系电话"
+		email : String	"电子邮件"
+		address : String	"地址 "		
+		name : String "名称"
+		shortName : String	"简称"
+		ename : String	"英文名称"
+		spell : String	"拼音"
+		helpCode : String "助记码"
+		enterpriseEnrolNum : String "企业注册号"
+		workNo : String "营业执照号"
+		regCapital : Double "注册资金"
+		legalPerson : String "法定代表人"
+		aptitudeName : String "已获得资质"
+		aptitudeNo : String "资质证号"
+		type : UISupplierType "类型"
+		inputNext : Boolean "继续输入"
+	
+		map SupplierMapper validate by SupplierValidator{
+			direct{
+				code,name,phone,email,address,type,
+				shortName,ename,spell,helpCode,enterpriseEnrolNum,workNo,
+				regCapital,legalPerson,aptitudeName,aptitudeNo
+			}
+		}
+	
+		constraints SupplierValidator{
+			rule Required on code
+			rule Required on name
+		}
+	
+		ui-component SupplierForm as GXTForm{
+			binding{
+				code,name,phone,email,address,type,
+				shortName,ename,spell,helpCode,enterpriseEnrolNum,
+				workNo,regCapital,legalPerson,aptitudeName,aptitudeNo,inputNext
+			}
+			op createWidget() : Widget{
+				TABLE=>[
+					tr=>[
+						td=>[it += code.asWidget]
+						td=>[it += name.asWidget]
+					]
+					tr=>[
+						td=>[it += shortName.asWidget]
+						td=>[it += ename.asWidget]
+					]
+					tr=>[
+						td=>[it += spell.asWidget]
+						td=>[it += helpCode.asWidget]
+					]
+					tr=>[
+						td=>[it += phone.asWidget]
+						td=>[it += email.asWidget]
+					]
+					tr=>[
+						td=>[it += address.asWidget]
+						td=>[it += enterpriseEnrolNum.asWidget]
+					]
+					tr=>[
+						td=>[it += workNo.asWidget]
+						td=>[it += regCapital.asWidget]
+					]
+					tr=>[
+						td=>[it += legalPerson.asWidget]
+						td=>[it += aptitudeName.asWidget]
+					]
+					tr=>[
+						td=>[it += aptitudeNo.asWidget]
+						td=>[it += type.asWidget]
+					]
+					tr=>[
+						td=>[it += inputNext.asWidget=>[width=120]]
+					]
+				]
+			}			
+		}
+	
+		ui-component SupplierListGrid as GXTGrid{
+			binding{code,name,phone,email,type,address,enterpriseEnrolNum,workNo,aptitudeName}			
+		}
+	}	
+	signal InputNextSupplier
+		
+	signal SuppliersChanged
+	signal SupplierCreated(supplier : proxy of RCSupplier)
+	
+	presenter CreateOrUpdateSupplierPresenter for UISupplier{
+		view interface{
+		}
+	
+		interaction{
+			commiter : ((Void)=>void) => void
+			input prepare.setup4Create(){
+				commiter = [notifier|
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.SupplierCreated(it)
+						notifier.apply(null)
+						if(getView().value.inputNext.isLogicTrue){
+							fire eventbus.InputNextSupplier()
+						}
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of RCSupplier){
+				commiter = [notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.SuppliersChanged()
+						notifier.apply(null)
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit{
+				commiter.apply[
+					notifier.success
+				]
+			}
+		}
+		
+		service{
+			@Inject mapper : SupplierMapper
+			op loadValue(pvalue : proxy of RCSupplier) : UISupplier{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UISupplier) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UISupplier) : proxy of RCSupplier{
+				var value = entities.create(typeof(RCSupplier))
+				mapper.transform(uivalue,value)
+				value.toProxy
+			}
+		}
+	}
+	
+	view CreateOrUpdateSupplierView<SupplierForm> for CreateOrUpdateSupplierPresenter 
+		ui-size:(600,350) 
+		ui-title:"供应商维护"
+	{
+		
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+		
+		op setValue(UISupplier value) : void{
+			super.setValue(value)
+			form.inputNext.asWidget.hide
+		}
+	}
+	
+	ui-criteria UISupplierCriteria for RCSupplierCriteria{
+		info : String "供应商信息"
+		map SupplierCriteriaMapper{
+			direct{info}
+		}
+		ui-component SupplierCriteriaForm as GXTForm{
+			binding{info as EscapedTextItem}
+			
+			queryRequest : (Void)=>void
+			op setQueryRequest(queryRequest : (Void)=>void) :void{
+				this.queryRequest = queryRequest
+			}
+			
+			op createWidget():Widget{
+				TABLE=>[
+					tr=>[
+						td=>[it += info.asWidget]
+						td=>[it += widgets.TextButton("查询")=>[
+							addSelectHandler[
+								queryRequest.apply(null)
+							]
+						]]
+					]
+				]
+			}
+		}
+	}
+	
+	presenter SupplierManagementPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UISupplier>)
+			signal in refresh()
+			signal in refreshNew(value : proxy of RCSupplier)
+
+			signal out createRequest()   @supplierManagementPresenter "新建"
+			signal out deleteRequest(value : proxy of RCSupplier) @supplierManagementPresenter "删除"
+			signal out modifyRequest(value : proxy of RCSupplier) @supplierManagementPresenter "修改"
+			signal out filterRequest(c : UISupplierCriteria)
+		}
+
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateSupplierPresenter
+			start{
+				fire view.refresh
+			}
+			input view.createRequest(){
+				createOrUpdatePresenter.get.setup4Create[
+					popup(it)
+				]
+			}
+			input eventbus.InputNextSupplier(){
+				createOrUpdatePresenter.get.setup4Create[
+					popup(it)
+				]
+			}
+			input view.modifyRequest(value : proxy of RCSupplier){
+				createOrUpdatePresenter.get.setup4Update(value)[
+					popup(it)
+				]
+			}
+			input view.deleteRequest(value : proxy of RCSupplier){
+				service.delete(value,onSuccess[
+					fire eventbus.SuppliersChanged
+				])
+			}
+			input view.filterRequest(c : UISupplierCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.SuppliersChanged(){
+				fire view.refresh
+			}
+			input eventbus.SupplierCreated(newSupplier : proxy of RCSupplier){
+				fire view.refreshNew(newSupplier)
+			}
+		}
+		service{
+			@Inject criteriaMapper : SupplierCriteriaMapper
+			@Inject mapper : SupplierMapper
+
+			op filter(uicriteria : UISupplierCriteria) : IPagedResult<UISupplier>{
+				var c = uicriteria.createPagedCriteria(typeof(RCSupplierCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op delete(value : proxy of RCSupplier) : void {
+				entities.delete(resolve value)
+			}
+		}
+	}
+	
+	view SupplierManagementView for SupplierManagementPresenter{
+		@Inject listGrid : SupplierListGrid
+		pagedList : PagedList<UISupplier,UISupplierCriteria>
+		@Inject criteriaForm : SupplierCriteriaForm
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			//initialize widgets/components
+			pagedList = listGrid.asPagedList([criteriaForm.value],[fire view.filterRequest(it as UISupplierCriteria)])
+			val ac = listGrid.createActionContext
+			criteriaForm.queryRequest = [fire view.filterRequest(pagedList.getCriteria)]
+			
+			val createButton = widgets.TextButton("新建")[
+				fire view.createRequest
+			]
+			val modifyButton = ac.onSingleObjectAction[
+						onExecute[UISupplier selectedValue |
+							fire view.modifyRequest(selectedValue.toProxy)
+						]
+					].asButtonRequester("修改")
+			val deleteButton =  ac.onSingleObjectAction[
+						onExecute[UISupplier selectedValue |
+							widgets.ConfirmMessageBox("确认","确认删除")[
+								fire view.deleteRequest(selectedValue.toProxy)
+							].show
+						]
+					].asButtonRequester("删除")
+					
+			//layout
+			con = widgets.FramedPanel("供应商维护")=>[
+				widget =widgets.VLayout=>[
+					add(criteriaForm.asWidget)
+					add(pagedList.asWidget,	widgets.VLayoutData(1,1))
+				]
+				
+				securities.check(ui-requester.createRequest)[v|
+					addButton(createButton)
+				]
+				securities.check(ui-requester.modifyRequest)[v|
+					addButton(modifyButton)					
+				]					
+				securities.check(ui-requester.deleteRequest)[v|
+					addButton(deleteButton)					
+				]
+				
+			]					
+		}
+		
+		op showResults(results : IPagedResult<UISupplier>) : void{
+			pagedList.results =results
+		}
+		
+		op refresh() : void{
+			pagedList.refresh()
+		}
+		
+		op refreshNew(value : proxy of RCSupplier):void{
+			pagedList.refresh()[
+				pagedList.reveal(value)
+			]
+		}
+	}	
+}

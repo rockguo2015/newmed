@@ -1,0 +1,317 @@
+package com.fudanmed.platform.core.web feature measure{
+	
+	import java.util.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.measure.*
+	import com.fudanmed.platform.core.measure.^proxy.*
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import  com.fudanmed.platform.core.web.shared.measure.*
+	
+	ui-command CreateMeasureValueCommand require proxy of RCMeasureDevice "新建" @measureDeviceValueManagementPresenter{
+		factory createWaterMeasureValueCommand : CreateWaterMeasureValueCommand
+		factory createPhasedElectricMeasureValueCommand : CreatePhasedElectricMeasureValueCommand
+		factory createElectricMeasureValueCommand : CreateElectricMeasureValueCommand
+		execute{
+			switch(value){
+				RCWaterMeasureDeviceProxy:{
+					createWaterMeasureValueCommand.get.^execute(value)
+				}
+				RCPhasedElectricMeasureDeviceProxy:{
+					createPhasedElectricMeasureValueCommand.get.^execute(value)
+				}
+				RCElectricMeasureDeviceProxy:{
+					createElectricMeasureValueCommand.get.^execute(value)
+				}
+				default:{
+					println("not implemented")
+				}
+			}
+		}
+	}
+	ui-command ModifyMeasureValueCommand require proxy of RCMeasureValue "修改" @measureDeviceValueManagementPresenter{
+		factory updateWaterMeasureValueCommand : UpdateWaterMeasureValueCommand
+		factory updatePhasedElectricMeasureValueCommand : UpdatePhasedElectricMeasureValueCommand
+		factory updateElectricMeasureValueCommand : UpdateElectricMeasureValueCommand
+		
+		execute{
+			switch(value){
+				RCWaterMeasureValueProxy:{
+					updateWaterMeasureValueCommand.get.^execute(value)
+				}
+				RCPhasedElectricMeasureValueProxy:{
+					updatePhasedElectricMeasureValueCommand.get.^execute(value)
+				}
+				RCElectricMeasureValueProxy:{
+					updateElectricMeasureValueCommand.get.^execute(value)
+				}
+				
+				default:{
+					println("not implemented")
+				}
+			}
+		}
+	}
+	ui-command DeleteMeasureValueCommand require proxy of RCMeasureValue "删除" @measureDeviceValueManagementPresenter{
+		factory deleteWaterMeasureValueCommand : DeleteWaterMeasureValueCommand
+		factory deletePhasedElectricMeasureValueCommand : DeletePhasedElectricMeasureValueCommand
+		factory deleteElectricMeasureValueCommand : DeleteElectricMeasureValueCommand
+		execute{
+			switch(value){
+				RCWaterMeasureValueProxy:{
+					deleteWaterMeasureValueCommand.get.^execute(value)
+				}
+				RCPhasedElectricMeasureValueProxy:{
+					deletePhasedElectricMeasureValueCommand.get.^execute(value)
+				}
+				RCElectricMeasureValueProxy:{
+					deleteElectricMeasureValueCommand.get.^execute(value)
+				}
+				default:{
+					println("not implemented")
+				}
+			}
+		}
+	}
+	
+	ui-entity UIMeasureValue for RCMeasureValue{
+		measureDate : Date "抄表日期"
+		measurePerson : String "抄表人"
+		valueString : String "抄表数"
+		increamentValueString : String "用量"
+		map MeasureValueMapper {
+			direct{measureDate readonly,measurePerson readonly}
+			from entity{
+				ui.valueString = entity.toValueString
+			}
+		}
+	
+		ui-component MeasureValueListGrid as GXTGrid{
+			binding{valueString,increamentValueString,measureDate as DateTimeColumn,measurePerson}
+		}
+	}
+	
+	ui-criteria UIMeasureValueCriteria for RCMeasureValueCriteria{
+		deviceType : proxy of RCMeasureDeviceType
+		device : proxy of RCMeasureDevice
+		measureDateFrom : Date "开始日期"
+		measureDateTo : Date "结束日期"
+		
+		map MeasureValueCriteriaMapper{
+			direct{deviceType,device,measureDateFrom,measureDateTo}
+		}
+		ui-component MeasureValueCriteriaForm as GXTForm{
+			binding{deviceType as ReadonlyItem,device as ReadonlyItem,measureDateFrom,measureDateTo}
+		}
+	}
+	
+	ui-command MeasureValueQueryListDispatcher require proxy of RCMeasureDevice ""{
+		public container : widgets.IPresenterContainer
+		factory electricMeasureValueQueryListPresenter : ElectricMeasureValueQueryListPresenter
+		factory phasedElectricMeasureValueQueryListPresenter : PhasedElectricMeasureValueQueryListPresenter
+		factory waterMeasureValueQueryListPresenter : WaterMeasureValueQueryListPresenter
+		factory gasMeasureValueQueryListPresenter : GasMeasureValueQueryListPresenter
+		execute{
+			switch(value){
+				RCElectricMeasureDeviceProxy:{
+					electricMeasureValueQueryListPresenter.get.setup(value)[
+						container.showActivatedPresenter(it)
+					]
+				}
+				RCPhasedElectricMeasureDeviceProxy:{
+					phasedElectricMeasureValueQueryListPresenter.get.setup(value)[
+						container.showActivatedPresenter(it)
+					]
+				}
+				RCWaterMeasureDeviceProxy:{
+					waterMeasureValueQueryListPresenter.get.setup(value)[
+						container.showActivatedPresenter(it)
+					]
+				}
+				RCGasMeasureDeviceProxy:{
+					gasMeasureValueQueryListPresenter.get.setup(value)[
+						container.showActivatedPresenter(it)
+					]
+				}
+			}
+		}
+	}
+	
+	presenter MeasureValueQueryListPresenter provide UIMeasureValue{
+		view interface{
+			signal in showResults(results : IPagedResult<UIMeasureValue>)
+			signal in refresh()
+			op setMeasureDevice(device : proxy of RCMeasureDevice):void
+			op setMeasureDeviceType(deviceType : proxy of RCMeasureDeviceType):void
+			signal out filterRequest(c : UIMeasureValueCriteria)
+			op getActionContext():ActionContext<UIMeasureValue>
+		}
+
+		interaction{
+			
+			input prepare.setup(){
+				this.activate[
+					fire view.refresh
+					done
+				]
+			}
+			input view.filterRequest(c : UIMeasureValueCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.MeasureValuesChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : MeasureValueCriteriaMapper
+			@Inject mapper : MeasureValueMapper
+			op filter(uicriteria : UIMeasureValueCriteria) : IPagedResult<UIMeasureValue>{
+				var c = uicriteria.createPagedCriteria(typeof(RCMeasureValueCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+		}
+	}
+	
+	view MeasureValueQueryListView for MeasureValueQueryListPresenter{
+		@Inject listGrid : MeasureValueListGrid
+		@Inject criteriaForm : MeasureValueCriteriaForm
+		
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.VLayout=>[
+				add(
+					TABLE=>[
+						tr=>[
+							td=>[it += criteriaForm.measureDateFrom.asWidget]
+							td=>[it += criteriaForm.measureDateTo.asWidget]
+							td=>[it += widgets.TextButton("查找")=>[
+								setWidth("80px")
+								addSelectHandler[
+									fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+										page = 1
+									])
+								]
+							]]
+						]
+					]
+				)
+
+				pager = listGrid.createPager=>[
+					pagerHandler = [int pageNum, int recordsPerPage|
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = pageNum
+							pageSize = recordsPerPage
+						])							
+					]
+				]
+				
+				add(listGrid.asWidget,widgets.VLayoutData(1,1))
+				add(pager.asWidget)
+			]
+		}
+		
+		op showResults(results : IPagedResult<UIMeasureValue>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		op setMeasureDevice(device : proxy of RCMeasureDevice):void{
+			criteriaForm.device.value = device
+			fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+				page = 1
+			])			
+		}
+		op setMeasureDeviceType(deviceType : proxy of RCMeasureDeviceType):void{
+			criteriaForm.deviceType.value = deviceType
+			fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+				page = 1
+			])			
+			
+		}		
+		op getActionContext():ActionContext<UIMeasureValue>{
+			listGrid.createActionContext
+		}
+	}
+	
+	ui-command ShowMeasureDeviceValueManagementPresenterCommand "抄表管理"{
+		factory measureDeviceValueManagementPresenter : MeasureDeviceValueManagementPresenter
+		execute{
+			measureDeviceValueManagementPresenter.get.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}
+
+	presenter MeasureDeviceValueManagementPresenter{
+		view interface{
+		}
+		
+		interaction{
+			part measureDeviceTypeListPresenter : MeasureDeviceTypeListPresenter
+			part measureDeviceListPresenter : MeasureDeviceListPresenter
+			input prepare.setup(){
+				initPart(measureDeviceTypeListPresenter).setup[
+					initPart(measureDeviceListPresenter).setup[
+						this.activate[
+							measureDeviceListPresenter.setContext(
+								measureDeviceTypeListPresenter.getView().getActionContext().adapt[toProxy]
+							)
+							done
+						]
+					]
+				]
+			}
+		}
+	}
+	
+	view MeasureDeviceValueManagementView for MeasureDeviceValueManagementPresenter{
+		@Inject createMeasureValueCommand :CreateMeasureValueCommand
+		@Inject modifyMeasureValueCommand : ModifyMeasureValueCommand
+		@Inject deleteMeasureValueCommand : DeleteMeasureValueCommand
+		@Inject dispatcher : MeasureValueQueryListDispatcher
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			val deviceTypeAc = measureDeviceTypeListPresenter.getView().getActionContext.adapt[toProxy]
+			val deviceAc = measureDeviceListPresenter.getView().getActionContext.adapt[toProxy]
+			con = widgets.FramedPanel("抄表")=>[
+				widget=widgets.HLayout=>[
+					add(widgets.VLayout=>[
+						add(measureDeviceTypeListPresenter.getView.asWidget,widgets.VLayoutData(1,0.4))
+						add(measureDeviceListPresenter.getView.asWidget,widgets.VLayoutData(1,0.6))
+					],widgets.HLayoutData(0.3,1))
+					add(widgets.ContentPanel=>[
+						widget = (dispatcher.container =widgets.PresenterContainer).asWidget
+						addCommand(deviceAc,createMeasureValueCommand)
+//						addCommand(devaiceValueAc,modifyMeasureValueCommand)
+//						addCommand(devaiceValueAc,deleteMeasureValueCommand)
+					],widgets.HLayoutData(0.7,1))
+					deviceAc.addSelectionChangedListener[
+						dispatcher.^execute(it.head)
+					]
+				]
+			]	
+		}
+	}
+ 
+
+	
+}

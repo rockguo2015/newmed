@@ -1,0 +1,92 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.GWTEntity
+	import com.uniquesoft.gwt.client.common.print.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	
+	ui-datatype UIProductSpecificationSummary for RCProductSpecificationSummary{
+		productSpec : proxy of RCProductSpecification
+		quantity : Integer "数量"
+		sid : String "条码"
+		typeDesc : String  "规格型号"
+		unit : proxy of RCProduceSpecificationUnit "计量单位"
+		
+		map ProductSpecificationSummaryMapper{
+			direct{productSpec,quantity, {sid,entity.productSpec.sid} readonly, {typeDesc,entity.productSpec.typeDesc},{unit, entity.productSpec.unit}}
+		}
+		
+		ui-component ProductSpecificationSummaryListView as GXTListView{
+			template render(value : UIProductSpecificationSummary) {
+				"<div><div style='float:left'><span style='font-size:120%;font-weight:bold;'>{value.productSpec.name}</span><BR> 条码:{value.sid}</div> <div style='width:50px;float:right'>{value.quantity}{value.unit}</div></div>"
+			}
+		}
+	}
+
+	ui-datatype UIWarehouseProductSpecSummary extends GWTEntity{
+		storageSummary : UIProductWarehouseStorageSummary "物品"
+		productName : String "物品名称"
+		quantity : Integer "数量"
+		sourceQuantity : Integer "库存数量"
+		productSid : String "条码"
+		typeDesc : String  "规格型号"
+		brand : proxy of RCMaterialBrand "品牌"
+		unit : proxy of RCProduceSpecificationUnit "计量单位"
+		
+		ui-component WarehouseProductSpecSummaryForm as GXTForm{
+			@Inject productWarehouseStorageList : ProductWarehouseStorageSummaryListView
+			binding{
+				storageSummary as RequiredSuggestionItem(productWarehouseStorageList) content from AllProductWarehouseStorageSummaryContentProvider,
+				quantity as RequiredIntegerItem,sourceQuantity as ReadonlyItem, productSid}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(storageSummary.asWidget=>[
+							storageSummary.addSelectionChangedListener[
+								sourceQuantity.value = it.head.quantity
+							]
+						])
+						addFill(sourceQuantity.asWidget)
+						addFill(quantity.asWidget)
+					]
+				]
+			}
+			
+			op setSourceWarehouse(store : proxy of RCWarehouse):void{
+				this.storageSummaryContentProvider.createCriteria=>[
+					it.store = store
+				]
+			}	
+		}	
+		ui-component WarehouseProductSpecSummaryListGrid as GXTGrid{
+			binding{
+				productName,typeDesc,brand,sourceQuantity,quantity as EditableIntegerColumn,unit
+			}
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+			}
+			
+		}
+			
+	}	
+	
+	
+}

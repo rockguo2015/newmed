@@ -1,0 +1,324 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.Date
+	import java.util.Collection
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.web.*
+	
+	presenter PMTeamWorkItemManagementPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UIPMWorkItem>)
+			signal in refresh()
+	
+			signal out assignWorkerRequest(value : proxy of RCPMWorkItem) @pmTeamWorkItemManagementPresenter "派工"
+			signal out filterRequest(c : UIPMWorkItemCriteria)
+			signal out pmworkitemSelected(value : proxy of RCPMWorkItem)
+			
+			signal out reportFinishRequest(value : proxy of RCPMWorkItemWorkerAssignment) @pmTeamWorkItemManagementPresenter "完成"
+			signal out reportAllFinishRequest(value : proxy of RCPMWorkItem) @pmTeamWorkItemManagementPresenter "完工上报"
+			
+			signal out pendRequest(value : proxy of RCPMWorkItemWorkerAssignment)@pmTeamWorkItemManagementPresenter "延迟"
+		}
+	
+		interaction{
+			factory createOrUpdatePMWorkItemWorkerAssignmentPresenter : CreateOrUpdatePMWorkItemWorkerAssignmentPresenter
+			factory createOrUpdatePMWorkItemWorkerAssignmentReportPresenter : CreateOrUpdatePMWorkItemWorkerAssignmentReportPresenter
+			factory createOrUpdatePMWorkItemWorkerAssignmentPendPresenter : CreateOrUpdatePMWorkItemWorkerAssignmentPendPresenter
+			factory createPMWorkItemTeamFinishReportPresenter : CreatePMWorkItemTeamFinishReportPresenter
+			
+			part workItemPlanAssignmentListPresenter : WorkItemPlanAssignmentListPresenter
+			part workItemWorkerAssignmentListPresenter : PMWorkItemWorkerAssignmentListPresenter
+			part workItemEvaluatePropertyViewPresenter : PMWorkItemEvaluatePropertyViewPresenter
+			part workItemPropertyPresenter : PMWorkItemPropertyPresenter
+			
+			input prepare.setup( ){
+				initPart(workItemWorkerAssignmentListPresenter).setup[
+				initPart(workItemPlanAssignmentListPresenter).setup(false)[
+				initPart(workItemEvaluatePropertyViewPresenter).setup[
+				initPart(workItemPropertyPresenter).setup[
+				this.activate[
+					fire view.refresh
+					done
+				]]]]]
+			}
+			
+			input view.reportFinishRequest(value : proxy of RCPMWorkItemWorkerAssignment){
+				createOrUpdatePMWorkItemWorkerAssignmentReportPresenter.get.setup4Update(value)[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			input view.pendRequest(value : proxy of RCPMWorkItemWorkerAssignment){
+				createOrUpdatePMWorkItemWorkerAssignmentPendPresenter.get.setup4Update(value)[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			input view.assignWorkerRequest(value : proxy of RCPMWorkItem){
+				createOrUpdatePMWorkItemWorkerAssignmentPresenter.get.setup4Create(value)[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			input view.reportAllFinishRequest(value : proxy of RCPMWorkItem){
+				createPMWorkItemTeamFinishReportPresenter.get.setup(value)[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			input view.pmworkitemSelected(value : proxy of RCPMWorkItem){
+				workItemPlanAssignmentListPresenter.setPMWorkItem(value)
+				workItemWorkerAssignmentListPresenter.setPMWorkItem(value)
+				workItemEvaluatePropertyViewPresenter.setPMWorkItem(value)
+				workItemPropertyPresenter.setValue(value)
+			}
+			input view.filterRequest(c : UIPMWorkItemCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.PMWorkItemsChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : PMWorkItemCriteriaMapper
+			@Inject mapper : PMWorkItemMapper
+			@Inject dao : RCPMWorkItemDAO
+			op filter(uicriteria : UIPMWorkItemCriteria) : IPagedResult<UIPMWorkItem>{
+				var c = uicriteria.createPagedCriteria(typeof(RCPMWorkItemCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op delete(value : proxy of RCPMWorkItem) : void {
+				dao.delete(resolve value)[]
+			}
+		}
+	}
+	
+	view PMTeamWorkItemManagementView for PMTeamWorkItemManagementPresenter{
+		@Inject listGrid : PMWorkItem4TeamListGrid
+		@Inject criteriaForm : PMWorkItemCriteriaForm
+		@Inject engineerReportCommand : PMEngineerReportCommand
+		@Inject printPMWorkItemAssignmentCommand : PrintPMWorkItemAssignmentCommand
+		
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			listGrid.keepSelection
+			con = widgets.FramedPanel("班组PM工作台")=>[
+				widget = widgets.BorderLayout=>[
+					center[
+						widgets.ContentPanel=>[
+							setBodyBorder(false)
+							setBorders(false)
+							widget = widgets.VLayout=>[
+								add(
+									widgets.HTableLayout()=>[
+										add(<Widget>newArrayList(
+											criteriaForm.assignDateFrom.asWidget,
+											criteriaForm.assignDateTo.asWidget,
+											criteriaForm.includeFinishedItems.asWidget,
+											widgets.TextButton("筛选")=>[
+												setWidth("80px")
+												addSelectHandler[
+													fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+														page = 1
+													])
+												]
+											]
+										)	
+									)]
+				
+								)
+								pager = listGrid.createPager=>[
+									pagerHandler = [int pageNum, int recordsPerPage|
+										fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+											page = pageNum
+											pageSize = recordsPerPage
+										])							
+									]
+								]	
+								listGrid.addSelectEntityListener[
+									fire view.pmworkitemSelected(it.toProxy)
+								]
+								
+								add(widgets.ContentPanel()=>[
+									widget = widgets.VLayout=>[
+									add(listGrid.asWidget,widgets.VLayoutData(1,1))
+									add(pager.asWidget,widgets.VLayoutData(1,-1))]
+								],widgets.VLayoutData(1,1))							
+								
+							]	
+							val ac = listGrid.createActionContext
+							securities.check(ui-requester.assignWorkerRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIPMWorkItem selectedValue |
+										fire view.assignWorkerRequest(selectedValue.toProxy)
+									]
+									onCheckEnable[
+										listGrid.singleSelectedAnd[
+											it.status == UIPMWorkItemStatue::teamAssigned || it.status == UIPMWorkItemStatue::partialExecuting
+										]
+									]
+								].asButtonRequester("派工"))					
+							]					
+							securities.check(ui-requester.reportAllFinishRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIPMWorkItem selectedValue |
+										fire view.reportAllFinishRequest(selectedValue.toProxy)
+									]
+									onCheckEnable[
+										listGrid.singleSelectedAnd[
+											 it.status == UIPMWorkItemStatue::ready4TeamFinishReport
+										]
+									]									
+								].asButtonRequester("完工上报"))					
+							]					
+						]					
+					]
+					
+					south(0.4)[
+						widgets.ContentPanel=>[
+						widget=widgets.TabPanel=>[
+							add(workItemPropertyPresenter.getView().asWidget,"任务详情")
+							
+							add(widgets.ContentPanel=>[
+								widget = workItemWorkerAssignmentListPresenter.getView().asWidget
+								val assignmentAc = workItemWorkerAssignmentListPresenter.getView().actionContext
+								securities.check(ui-requester.reportFinishRequest)[v|
+									addButton(assignmentAc.onSingleObjectAction[
+										onExecute[UIPMWorkItemWorkerAssignment value|
+											fire view.reportFinishRequest(value.toProxy)
+										]
+										onCheckEnable[
+											assignmentAc.singleSelectedAnd[
+												(it.status == UIPMWorkItemWorkerAssignmentStatus::pending || it.status == UIPMWorkItemWorkerAssignmentStatus::planed) && it.allTaskFinished 
+											]
+										]
+									].asButtonRequester("工单完工"))
+								]
+								addCommand(assignmentAc,engineerReportCommand)
+								addCommand(assignmentAc.adapt[toProxy],printPMWorkItemAssignmentCommand)
+								
+//								securities.check(ui-requester.pendRequest)[v|
+//									addButton(assignmentAc.onSingleObjectAction[
+//										onExecute[UIPMWorkItemWorkerAssignment value|
+//											fire view.pendRequest(value.toProxy)
+//										]
+//										onCheckEnable[
+//											assignmentAc.singleSelectedAnd[
+//												it.status == UIPMWorkItemWorkerAssignmentStatus::planed
+//											]
+//										]
+//										
+//									].asButtonRequester("延迟"))
+//								]
+							],"派工信息")
+							add(widgets.ContentPanel=>[
+								widget = workItemPlanAssignmentListPresenter.getView().asWidget
+							],"PM计划清单")
+							add(workItemEvaluatePropertyViewPresenter.getView().asWidget,"服务评价")
+						]]						
+					]
+				]
+			]					
+		}
+		
+		op showResults(results : IPagedResult<UIPMWorkItem>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+	}
+	
+	
+	ui-datatype UIPMWorkItemTeamFinishReportData{
+		finishDate : Date "完成日期"
+		comment : String "上报信息"
+		evaluate : UIPMWorkItemEvaluate "服务评价"
+		ui-component UIPMWorkItemTeamFinishReportForm as GXTForm{
+			@Inject evaluateForm : PMWorkItemEvaluateForm
+			binding{finishDate,comment as TextAreaItem,evaluate as DelegateItem(evaluateForm)}
+			op createWidget():Widget{
+				widgets.VLayout=>[
+					addFill(finishDate.asWidget=>[finishDate.value=today])
+					addFill(comment.asWidget=>[height=80])
+					addFill(widgets.FieldSet("服务评价")=>[
+						widget = evaluateForm.asWidget
+					])
+				]
+			}
+		}
+		
+		constraints PMWorkItemTeamFinishReportDataValidator{
+			rule Required on finishDate
+		}
+	}
+	
+	presenter CreatePMWorkItemTeamFinishReportPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIPMWorkItemTeamFinishReportData
+		}
+	
+		interaction{
+			workitem : proxy of RCPMWorkItem
+			input prepare.setup(workitem : proxy of RCPMWorkItem){
+				this.workitem = workitem
+				this.activate[
+					done
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.updateValue(workitem,getView().value,onSuccess[
+					fire eventbus.PMWorkItemsChanged()
+					notifier.success
+				])
+			}	
+		}
+		
+		service{
+			@Inject mapper : PMWorkItemWorkerAssignmentMapper
+			@Inject ^validator : PMWorkItemTeamFinishReportDataValidator
+			@Inject evaluateMapper : PMWorkItemEvaluateMapper
+			op updateValue(workItem : proxy of RCPMWorkItem,uivalue : UIPMWorkItemTeamFinishReportData) : void{
+				uivalue.validateWith(^validator)
+				(resolve workItem).teamFinish(uivalue.finishDate,uivalue.comment)
+				evaluateMapper.transform(uivalue.evaluate,(resolve workItem).evaluate)
+				
+			}
+		}
+	}
+	
+	view CreatePMWorkItemTeamFinishReportView for CreatePMWorkItemTeamFinishReportPresenter implements IHasSize, IHasTitle{
+		@Inject form : UIPMWorkItemTeamFinishReportForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIPMWorkItemTeamFinishReportData{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op getSize():Size{
+			new Size(580,560)
+		}
+		op getTitle():String{
+			'完工上报'
+		}
+	}	
+	
+}
+
+

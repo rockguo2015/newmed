@@ -1,0 +1,9 @@
+eclipse.preferences.version=1
+encoding//design/employee.upload.csv=GB2312
+encoding//design/onsiteposition.upload.csv=GB2312
+encoding//design/organization.upload.csv=GB2312
+encoding//design/productspec.upload.csv=GB2312
+encoding//src/main/java=UTF-8
+encoding//src/main/xtend/com/fudanmed/platform/core/web/server/service/template/eBoard.htm=GB2312
+encoding//src/test/java=UTF-8
+encoding/<project>=UTF-8

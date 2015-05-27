@@ -1,0 +1,414 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.Collection
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.domain.organization.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.server.^service.organization.*
+	import com.fudanmed.platform.core.web.shared.project.*
+	import com.fudanmed.platform.core.web.client.project.*
+	import com.fudanmed.platform.core.web.server.^service.project.*
+	import com.fudanmed.platform.core.web.client.chart.*
+	import edu.fudan.langlab.gxt.client.component.grid.ValueProviderAdaptor
+	import edu.fudan.langlab.uidl.domain.app.client.workbench.*
+	import edu.fudan.mylang.utils.*
+	import com.uniquesoft.gwt.shared.datatype.*
+
+	presenter GroupTaskStatByTeamListPresenter{
+		view interface{
+			op showResult(results:Collection<UIGroupTaskStatByTeamCriteriaData>):void
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			
+			input call.setMonth(month : String){
+				service.loadResult(new UIGroupTaskCriteria()=>[
+					it.month = month
+				],onSuccess[
+					getView().showResult(it)
+				])
+			}
+			
+			input call.setDateRange(dateRange : UIDateRange){
+				service.loadResult(new UIGroupTaskCriteria()=>[
+					it.dateFrom = dateRange.^from
+					it.dateTo = dateRange.^to
+				],onSuccess[
+					getView().showResult(it)
+				])
+			}
+			input call.setReportSource(dateRange : UIDateRange,reportSource : proxy of RCFaultReportSource){
+				service.loadResult(new UIGroupTaskCriteria()=>[
+					it.dateFrom = dateRange.^from
+					it.dateTo = dateRange.^to
+					it.faultReportSource = reportSource
+				],onSuccess[
+					getView().showResult(it)
+				])
+			}
+			
+		}
+		
+		service{
+			@Inject criteriaMapper : GroupTaskCriteriaMapper
+			@Inject mapper : GroupTaskStatByTeamCriteriaDataMapper
+			op loadResult(uicriteria : UIGroupTaskCriteria):Collection<UIGroupTaskStatByTeamCriteriaData>{
+				val c = uicriteria.createPagedCriteria(typeof(RCGroupTaskCriteria),criteriaMapper,entities)
+				c.includeFinishedTask = true
+				c.createStatCriteria(typeof(RCGroupTaskStatByTeamCriteria)).list.^map[mapper.transform(it)].toList.sortBy[cnt].reverse
+			}
+		}
+	}		
+
+	view GroupTaskStatByTeamListPresenterListView for GroupTaskStatByTeamListPresenter{
+		required listGrid : GroupTaskStatByTeamCriteriaDataListGrid
+		con: Widget
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = listGrid.asWidget
+		}
+		
+		op showResult(results:Collection<UIGroupTaskStatByTeamCriteriaData>):void{
+			listGrid.objects = results
+		}
+	}		
+	
+	
+	ui-datatype UIRepairTaskStatByFaultTypeCriteriaData for RCRepairTaskStatByFaultTypeCriteriaData{		
+		cnt : Long "数量"
+		faultType : proxy of RCFaultType "故障类型"
+		map RepairTaskStatByFaultTypeCriteriaDataMapper{
+			direct{cnt readonly, faultType readonly}
+		}
+		ui-component RepairTaskStatByFaultTypeCriteriaDataListGrid as GXTGrid{
+			binding{faultType, cnt}
+		}
+	}
+	
+	presenter RepairTaskStatByFaultTypeListPresenter{
+		view interface{
+			op showResult(results:Collection<UIRepairTaskStatByFaultTypeCriteriaData>):void
+			
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input call.setMonth(month : String){
+				service.load(month,onSuccess[
+					getView().showResult(it)
+				])
+			}
+			input call.setReportSource(dateRange : UIDateRange,reportSource : proxy of RCFaultReportSource){
+				service.load(dateRange,reportSource,onSuccess[
+					getView().showResult(it)
+				])
+			}
+			input call.setDateRange(dateRange : UIDateRange){
+				service.load(dateRange,onSuccess[
+					getView().showResult(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject criteriaMapper : RepairTaskCriteriaMapper
+			@Inject mapper : RepairTaskStatByFaultTypeCriteriaDataMapper
+			
+			op executeCriteria(uicriteria : UIRepairTaskCriteria): Collection<UIRepairTaskStatByFaultTypeCriteriaData>{
+				val c = uicriteria.createPagedCriteria(typeof(RCRepairTaskCriteria),criteriaMapper,entities)
+				c.includeFinishedTask = true
+				c.createStatCriteria(typeof(RCRepairTaskStatByFaultTypeCriteria)).list.^map[mapper.transform(it)].toList.sortBy[cnt].reverse
+				
+			}
+			
+			op load(dateRange : UIDateRange): Collection<UIRepairTaskStatByFaultTypeCriteriaData>{
+				val uicriteria = new UIRepairTaskCriteria()=>[
+					it.reportDateRange = dateRange 
+				]
+				executeCriteria(uicriteria)
+				
+			}
+			op load(month : String): Collection<UIRepairTaskStatByFaultTypeCriteriaData>{
+				val uicriteria = new UIRepairTaskCriteria()=>[
+					it.month = month
+				]
+				executeCriteria(uicriteria)
+			}
+			op load(dateRange : UIDateRange,reportSource : proxy of RCFaultReportSource): Collection<UIRepairTaskStatByFaultTypeCriteriaData>{
+				val uicriteria = new UIRepairTaskCriteria()=>[
+					it.reportDateRange = dateRange
+					it.faultReportSource = reportSource
+				]
+				executeCriteria(uicriteria)
+			}
+		}
+	}
+	
+	view RepairTaskStatByFaultTypeListView for RepairTaskStatByFaultTypeListPresenter{
+		required listGrid : RepairTaskStatByFaultTypeCriteriaDataListGrid
+		con: Widget
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = listGrid.asWidget
+		}
+		
+		op showResult(results:Collection<UIRepairTaskStatByFaultTypeCriteriaData>):void{
+			listGrid.objects = results
+		}
+	}
+	
+	
+	ui-datatype UIRepairTaskStatByOrganizationTypeCriteriaData for RCRepairTaskStatByOrganizationTypeCriteriaData{		
+		cnt : Long "数量"
+		reportOrg : proxy of RCOrganization "报修部门"
+		fullPathReportOrg : String "报修部门"
+		map RepairTaskStatByOrganizationTypeCriteriaDataMapper{
+			direct{cnt readonly, reportOrg readonly}
+			from entity{
+				ui.fullPathReportOrg = entity.reportOrg.fullPath
+			}
+		}
+		ui-component RepairTaskStatByOrganizationTypeCriteriaDataListGrid as GXTGrid{
+			binding{fullPathReportOrg, cnt as DefaultColumn(60)}
+		}
+	}
+	
+	presenter RepairTaskStatByOrganizationTypeListPresenter{
+		view interface{
+			op showResult(results:Collection<UIRepairTaskStatByOrganizationTypeCriteriaData>):void
+			
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input call.setMonth(month : String){
+				service.load(month,onSuccess[
+					getView().showResult(it)
+				])
+			}
+			input call.setDateRange(dateRange : UIDateRange){
+				service.load(dateRange,onSuccess[
+					getView().showResult(it)
+				])
+			}
+			input call.setReportSource(dateRange : UIDateRange,reportSource : proxy of RCFaultReportSource){
+				service.load(dateRange,reportSource,onSuccess[
+					getView().showResult(it)
+				])
+			}
+			
+		}
+		
+		service{
+			@Inject criteriaMapper : RepairTaskCriteriaMapper
+			@Inject mapper : RepairTaskStatByOrganizationTypeCriteriaDataMapper
+
+			op executeCriteria(uicriteria : UIRepairTaskCriteria) : Collection<UIRepairTaskStatByOrganizationTypeCriteriaData>{
+				val c = uicriteria.createPagedCriteria(typeof(RCRepairTaskCriteria),criteriaMapper,entities)
+				c.includeFinishedTask = true
+				c.createStatCriteria(typeof(RCRepairTaskStatByOrganizationTypeCriteria)).list.^map[mapper.transform(it)].toList.sortBy[cnt].reverse
+			}
+
+			op load(month : String): Collection<UIRepairTaskStatByOrganizationTypeCriteriaData>{
+				val uicriteria = new UIRepairTaskCriteria()=>[
+					it.month = month
+				]
+				executeCriteria(uicriteria)
+			}
+			op load(dateRange : UIDateRange): Collection<UIRepairTaskStatByOrganizationTypeCriteriaData>{
+				val uicriteria = new UIRepairTaskCriteria()=>[
+					it.reportDateRange = dateRange 
+				]
+				executeCriteria(uicriteria)
+				
+			}
+			op load(dateRange : UIDateRange,reportSource : proxy of RCFaultReportSource): Collection<UIRepairTaskStatByOrganizationTypeCriteriaData>{
+				val uicriteria = new UIRepairTaskCriteria()=>[
+					it.reportDateRange = dateRange
+					it.faultReportSource = reportSource
+				]
+				executeCriteria(uicriteria)
+			}
+			
+		}
+	}
+	
+	view RepairTaskStatByOrganizationTypeListView for RepairTaskStatByOrganizationTypeListPresenter{
+		required listGrid : RepairTaskStatByOrganizationTypeCriteriaDataListGrid
+		con: Widget
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = listGrid.asWidget
+		}
+		
+		op showResult(results:Collection<UIRepairTaskStatByOrganizationTypeCriteriaData>):void{
+			listGrid.objects = results
+		}
+	}	
+	
+	ui-datatype UIRepairTaskStatByMonthCriteriaData for RCRepairTaskStatByMonthCriteriaData{		
+		cnt : Long
+		month : String
+		map RepairTaskStatByMonthCriteriaDataMapper{
+			direct{cnt readonly, month readonly}
+		}
+	}
+
+	ui-command RepairTaskStatByMonthCommand "月份报修统计" @statistics{
+		factory repairTaskStatByMonthPresenter : RepairTaskStatByMonthPresenter
+		factory framedPresenter : FramedPresenter
+		execute{
+			repairTaskStatByMonthPresenter.get.setup[
+				framedPresenter.get.setup("月份报修统计",it)[
+					fire eventbus.ShowActivePresenter(it)
+				]
+			]
+		}
+	}	
+	
+	presenter RepairTaskStatByMonthPresenter{
+		view interface{
+			op showResult(results:Collection<UIRepairTaskStatByMonthCriteriaData>):void
+			op refresh():void
+			signal out filterRequest(c : UIRepairTaskCriteria)
+		}
+		
+		interaction{
+			part repairTaskStatByFaultTypeListPresenter :RepairTaskStatByFaultTypeListPresenter
+			part repairTaskStatByOrganizationTypeListPresenter :RepairTaskStatByOrganizationTypeListPresenter
+			part groupTaskStatByTeamListPresenter : GroupTaskStatByTeamListPresenter
+			input prepare.setup(){
+				initPart(repairTaskStatByFaultTypeListPresenter).setup[
+				initPart(repairTaskStatByOrganizationTypeListPresenter).setup[
+				initPart(groupTaskStatByTeamListPresenter).setup[
+				this.activate[
+					getView().refresh
+					done
+				]]]]
+			}
+			
+			input view.filterRequest(c : UIRepairTaskCriteria){
+				service.loadResult(c,onSuccess[
+					getView().showResult(it)
+				])
+			}
+		}
+	 
+		service{
+			@Inject criteriaMapper : RepairTaskCriteriaMapper
+			@Inject mapper : RepairTaskStatByMonthCriteriaDataMapper
+			op loadResult(uicriteria : UIRepairTaskCriteria):Collection<UIRepairTaskStatByMonthCriteriaData>{
+				val c = uicriteria.createPagedCriteria(typeof(RCRepairTaskCriteria),criteriaMapper,entities)
+				c.includeFinishedTask = true
+				val r = c.createStatCriteria(typeof(RCRepairTaskStatByMonthCriteria)).list.^map[mapper.transform(it)].unlazy
+				DateUtil$Month::getIterator(uicriteria.reportDateRange.^from,uicriteria.reportDateRange.^to).^map[m|
+					r.findFirst[m.serialize.equals(it.month)].nullsafe[
+						new UIRepairTaskStatByMonthCriteriaData=>[
+							it.month= m.serialize 
+							it.cnt=0l
+						]
+					]
+				].toList
+			}
+		}
+	}
+	view RepairTaskStatByMonthView for RepairTaskStatByMonthPresenter{
+		con: Widget
+		asWidget():Widget{
+			con
+		}
+		chart : ColumnChart<UIRepairTaskStatByMonthCriteriaData>
+		@Inject criteriaForm : RepairTaskCriteriaForm
+
+		layout{
+			con = 
+				widgets.VLayout=>[
+					add(
+						TABLE=>[
+						tr=>[
+							td=>[it+=criteriaForm.reportDateRange.asWidget=>[
+								criteriaForm.reportDateRange.value = new com.uniquesoft.gwt.shared.datatype.UIDateRange=>[
+									it.^from = today.addMonths(-12)
+									it.^to = today
+								]
+								criteriaForm.reportDateRange.addValueChangedListener[
+									refresh
+								]
+							]
+							]
+							td=>[
+								it+=widgets.TextButton("刷新")[
+									refresh
+								]
+							]
+						]
+					],widgets.VLayoutData(1,-1)
+					)
+					
+					chart = new ColumnChart('报修数量','月份')=>[
+						numberProvider = [cnt]
+						categoryProvider = [month]
+					]
+					
+					add(chart.asWidget,widgets.VLayoutData(1,0.6))
+					
+					chart.addValueSelectedListener[
+						repairTaskStatByFaultTypeListPresenter.setMonth(it.month)
+						repairTaskStatByOrganizationTypeListPresenter.setMonth(it.month)
+						groupTaskStatByTeamListPresenter.setMonth(it.month)
+						chart.highlight(it)
+					]
+					add(widgets.HLayout=>[
+						add(widgets.FieldSet("故障类型统计")=>[
+							widget = repairTaskStatByFaultTypeListPresenter.getView().asWidget
+							],widgets.HLayoutData(0.33,1)
+						)
+						add(widgets.FieldSet("报修部门统计")=>[
+							widget = repairTaskStatByOrganizationTypeListPresenter.getView().asWidget
+							],widgets.HLayoutData(0.33,1))
+						add(widgets.FieldSet("维修班组统计")=>[
+							widget = groupTaskStatByTeamListPresenter.getView().asWidget
+							],widgets.HLayoutData(0.34,1))
+					],widgets.VLayoutData(1,0.4))
+				]
+				
+		}
+
+		op refresh():void{
+			repairTaskStatByFaultTypeListPresenter.setDateRange(criteriaForm.value.reportDateRange)
+			repairTaskStatByOrganizationTypeListPresenter.setDateRange(criteriaForm.value.reportDateRange)
+			groupTaskStatByTeamListPresenter.setDateRange(criteriaForm.value.reportDateRange)
+			fire view.filterRequest(criteriaForm.value)
+		}
+
+		op showResult(results:Collection<UIRepairTaskStatByMonthCriteriaData>):void{
+			chart.objects = results
+		}
+
+	}	
+	
+}

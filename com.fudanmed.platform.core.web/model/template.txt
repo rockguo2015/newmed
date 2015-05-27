@@ -1,0 +1,192 @@
+	signal ${EntityName}sChanged
+	
+	ui-command Create${EntityName}Command require proxy of ${PreFix}${ParentEntityName} "新建"{
+		factory createOrUpdate${EntityName}Presenter : CreateOrUpdate${EntityName}Presenter
+		execute{
+			createOrUpdate${EntityName}Presenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command Update${EntityName}Command require proxy of ${PreFix}${EntityName} "修改"{
+		factory createOrUpdate${EntityName}Presenter : CreateOrUpdate${EntityName}Presenter
+		execute{
+			createOrUpdate${EntityName}Presenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command Delete${EntityName}Command require proxy of ${PreFix}${EntityName} "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.${EntityName}sChanged
+				])
+			].show
+		}
+		service{
+			op delete(value : proxy of ${PreFix}${EntityName}):void{
+				//TODO Delete
+			}
+		}
+	}
+
+	presenter CreateOrUpdate${EntityName}Presenter for UI${EntityName}{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : proxy of ${PreFix}${ParentEntityName}){
+				commiter=[notifier|
+					service.createValue(getView().value,parent,onSuccess[
+						fire eventbus.${EntityName}sChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of ${PreFix}${EntityName}){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.${EntityName}sChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : ${EntityName}Mapper
+			op loadValue(pvalue : proxy of ${PreFix}${EntityName}) : UI${EntityName}{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UI${EntityName}) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UI${EntityName},parent : proxy of ${PreFix}${ParentEntityName}) : void{
+				(resolve parent).createDocument[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdate${EntityName}View<${EntityName}Form> for CreateOrUpdate${EntityName}Presenter ui-size:(300,200) ui-title:"??维护"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}
+
+	
+	
+	
+	
+	
+	
+	signal DeviceDocumentStoragesChanged
+	
+	ui-command CreateDeviceDocmentStorageCommand require proxy of RCDevice "上传设备文档"{
+		factory createOrUpdateDeviceDocumentStoragePresenter : CreateOrUpdateDeviceDocumentStoragePresenter
+		execute{
+			createOrUpdateDeviceDocumentStoragePresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command UpdateDeviceDocmentStorageCommand require proxy of RCDeviceDocumentStorage "修改设备文档"{
+		factory createOrUpdateDeviceDocumentStoragePresenter : CreateOrUpdateDeviceDocumentStoragePresenter
+		execute{
+			createOrUpdateDeviceDocumentStoragePresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeleteDeviceDocmentStorageCommand require proxy of RCDeviceDocumentStorage "删除设备文档"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.deleteDocument(value,onSuccess[
+					fire eventbus.DeviceDocumentStoragesChanged
+				])
+			].show
+		}
+		service{
+			op deleteDocument(value : proxy of RCDeviceDocumentStorage):void{
+				(resolve value).device.removeDocument(resolve value)
+			}
+		}
+	}
+
+	presenter CreateOrUpdateDeviceDocumentStoragePresenter for UIDeviceDocumentStorage{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : proxy of RCDevice){
+				commiter=[notifier|
+					service.createValue(getView().value,parent,onSuccess[
+						fire eventbus.DeviceDocumentStoragesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of RCDeviceDocumentStorage){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.DeviceDocumentStoragesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : DeviceDocumentStorageMapper
+			op loadValue(pvalue : proxy of RCDeviceDocumentStorage) : UIDeviceDocumentStorage{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIDeviceDocumentStorage) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIDeviceDocumentStorage,parent : proxy of RCDevice) : void{
+				(resolve parent).createDocument[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateDeviceDocumentStorageView<DeviceDocumentStorageForm> for CreateOrUpdateDeviceDocumentStoragePresenter ui-size:(300,200) ui-title:"上传设备文档"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}
+	

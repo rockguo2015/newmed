@@ -1,0 +1,249 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.domain.organization.*
+	import com.uniquesoft.gwt.client.common.*
+	import edu.fudan.langlab.domain.security.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import edu.fudan.mylang.pf.IObjectFactory
+	
+	ui-entity UIProductWarehouseStorageSummary for RCProductWarehouseStorageSummary{
+		store : proxy of RCWarehouse "仓库"
+				
+		productSpecsSid : String "条码"
+		materialId : String "物品编号"
+		brand : proxy of RCMaterialBrand "品牌"
+		name : String "物品名称"
+		typeDesc : String "规格型号"
+		unit : proxy of RCProduceSpecificationUnit "计量单位"
+		
+		quantity : Integer "库存数量"
+	
+		map ProductWarehouseStorageSummaryMapper{
+			direct{
+				store readonly,
+				quantity readonly,
+				{productSpecsSid,entity.productSpec.sid} readonly,
+				{materialId,entity.productSpec.materialId} readonly,
+				{brand,entity.productSpec.brandType} readonly,
+				{name,entity.productSpec.name} readonly,
+				{typeDesc,entity.productSpec.typeDesc} readonly,
+				{unit,entity.productSpec.unit} readonly
+			}
+		}
+	
+		ui-component ProductWarehouseStorageSummaryListGrid as GXTGrid{
+			binding{store,productSpecsSid,materialId,name,brand,typeDesc,quantity,unit}
+		}
+		
+		ui-component ProductWarehouseStorageSummaryListView as GXTListView{
+			template render(value : UIProductWarehouseStorageSummary) {
+				"<div>
+					<div style='float:left'><span style='font-size:120%;font-weight:bold;'>{value.name}</span><BR> 条码:{value.productSpecsSid} 规格:{value.typeDesc} 品牌:{value.brand}</div> 
+					<div style='width:50px;float:right'>{value.quantity}{value.unit}</div>
+				</div>"
+			}
+		}
+	}
+	
+	signal ProductWarehouseStorageSummarysChanged
+	
+	ui-criteria UIProductWarehouseStorageSummaryCriteria for RCProductWarehouseStorageSummaryCriteria{
+		store : proxy of RCWarehouse "仓库"
+		productType : proxy of RCProductType "物品类别"
+		stores : Collection<Long> 		
+		
+		productSpec : UIProductSpecification "物品"
+		map ProductWarehouseStorageSummaryCriteriaMapper{
+			@Inject entities : IObjectFactory
+			@Inject warehouseDAO : RCWarehouseDAO
+			direct{store,productSpec readonly,productType}
+			to entity{
+				if(ui.productSpec!=null)
+					entity.productSpec = entities.get(typeof(RCProductSpecification),ui.productSpec.id)
+				entity.stores = warehouseDAO.findManagedWarehouse.^map[^id].unlazy
+			}
+		}
+		ui-component ProductWarehouseStorageSummaryCriteriaForm as GXTForm{
+			@Inject productSpecificationListView : ProductSpecificationListView
+			binding{
+				store as ComboBoxItem content from AllWarehouseByManagerContentProvider,
+				productType as SuggestionItem content from AllProductTypeContentProvider,
+				productSpec as SuggestionItem(productSpecificationListView) content from AllProductSpecificationContentProvider
+			}
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+				this.storeContentProvider.load(employee)[
+					notifier.apply(null)
+				]
+			}
+			
+		}
+	}
+	
+	presenter ProductWarehouseStorageSummaryManagementPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UIProductWarehouseStorageSummary>)
+			signal in refresh()
+	
+			signal out filterRequest(c : UIProductWarehouseStorageSummaryCriteria)
+			signal out inStockRequest()
+			signal out transferRequest()
+			signal out showStorageDetailRequest(value : proxy of RCProductWarehouseStorageSummary)
+			
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void			
+			
+		}
+		
+		interaction{
+			factory createOrUpdateInStockRecordPresenter : CreateOrUpdateInStockRecordPresenter
+			factory createOrUpdateTransferRecordPresenter : CreateOrUpdateTransferRecordPresenter
+			factory createOrUpdateWorkItemOutStockRecordPresenter : CreateOrUpdateWorkItemOutStockRecordPresenter
+			part productStoreTransactionListPresenter : ProductStoreTransactionListPresenter
+			part productWarehouseStorageListPresenter : ProductWarehouseStorageListPresenter
+			part productSpecificationDetailPresenter : ProductSpecificationDetailPresenter
+			input call.setup(postInit : (ProductWarehouseStorageSummaryManagementPresenter)=>void ){
+				initPart(productStoreTransactionListPresenter).setup[
+					initPart(productWarehouseStorageListPresenter).setup[
+						initPart(productSpecificationDetailPresenter).setup[
+						this.activate[
+							service.loadCurrentUser(onSuccess[
+								getView().setSourceWarehouseContext(it)[
+									fire view.refresh
+									postInit.apply(this)
+									
+								]
+							])
+						]]
+						]
+				]
+			}
+			
+			input view.filterRequest(c : UIProductWarehouseStorageSummaryCriteria){
+				service.filter(c,onSuccess[
+					productStoreTransactionListPresenter.reset
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.ProductWarehouseStorageSummarysChanged(){
+				fire view.refresh
+			}
+			input view.inStockRequest(){
+				createOrUpdateInStockRecordPresenter.get=>[
+					setup4Create[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.transferRequest(){
+				createOrUpdateTransferRecordPresenter.get=>[
+					setup4Create[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.showStorageDetailRequest(value : proxy of RCProductWarehouseStorageSummary){
+				productStoreTransactionListPresenter.setProductStorage4Summary(value)
+				productWarehouseStorageListPresenter.setProductWarehouseStorageSummary(value)
+				service.getProductSpec(value,onSuccess[
+					productSpecificationDetailPresenter.setDetailInfo(it)
+				])
+			}
+		}
+		service{
+			@Inject criteriaMapper : ProductWarehouseStorageSummaryCriteriaMapper
+			@Inject mapper : ProductWarehouseStorageSummaryMapper
+			@Inject systemUserService : ISystemUserService
+	
+			op filter(uicriteria : UIProductWarehouseStorageSummaryCriteria) : IPagedResult<UIProductWarehouseStorageSummary>{
+				var c = uicriteria.createPagedCriteria(typeof(RCProductWarehouseStorageSummaryCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op delete(value : proxy of RCProductWarehouseStorageSummary) : void {
+				entities.delete(resolve value)
+			}
+			op getProductSpec(value: proxy of RCProductWarehouseStorageSummary) : proxy of RCProductSpecification{
+				(resolve value).productSpec.toProxy
+			}
+			op loadCurrentUser() : proxy of RCEmployee{
+				(systemUserService.currentUserAsParty as RCEmployee).toProxy
+			}
+			
+		}
+	}
+	
+	view ProductWarehouseStorageSummaryManagementView for ProductWarehouseStorageSummaryManagementPresenter{
+		@Inject listGrid : ProductWarehouseStorageSummaryListGrid
+		@Inject criteriaForm : ProductWarehouseStorageSummaryCriteriaForm
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.FramedPanel("库存台帐")=>[
+				setWidget(widgets.VLayout=>[
+					add(
+						TABLE=>[
+							tr=>[
+								td=>[it += criteriaForm.store.asWidget]
+								td=>[it += criteriaForm.productType.asWidget]
+								td=>[it += criteriaForm.productSpec.asWidget]
+								td=>[it += widgets.TextButton("查询")=>[
+									setWidth("80px")
+									addSelectHandler[
+										fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+											page = 1
+										])
+									]
+								]]
+							]
+						]
+					)
+					
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]	
+					
+					add( widgets.ContentPanel()=>[
+							widget = widgets.VLayout=>[
+								add(listGrid.asWidget,widgets.VLayoutData(1,1))
+								add(pager.asWidget,widgets.VLayoutData(1,-1))
+							]
+						],widgets.VLayoutData(1,0.45))					
+										
+					add(widgets.TabPanel=>[
+						add(productStoreTransactionListPresenter.getView().asWidget,"库存变动记录")
+						add(productWarehouseStorageListPresenter.getView().asWidget,"批次信息")
+						add(productSpecificationDetailPresenter.getView().asWidget,"物品信息")
+					],widgets.VLayoutData(1,0.55))
+					listGrid.addSelectEntityListener[
+						fire view.showStorageDetailRequest(it.toProxy)
+					]
+				])
+			]					
+		}
+		op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+			criteriaForm.setSourceWarehouseContext(employee)[
+				notifier.apply(null)
+			]
+		}
+		
+		op showResults(results : IPagedResult<UIProductWarehouseStorageSummary>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+	}	
+}

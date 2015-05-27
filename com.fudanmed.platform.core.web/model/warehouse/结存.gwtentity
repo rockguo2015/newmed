@@ -1,0 +1,275 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.*
+	import com.sencha.gxt.widget.core.client.form.*
+	ui-datatype UIProductSummarySnapshotStatCriteriaData for RCProductSummarySnapshotStatCriteriaData{
+		storageSummary : proxy of RCProductWarehouseStorageSummary
+		store : proxy of RCWarehouse "仓库"
+		productSpec : proxy of RCProductSpecification "材料"
+
+		startQuantity: Long "期初库存"
+		startAmount : Double "期初金额"
+		
+		finishQuantity: Long "期末库存"
+		finishAmount : Double "期末金额"
+		
+		inStockQuantity :Long "入库数量"
+		inStockAmount : Double "入库金额"
+		outStockQuantity :Long "出库数量"
+		outStockAmount : Double "出库金额"
+		stockTakingStockQuantity :Long "盘点数量" 
+		stockTakingStockAmount : Double  "盘点金额"
+		transferStockQuantity :Long  "调拨数量	"
+		transferStockAmount : Double "调拨金额"
+		workitemStockQuantity :Long  "领料数量	"
+		workitemStockAmount : Double  "领料金额"
+		
+		map ProductSummarySnapshotStatCriteriaDataMapper{
+			direct{
+				storageSummary readonly,
+				{store,entity.storageSummary.store} readonly,
+				{productSpec,entity.storageSummary.productSpec}readonly,
+				inStockQuantity readonly,
+				outStockQuantity readonly,
+				stockTakingStockQuantity readonly,
+				transferStockQuantity readonly,
+				workitemStockQuantity readonly
+				,inStockAmount readonly,stockTakingStockAmount readonly,transferStockAmount readonly,workitemStockAmount readonly,outStockAmount readonly
+			}
+			
+		}
+		ui-component ProductSummarySnapshotStatCriteriaDataListGrid as GXTGrid{
+			binding{
+				store,productSpec,
+				startQuantity,
+				inStockQuantity,
+				outStockQuantity,
+				stockTakingStockQuantity,
+				transferStockQuantity,
+				workitemStockQuantity,
+				finishQuantity,
+				startAmount,
+				inStockAmount,
+				outStockAmount,
+				stockTakingStockAmount,
+				transferStockAmount,
+				workitemStockAmount,
+				finishAmount
+			}
+		}
+	}
+	
+	
+
+	ui-criteria UIProductSummarySnapshotCriteria for RCProductSummarySnapshotCriteria{
+		dateFrom : Date "起始日期"
+		dateTo : Date "结束日期"
+		store : proxy of RCWarehouse "仓库"
+		productSpec : UIProductSpecification "材料"
+		
+		map ProductSummarySnapshotCriteriaMapper{
+			required entities: edu.fudan.mylang.pf.IObjectFactory
+			direct{dateFrom,dateTo,store}
+			to entity{
+				entity.productSpec = resolve ui.productSpec
+			}
+		}
+		ui-component ProductSummarySnapshotCriteriaForm as GXTForm{
+			required productSpecificationListView : ProductSpecificationListView
+			
+			binding{
+				dateFrom,
+				dateTo,
+				store as ComboBoxItem content from client.warehouse.AllWarehouseContentProvider,
+				productSpec as SuggestionItem(productSpecificationListView) content from client.warehouse.AllProductSpecificationContentProvider
+			}
+		}
+	}
+	
+	presenter ProductSummarySnapshotQueryListPresenter provide UIProductSummarySnapshotStatCriteriaData{
+		view interface{
+			signal in showResults(results : IPagedResult<UIProductSummarySnapshotStatCriteriaData>)
+			signal in refresh()
+			op getCriteria():UIProductSummarySnapshotCriteria
+			signal out filterRequest(c : UIProductSummarySnapshotCriteria)
+			
+			op getActionContext():ActionContext<UIProductSummarySnapshotStatCriteriaData>
+		}
+
+		interaction{
+			
+			input prepare.setup(){
+				this.activate[
+					fire view.refresh
+					done
+				]
+			}
+			input view.filterRequest(c : UIProductSummarySnapshotCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+		}
+		service{
+			@Inject criteriaMapper : ProductSummarySnapshotCriteriaMapper
+			@Inject mapper : ProductSummarySnapshotStatCriteriaDataMapper
+			@Inject dao : RCProductSummarySnapshotDAO
+			op filter(uicriteria : UIProductSummarySnapshotCriteria) : IPagedResult<UIProductSummarySnapshotStatCriteriaData>{
+				var c = uicriteria.createPagedCriteria(typeof(RCProductSummarySnapshotCriteria),criteriaMapper,entities)
+				c.createStatCriteria(typeof(RCProductSummarySnapshotStatCriteria)).listAndTransform[mapper.transform(it)]=>[
+					forEach[item|
+						if(uicriteria.dateFrom!=null)
+							dao.findLastSnapshot(uicriteria.dateFrom,resolve item.storageSummary)=>[
+								item.startQuantity = it.quantity.longValue
+								item.startAmount = it.amount
+							]
+						else{
+							item.startQuantity = 0l
+							item.startAmount = 0d
+						}
+						
+						val finishDate = if(uicriteria.dateTo!=null)uicriteria.dateTo else today
+						dao.findLastSnapshot(finishDate.addDays(1), resolve item.storageSummary)=>[
+								item.finishQuantity = it.quantity.longValue
+								item.finishAmount = it.amount
+							]						
+					]
+				]
+			}
+		}
+	}
+	
+	view ProductSummarySnapshotQueryListView for ProductSummarySnapshotQueryListPresenter{
+		@Inject listGrid : ProductSummarySnapshotStatCriteriaDataListGrid
+		@Inject criteriaForm : ProductSummarySnapshotCriteriaForm
+		
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			listGrid.unForceFit
+			con = widgets.VLayout=>[
+				add(
+					TABLE=>[
+						tr=>[
+							td=>[it+=criteriaForm.store.asWidget]
+							td=>[it+=criteriaForm.productSpec.asWidget]
+							td=>[]
+						]
+						tr=>[
+							td=>[it+=criteriaForm.dateFrom.asWidget]
+							td=>[it+=criteriaForm.dateTo.asWidget]
+							td=>[it += widgets.TextButton("查找")=>[
+								setWidth("80px")
+								addSelectHandler[
+									fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+										page = 1
+									])
+								]
+							]]
+						]
+					]
+				)
+
+				pager = listGrid.createPager=>[
+					pagerHandler = [int pageNum, int recordsPerPage|
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = pageNum
+							pageSize = recordsPerPage
+						])							
+					]
+				]
+				
+				add(listGrid.asWidget,widgets.VLayoutData(1,1))
+				add(pager.asWidget)
+			]
+		}
+		
+		op showResults(results : IPagedResult<UIProductSummarySnapshotStatCriteriaData>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		op getCriteria():UIProductSummarySnapshotCriteria{
+			criteriaForm.value
+		}
+		op getActionContext():ActionContext<UIProductSummarySnapshotStatCriteriaData>{
+			listGrid.createActionContext
+		}
+	}	
+	
+	ui-command ShowProductSummarySnapshotManagementCommand "库存变动查询"{
+		factory managementPresenter : ProductSummarySnapshotManagementPresenter
+		execute{
+			managementPresenter.get.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}	
+	presenter ProductSummarySnapshotManagementPresenter{
+		view interface{
+		}
+		interaction{
+			part queryListPresenter : ProductSummarySnapshotQueryListPresenter
+			part productStoreTransactionListPresenter :ProductStoreTransactionListPresenter
+			input prepare.setup(){
+				initPart(queryListPresenter).setup[
+				initPart(productStoreTransactionListPresenter).setup[
+					this.activate[
+						done
+					]
+				]]
+			}
+		}
+	}
+	
+	view ProductSummarySnapshotManagementView for ProductSummarySnapshotManagementPresenter{
+		con: Widget
+		asWidget() : Widget{
+			con
+		}	
+		layout{
+			val ac = queryListPresenter.getView().actionContext
+			ac.addSelectionChangedListener[selection|
+				if(selection?.onlySelected!=null)
+					productStoreTransactionListPresenter.setProductStorage4Summary(
+						selection.onlySelected.storageSummary,queryListPresenter.getView().getCriteria.dateFrom,queryListPresenter.getView().getCriteria.dateTo
+					)
+				else productStoreTransactionListPresenter.reset
+				
+			]
+			con = widgets.FramedPanel("库存变动查询")=>[
+				widget=widgets.VLayout=>[
+					add(queryListPresenter.getView().asWidget,widgets.VLayoutData(1,0.7))
+					add(widgets.TabPanel=>[
+						add(productStoreTransactionListPresenter.getView().asWidget,"库存变动明细")
+					],widgets.VLayoutData(1,0.3))
+				]
+			]
+		}
+		
+	}
+ 
+}

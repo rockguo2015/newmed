@@ -1,0 +1,35 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.domain.organization.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+
+	ui-command DeliverTaskDeleteCommand require UICenterlizedDeliverTask[*] "删除任务" {
+		execute{
+			widgets.ConfirmMessageBox("确认","确认删除")[
+				service.deleteAll(value.^map[toProxy].toList,onSuccess[
+						fire eventbus.CenterlizedDeliverTasksChanged
+				])
+			].show
+		}
+		check-enable{
+			value.forall[status==UICenterlizedDeliverTaskStatus::scheduled]
+		}
+		service{
+			@Inject dao : DLCenterlizedDeliverTaskDAO
+			op deleteAll(toDeletes:Collection<DLCenterlizedDeliverTaskProxy>):void{
+				toDeletes.forEach[
+					dao.delete(resolve it)
+				]
+			}
+		}
+	}
+	
+}

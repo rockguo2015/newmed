@@ -1,0 +1,576 @@
+package com.fudanmed.platform.core.web feature organization{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.sencha.gxt.data.shared.TreeStore
+	import com.sencha.gxt.widget.core.client.treegrid.TreeGrid
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.GWTNamedEntity
+	
+	import com.uniquesoft.gwt.shared.datatype.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.uniquesoft.uidl.validation.*
+	import com.uniquesoft.gwt.client.common.selector.IHasObjectSelectionProvider
+	ui-entity UIOrganization for RCOrganization{
+		code : String "代码"
+		name : String "名称"
+		simplePy : String
+		parent : proxy of RCOrganization "所属"
+		positions : UIOnsitePosition[*] "位置"
+		positionsProxy : proxy of RCOnsitePosition[*] "位置"
+		inputNext : Boolean "继续输入"
+
+		parentCode : String "所属机构"
+		positionCodes : String "所属位置"
+		fullPath : String
+		
+		map OrganizationMapper validate by OrganizationValidator{
+			direct{code,name,simplePy,parent,positions,{positionsProxy,entity.positions} readonly}
+			from entity{
+				ui.fullPath = entity.fullPath
+			}
+		}
+		
+		csv-map OrganizationCSVMapper{
+			binding{code,name,parentCode,positionCodes}
+			
+		}
+
+		constraints OrganizationValidator{
+			@Inject organizationDAO : RCOrganizationDAO
+			rule Required on code
+			rule Required on name
+			constraint CodeIsUnique on code "机构代码必须唯一"{
+				entity.isUnique[newValue|
+					organizationDAO.findByCode(newValue.code)
+				]
+			}
+		}
+	
+		ui-component OrganizationForm as GXTForm{
+			binding{code,name, parent as ReadonlyItem,inputNext}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(parent.asWidget)
+						addFill(code.asWidget)
+						addFill(name.asWidget)
+					]
+				]
+			}			
+		}
+	
+		ui-component OrganizationListGrid as GXTTreeGrid{
+			binding{name ,code ,positionsProxy}
+		}
+	
+		ui-component OrganizationOutlineTreeGrid as GXTTreeGrid{
+			binding{name as StringColumn(150)}
+		}
+	}	
+	
+	signal OrganizationsChanged
+	signal OrganizationChanged(org : proxy of RCOrganization)
+	signal OrganizationDeleted(org : proxy of RCOrganization)
+	signal OrganizationAdded(org : proxy of RCOrganization)
+	signal InputNextOrganization(parent : proxy of RCOrganization)
+	
+	presenter CreateOrUpdateOrganizationPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIOrganization
+			op setValue(value : UIOrganization) : void
+			signal in setParent(value : proxy of RCOrganization)
+			op setPositions(positions : UIOnsitePosition[*]) : void
+			op getPositions() : Collection<UIOnsitePosition>
+		}
+		
+		interaction{
+			used4Update : boolean
+			parent : proxy of RCOrganization
+			part onsiteLocationOutlinePresenter : OnsiteLocationOutlinePresenter 
+			
+			input call.setup4Create(parent : proxy of RCOrganization,
+				(CreateOrUpdateOrganizationPresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.parent = parent
+				initPart(onsiteLocationOutlinePresenter).setupAsSimpleTree[
+					this.activate[
+						fire view.setParent(parent)
+						postInitializer.apply(this)
+					]
+				]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCOrganization,
+				(CreateOrUpdateOrganizationPresenter)=>void postInitializer
+			){
+				used4Update = true
+				initPart(onsiteLocationOutlinePresenter).setupAsSimpleTree[
+					this.activate[
+						service.loadValue(value,onSuccess[
+							getView().setValue(it)
+							getView().setPositions(it.positions)
+							postInitializer.apply(this)
+						])
+					]
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value=>[it.positions = getView().positions],onSuccess[
+						fire eventbus.OrganizationChanged(getView().value.toProxy)
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value=>[
+						it.parent = parent
+						it.positions = getView().positions
+					],onSuccess[
+						fire eventbus.OrganizationAdded(it)
+						notifier.success
+						if(getView().value.inputNext.isLogicTrue){
+							fire eventbus.InputNextOrganization(parent)
+						}
+					])
+				}
+			}			
+		}
+		
+		service{
+			
+			@Inject mapper : OrganizationMapper
+			@Inject organizationDAO : RCOrganizationDAO
+			op loadValue(pvalue : proxy of RCOrganization) : UIOrganization{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIOrganization) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIOrganization) : proxy of RCOrganization{
+				organizationDAO.createOrganization(null)[
+					mapper.transform(uivalue,it)
+				].toProxy
+			}
+		}
+	}
+	
+	view CreateOrUpdateOrganizationView for CreateOrUpdateOrganizationPresenter implements IHasSize, IHasTitle{
+		@Inject form : OrganizationForm
+		@Inject selectedLocation : OnsitePositionSimpleListGrid
+		initializer{
+			this += widgets.VLayout=>[
+				add(form.asWidget,widgets.VLayoutData(390,-1,10))
+				add(
+					widgets.FieldSet("选择位置")=>[
+						val avaiableAc = onsiteLocationOutlinePresenter.getView().actionContext
+						selectedLocation.asWidget
+						val selectedAc = selectedLocation.createActionContext
+						widget = TABLE=>[
+							tr=>[
+								td=>[it += onsiteLocationOutlinePresenter.getView.asWidget=>[width="150" height="180" ]]
+								td=>[
+									
+									add(widgets.VLayout=>[
+										add(avaiableAc.onSingleObjectAction[
+											onExecute[UIOnsitePosition p|
+												avaiableAc.deselect
+												selectedLocation.addElement(p)
+											]
+											onCheckEnable[
+												avaiableAc.isOnlySelectedAnd[selected|
+													!selectedLocation.objects.exists[it.id==selected.id]
+												]
+											]
+											
+										].asButtonRequester("=>"))
+										add(selectedAc.onSingleObjectAction[
+											onExecute[UIOnsitePosition p|
+												avaiableAc.deselect
+												selectedLocation.removeElement(p)
+											]
+										].asButtonRequester("<="))
+										
+									])]
+								td=>[it += widgets.ContentPanel()=>[widget = selectedLocation.asWidget=>[height="180"]]]
+								
+							]
+						]
+					],widgets.VLayoutData(380,-1,1)
+				)
+				add(form.inputNext.asWidget=>[form.inputNext.value=true],widgets.VLayoutData(100,-1,10))
+			]
+		}
+		op getValue() : UIOrganization{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIOrganization value) : void{
+			form.value = value
+			form.inputNext.asWidget.hide
+		}
+		op getSize():Size{
+			new Size(400,420)
+		}
+		op getTitle():String{
+			'组织机构维护'
+		}
+		op setPositions(positions : UIOnsitePosition[*]) : void{
+			selectedLocation.objects = positions
+		}
+		op getPositions() : Collection<UIOnsitePosition>{
+			selectedLocation.objects.unlazy
+		}
+		op setParent(parent : proxy of RCOrganization):void{
+			form.parent.value = parent
+		}
+	}
+			
+	presenter OrganizationManagementPresenter{
+		view interface{
+			signal in setOrganizationOutlinePresenter(organizationOutlinePresenter : OrganizationOutlinePresenter)
+			signal out createRequest(parent : proxy of RCOrganization) @organizationManagementPresenter "新建"
+			signal out importRequest() @organizationManagementPresenter "导入"
+			signal out deleteRequest(value : proxy of RCOrganization) @organizationManagementPresenter "删除"
+			signal out modifyRequest(value : proxy of RCOrganization) @organizationManagementPresenter "修改"
+			
+		}
+
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateOrganizationPresenter
+			factory organizationUploaderPresenter : OrganizationUploaderPresenter
+			
+			required organizationOutlinePresenter : OrganizationOutlinePresenter
+			input call.setup(postInit : (OrganizationManagementPresenter)=>void){
+				organizationOutlinePresenter.setup[
+					fire view.setOrganizationOutlinePresenter(it)
+					this.registerPart(it)
+					this.activate[
+						postInit.apply(this)
+					]
+				]
+			}
+			
+			input view.createRequest(parent : proxy of RCOrganization){
+					createOrUpdatePresenter.get=>[
+						setup4Create(parent)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]
+			}
+			
+			input eventbus.InputNextOrganization(parent : proxy of RCOrganization){
+					createOrUpdatePresenter.get=>[
+						setup4Create(parent)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]
+			}
+			input view.modifyRequest(value : proxy of RCOrganization){
+					createOrUpdatePresenter.get=>[
+						setup4Update(value)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]				
+			}
+			input view.deleteRequest(value : proxy of RCOrganization){
+				service.delete(value,onSuccess[
+					fire eventbus.OrganizationDeleted(value)
+				])
+			}
+			
+			input view.importRequest(){
+				organizationUploaderPresenter.get.asDialog("导入机构信息")
+			}
+			
+		}
+		service{
+			@Inject mapper : OrganizationMapper
+			@Inject organizationService : RCOrganizationService
+			op delete(value : proxy of RCOrganization) : void {
+				entities.delete(resolve value)
+			}
+		}
+	}
+	
+	view OrganizationManagementView for OrganizationManagementPresenter{
+		@Inject listGrid : OrganizationListGrid
+		organizationOutlinePresenter : OrganizationOutlinePresenter
+		con: Widget
+		asWidget() : Widget{
+			con
+		}
+		layout{
+			listGrid.asWidget
+			con = widgets.FramedPanel("组织机构维护")=>[
+				setWidget(organizationOutlinePresenter.getView().asWidget)
+				
+				val ac = organizationOutlinePresenter.getView().getActionContext
+				
+				
+				securities.check(ui-requester.createRequest)[v|
+					addButton(widgets.TextButton("新建")=>[
+						addSelectHandler[
+							val possibleParent = ac.onlySelected
+							fire view.createRequest(possibleParent?.toProxy)
+						]
+					])
+				]
+				securities.check(ui-requester.importRequest)[v|
+					addButton(widgets.TextButton("导入")=>[
+						addSelectHandler[
+							fire view.importRequest()
+						]
+					])
+				]
+				
+				securities.check(ui-requester.modifyRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIOrganization selectedValue |
+							fire view.modifyRequest(selectedValue.toProxy)
+						]
+					].asButtonRequester("修改"))					
+				]					
+				securities.check(ui-requester.deleteRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIOrganization selectedValue |
+							widgets.ConfirmMessageBox("确认","确认删除")[
+								fire view.deleteRequest(selectedValue.toProxy)
+							].show
+						]
+					].asButtonRequester("删除"))					
+				]
+			]					
+		}
+		
+		interaction{
+			input view.setOrganizationOutlinePresenter(organizationOutlinePresenter : OrganizationOutlinePresenter){
+				this.organizationOutlinePresenter = organizationOutlinePresenter
+			}
+		}
+		
+	}
+	
+	presenter OrganizationOutlinePresenter implements IHasObjectSelectionProvider<UIOrganization>{
+		view interface{
+			signal in showResults(values : UIOrganization[*])
+			
+			signal in updateOrganization(org : UIOrganization)
+			signal in deleteOrganization(org : proxy of RCOrganization)
+			signal in addOrganization(org : UIOrganization)
+			op getActionContext() : ActionContext<UIOrganization>
+			signal in asSimpleTree(isSimple : Boolean) 
+			op select(org : UIOrganization):void
+			
+		}
+		
+		interaction{
+			input call.setup(postInit:(OrganizationOutlinePresenter)=>void){
+				fire view.asSimpleTree(false)
+				this.activate[
+					service.loadAllOrganization(onSuccess[
+						fire view.showResults(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			input call.setupAsSimpleTree(postInit:(OrganizationOutlinePresenter)=>void){
+				fire view.asSimpleTree(true)
+				this.activate[
+					service.loadAllOrganization(onSuccess[
+						fire view.showResults(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			input eventbus.OrganizationsChanged(){
+				service.loadAllOrganization(onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.OrganizationChanged(org : proxy of RCOrganization){
+				service.getValue(org,onSuccess[
+					fire view.updateOrganization(it)
+				])
+			}
+			input eventbus.OrganizationDeleted(org : proxy of RCOrganization){
+				fire view.deleteOrganization(org)
+			}
+			input eventbus.OrganizationAdded(org : proxy of RCOrganization){
+				service.getValue(org,onSuccess[
+					fire view.addOrganization(it)
+				])
+			}
+			input call.getSelectionProvider():ObjectSelectionProvider<UIOrganization>{
+				getView().getActionContext
+			}
+		}
+	
+		service{
+			@Inject mapper : OrganizationMapper
+			@Inject organizationService : RCOrganizationService
+			op loadAllOrganization() : UIOrganization[*]{
+				organizationService.ALlOrganization.^map[mapper.transform(it)].unlazy
+			}
+			op getValue(org : proxy of RCOrganization) : UIOrganization{
+				mapper.transform(resolve org)
+			}
+		}
+	}
+	
+	view OrganizationOutlineView for OrganizationOutlinePresenter{
+		@Inject fullListGrid : OrganizationListGrid
+		@Inject simpleListGrid : OrganizationOutlineTreeGrid
+		listGrid : edu.fudan.langlab.gxt.client.component.treegrid.GXTTreeGridComponent<UIOrganization>
+		con : Widget
+		asWidget():Widget{
+			con
+		}
+		
+		layout{
+			listGrid.asWidget
+			con = widgets.VLayout=>[
+					add(listGrid.createFilter[item,filter|
+						item.name.contains(filter) || (item.simplePy!=null && item.simplePy.contains(filter))
+					],widgets.VLayoutData(1,-1))
+					add(widgets.ContentPanel()=>[
+						widget = listGrid.asWidget
+					],widgets.VLayoutData(1,1))
+				]
+		}
+
+		op showResults(results : UIOrganization[*]) : void{
+			listGrid.setContentProvider(new OrganizationTreeContentProvider(results))
+		}
+		
+		op updateOrganization(org : UIOrganization) : void{
+			listGrid.store.update(org)
+		}
+		
+		op deleteOrganization(org : proxy of RCOrganization) : void{
+			var store = listGrid.store
+			store.remove(store.findModelWithKey(org.hashCode.toString))
+		}
+		
+		op addOrganization(org : UIOrganization) : void{
+			var TreeStore store = listGrid.store
+			if(org.parent==null){
+				store.add(org );
+			}else{
+				var parentInStore = store.findModelWithKey(org.parent.hashCode.toString)				
+				store.add(parentInStore,org);
+			}
+		}
+		
+		op getActionContext() : ActionContext<UIOrganization>{
+			listGrid.createActionContext
+		}
+		op select(org : UIOrganization):void{
+			listGrid.select(org)
+		}
+		op asSimpleTree(isSimple : Boolean) : void{
+			if(isSimple){
+				listGrid = simpleListGrid
+			}else{
+				listGrid = fullListGrid
+			}
+		}
+
+	}
+	
+	presenter OrganizationUploaderPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getFile() : File
+		}
+		
+		interaction{
+			input call.performCommit(CommitResultNotifier notifier){
+				service.doUpload(getView().getFile,callback[
+					onSuccessDo[
+						notifier.success
+						fire eventbus.OrganizationsChanged()
+					]
+					onFailureDo[caught|
+						caught.showErrors
+					]					
+				])
+			}
+		}
+
+		service{
+			@Inject csvMapper : OrganizationCSVMapper
+			@Inject mapper : OrganizationMapper
+			@Inject onsitePositionDAO : RCOnsitePositionDAO
+			@Inject organizationDAO : RCOrganizationDAO
+			op doUpload(file : File) throws CSVValidationException : void{
+				file.importWith(csvMapper)[
+					onCommitEach[uivalue|
+						val value = entities.create(typeof(RCOrganization))
+						mapper.transform(uivalue,value)
+						
+						value.parent = organizationDAO.findByCode(uivalue.parentCode)
+						if(uivalue.parentCode!=null && value.parent==null){
+							Validates::reportSingleError("parentCode","无效所属机构代码:"+uivalue.parentCode)
+						}
+						
+						if(!uivalue.positionCodes.isNullOrEmpty)
+							uivalue.positionCodes.split(":").forEach[
+								val onsitePosition = onsitePositionDAO.findByCode(it)
+								if(onsitePosition==null) Validates::reportSingleError("positionCodes","无效位置代码:"+it)
+								else value.addtoPositions(onsitePosition)
+							]
+					]
+				]
+			}
+		}
+	}
+	
+	view OrganizationUploaderView for OrganizationUploaderPresenter implements IHasSize, IHasTitle{
+		@Inject uploadForm : CommonUploadForm
+		initializer{
+			this += uploadForm.asWidget
+		}
+		
+		op getFile() : File{
+			uploadForm.file.value
+		}
+		
+		op mapField( errorKey:String ): HasEditorErrors {
+			uploadForm.mapToErrorEditor(errorKey)
+		}
+		
+		op getSize():Size{
+			new Size(400,150)
+		}
+		
+		op getTitle():String{
+			"机构信息导入"
+		}
+	}
+}

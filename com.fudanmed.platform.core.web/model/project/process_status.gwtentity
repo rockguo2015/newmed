@@ -1,0 +1,45 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+
+	//保修单状态
+	ui-enum UIRepairTaskStatus for RCRepairTaskStatus{
+		title{
+			newCreated = "新建"
+			scheduled = "已调度"
+			wait4GroupTaskFinish = "维修"
+			wait4SchedulerProcess = "串单待重调"
+			wait4Close = "待结单"
+			cancel = "取消"
+			closed = "完成"
+		}
+	}
+
+	//调度单状态
+	ui-enum UIGroupTaskStatus for RCGroupTaskStatus{
+		title{
+			newCreated = "新建"
+			wait4TasksFinish ="维修"
+			finished = "完工"
+			misDispatched ="完工[串单]"
+			wait4TeamOwnerProcess ="待结单"
+			canceled = "已取消"
+		}
+	}
+
+	//工单状态
+	ui-enum UIWorkItemTaskStatus for RCWorkItemTaskStatus{
+		title{
+			processing = "维修"
+			followuping = "跟进"
+			finished = "完工"
+			pending = "挂单中"
+			pendFinish = "完工[挂单已处理]"
+			outsourcing ="需外协"
+			outsourceFinish = "完工[外协已处理]"
+			misDispatching ="完工[串单重调]"
+		}		
+	}
+	
+}

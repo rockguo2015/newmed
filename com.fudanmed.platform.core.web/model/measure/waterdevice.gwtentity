@@ -1,0 +1,253 @@
+package com.fudanmed.platform.core.web feature measure{
+	
+	import java.util.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.measure.*
+	import com.fudanmed.platform.core.measure.^proxy.*
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import  com.fudanmed.platform.core.web.shared.measure.*
+	
+	ui-entity UIWaterMeasureDevice for RCWaterMeasureDevice{
+		sid : String "编号"
+		name:String "名称"
+		location : String "安装位置"
+		map WaterMeasureDeviceMapper validate by WaterMeasureDeviceValidator{
+			direct{sid,name,location}
+		}
+	
+		constraints WaterMeasureDeviceValidator{
+		}
+	
+		ui-component WaterMeasureDeviceForm as GXTForm{
+			binding{sid,name,location}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(sid.asWidget)
+						addFill(name.asWidget)
+						addFill(location.asWidget)
+					]
+				]
+			}			
+		}
+	
+		ui-component WaterMeasureDeviceListGrid as GXTGrid{
+			binding{sid,name,location}
+		}
+		
+	}
+	
+	signal WaterMeasureDevicesChanged
+	
+	ui-command CreateWaterMeasureDeviceCommand require proxy of RCWaterMeasureDeviceType "新建"{
+		factory createOrUpdateWaterMeasureDevicePresenter : CreateOrUpdateWaterMeasureDevicePresenter
+		execute{
+			createOrUpdateWaterMeasureDevicePresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command UpdateWaterMeasureDeviceCommand require proxy of RCWaterMeasureDevice "修改"{
+		factory createOrUpdateWaterMeasureDevicePresenter : CreateOrUpdateWaterMeasureDevicePresenter
+		execute{
+			createOrUpdateWaterMeasureDevicePresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeleteWaterMeasureDeviceCommand require proxy of RCWaterMeasureDevice "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.WaterMeasureDevicesChanged
+				])
+			].show
+		}
+		service{
+			op delete(value : proxy of RCWaterMeasureDevice):void{
+				//TODO Delete
+			}
+		}
+	}
+
+	presenter CreateOrUpdateWaterMeasureDevicePresenter for UIWaterMeasureDevice{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : proxy of RCWaterMeasureDeviceType){
+				commiter=[notifier|
+					service.createValue(getView().value,parent,onSuccess[
+						fire eventbus.WaterMeasureDevicesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of RCWaterMeasureDevice){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.WaterMeasureDevicesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+	
+		service{
+			@Inject mapper : WaterMeasureDeviceMapper
+			op loadValue(pvalue : proxy of RCWaterMeasureDevice) : UIWaterMeasureDevice{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIWaterMeasureDevice) : void{
+				(resolve uivalue).update[
+					mapper.transform(uivalue,it)
+				]
+			}
+			op createValue(uivalue : UIWaterMeasureDevice,parent : proxy of RCWaterMeasureDeviceType) : void{
+				(resolve parent).createDevice[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateWaterMeasureDeviceView<WaterMeasureDeviceForm> for CreateOrUpdateWaterMeasureDevicePresenter ui-size:(300,200) ui-title:"水表信息维护"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}
+	
+	presenter WaterMeasureDeviceListPresenter {
+		view interface{
+			signal in setResults(results : UIWaterMeasureDevice[*])
+			op getActionContext() : ActionContext< UIWaterMeasureDevice>	
+		}
+		
+		interaction{
+			context : proxy of RCWaterMeasureDeviceType
+			
+			input prepare.setup(context : proxy of RCWaterMeasureDeviceType){
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadWaterMeasureDeviceList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input eventbus.WaterMeasureDevicesChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : WaterMeasureDeviceMapper
+			
+			op loadWaterMeasureDeviceList(context : proxy of RCWaterMeasureDeviceType) : UIWaterMeasureDevice[*]{
+				(resolve context).measureDevices.filter(typeof(RCWaterMeasureDevice)).^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view WaterMeasureDeviceListView for WaterMeasureDeviceListPresenter{
+		con : Widget
+		@Inject listGrid : WaterMeasureDeviceListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		
+		interaction{
+			input view.setResults(results : UIWaterMeasureDevice[*]){
+				listGrid.objects = results
+			}
+		}
+		op getActionContext() : ActionContext< UIWaterMeasureDevice>{
+				listGrid.createActionContext
+		}
+	}
+	
+	
+	ui-command ShowWaterMeasureDeviceManagementCommand require  proxy of RCWaterMeasureDeviceType ""{
+		factory managementPresenter : WaterMeasureDeviceManagementPresenter
+		execute{
+			managementPresenter.get.setup(value)[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}	
+	presenter WaterMeasureDeviceManagementPresenter{
+		view interface{
+			op setContext(context : proxy of RCWaterMeasureDeviceType):void			
+		}
+		interaction{
+			part queryListPresenter : WaterMeasureDeviceListPresenter
+			input prepare.setup(context : proxy of RCWaterMeasureDeviceType){
+				initPart(queryListPresenter).setup(context)[
+					this.activate[
+						getView().setContext(context)
+						done
+					]
+				]
+			}
+		}
+	}
+	
+	view WaterMeasureDeviceManagementView for WaterMeasureDeviceManagementPresenter{
+		con: Widget
+		asWidget() : Widget{
+			con
+		}	
+		context : proxy of RCWaterMeasureDeviceType
+		@Inject createWaterMeasureDeviceCommand : CreateWaterMeasureDeviceCommand
+		@Inject updateWaterMeasureDeviceCommand : UpdateWaterMeasureDeviceCommand
+		@Inject deleteWaterMeasureDeviceCommand : DeleteWaterMeasureDeviceCommand
+		
+		layout{
+			val ac = queryListPresenter.getView().actionContext.adapt[toProxy]
+			con = widgets.ContentPanel=>[
+				widget = queryListPresenter.getView().asWidget
+				addCommand([|context],createWaterMeasureDeviceCommand)
+				addCommand(ac,updateWaterMeasureDeviceCommand)
+				addCommand(ac,deleteWaterMeasureDeviceCommand)
+			]
+		}
+		op setContext(context : proxy of RCWaterMeasureDeviceType):void{
+			this.context = context
+		}
+	}	
+}
+		

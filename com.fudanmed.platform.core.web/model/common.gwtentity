@@ -1,0 +1,43 @@
+package com.fudanmed.platform.core.web feature common{
+	import com.google.gwt.core.client.*
+	import com.google.gwt.user.client.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.uniquesoft.gwt.shared.datatype.File
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.workbench.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.web.client.organization.SupplierManagementPresenter
+	import com.fudanmed.platform.core.web.client.project.ReportManagementPresenter
+	import com.fudanmed.platform.core.domain.*
+	import com.google.gwt.user.client.^ui.Anchor
+	import com.google.gwt.user.client.DOM
+	import com.google.gwt.core.client.Scheduler
+	import com.fudanmed.platform.core.web.client.utils.Deferred
+	import com.sencha.gxt.widget.core.client.container.HtmlLayoutContainer
+	//this is a comment
+	service ServerSideTimeService{
+		op getTime():Date{
+			 new Date()
+		}
+	}
+	
+	ui-datatype CommonUploadParam{
+		file : File "上传文件"
+	
+		ui-component  CommonUploadForm as GXTForm{
+			binding{file}
+			con : Widget
+			asWidget(): Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						it += file.asWidget
+					]
+				]
+			}
+		}
+	}	
+	
+
+	
+}

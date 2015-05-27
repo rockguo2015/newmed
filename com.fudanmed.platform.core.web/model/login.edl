@@ -1,0 +1,59 @@
+package com.fudanmed.platform.core.web.server.^service.login{
+	
+	import edu.fudan.mylang.pf.*
+	import java.util.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.security.shared.*
+	import com.uniquesoft.gwt.server.^service.common.*
+	import edu.fudan.langlab.uidl.domain.app.server.^service.login.ISecurityService
+	import com.fudanmed.platform.core.domain.*
+	import edu.fudan.langlab.security.shared.IFunctionIdentifier
+	import  com.fudanmed.platform.core.web.server.^service.login.*
+	
+	service SystemUserService implements ISystemUserService{
+		inject objectFactory : IObjectFactory
+		op getCurrentUser() : User {
+			var req := com::uniquesoft::gwt::server::^service::common::HttpRequestThreadLocal::get
+			var userid := req.session.getAttribute('__userid__') as Long
+			objectFactory.get(typeof(User),userid)
+		}
+		
+		op setCurrentUser(user : User): void{
+			 var req := com::uniquesoft::gwt::server::^service::common::HttpRequestThreadLocal::get
+			 req.session.setAttribute('__userid__',user.^id)
+		}
+	
+		op getCurrentUserAsParty():Party{
+			var req := com::uniquesoft::gwt::server::^service::common::HttpRequestThreadLocal::get
+			var userid := req.session.getAttribute('__userid__') as Long
+			var user := objectFactory.get(typeof(User),userid)
+			switch(user){
+				RCEmployeeUser:{
+					user.employee
+				}
+				RCRepairReportUser:{
+					user.organization
+				}
+			}
+			
+		}
+	}
+
+	service RCUISecurityService implements edu.fudan.langlab.uidl.domain.app.server.^service.login.ISecurityService{
+		inject rcSecurityService : RCSecurityService
+		inject securityService : SecurityService
+		inject appFunctionService : AppFunctionService
+		op  login(userid: String , passwd:String ) : User{
+//			rcSecurityService.employeeUserLogin(userid,passwd)
+			rcSecurityService.userLogin(userid,passwd)
+		}
+		
+		op loadValidFunctions4User(userid : String) : Collection<? extends IFunctionIdentifier>{
+			securityService.getAllRoles4User(userid).^map[appFunctionService.loadAllFunctions4Role(it.roleId)].flatten.^map[appFunction|
+				new FunctionIdentifier( appFunction.functionId)
+			].toSet
+		}		
+	}
+	
+}

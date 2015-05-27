@@ -1,0 +1,305 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.code.*
+	import edu.fudan.langlab.domain.security.*
+	
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.uniquesoft.gwt.shared.GWTNamedEntity
+	
+	import com.fudanmed.platform.core.web.client.selector.*
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.server.^service.organization.*
+	import com.sencha.gxt.core.client.util.KeyNav
+	import com.fudanmed.platform.core.web.client.common.*
+		
+	ui-datatype HistoryReportContent{
+		comment : String
+		ui-component HistoryReportContentListGrid as GXTGrid{
+			binding{comment}
+		}
+	}
+
+	presenter CreateOrUpdateReportPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIRepairTask
+			signal in setValue(value : UIRepairTask)
+			signal in showHistoryReportContents(reportContents : String[*])
+			signal out locationSelected(loc : proxy of RCOnsitePosition)
+			signal in showOrgRelatedInfo(pos : UIOnsitePosition[*], workers : UIEmployee[*], historyTasks: UIRepairTask[*])
+			
+			signal in setLocation(loc : String)
+			signal in setDefaultReporter(reporter : UIEmployee)
+			signal in setReportOrg(organization : proxy of RCOrganization)
+			
+		}
+		
+		interaction{
+			used4Update : boolean
+			
+			input call.setup4Create(
+				(CreateOrUpdateReportPresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.activate[
+					
+					service.getReportOrg(onSuccess[
+						fire view.setReportOrg(it)
+						service.loadOrgRelatedInfoData(it,onSuccess[orgRelInfo|
+							fire view.showOrgRelatedInfo(orgRelInfo.pos,orgRelInfo.workers,orgRelInfo.historyTasks)
+							service.getLastReportContents(onSuccess[
+								fire view.showHistoryReportContents(it)
+								service.getReporter(onSuccess[
+									fire view.setDefaultReporter(it)
+									postInitializer.apply(this)
+								])
+							])
+						])
+					])
+				]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCRepairTask,
+				(CreateOrUpdateReportPresenter)=>void postInitializer
+			){
+				used4Update = true
+					this.activate[
+						service.loadValue(value,onSuccess[
+							getView().setValue(it)
+							postInitializer.apply(this)
+						])
+					]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.RepairTasksChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.RepairTasksChanged()
+						notifier.success
+					])
+				}
+			}
+			
+			input view.locationSelected(loc : proxy of RCOnsitePosition){
+				service.getFullPath(loc,onSuccess[
+					fire view.setLocation(it)
+				])
+			}
+		}
+	
+		service{
+			@Inject mapper : RepairTaskMapper
+			@Inject positionMapper : OnsitePositionMapper
+			@Inject faultTypeMapper : FaultTypeMapper
+			@Inject employeeMapper : EmployeeMapper
+			@Inject systemUserService : ISystemUserService
+			@Inject sequenceService : RCSequenceService
+			@Inject reportValidator : ReportValidator	
+			@Inject codeService : CodeService
+			@Inject dao : RCRepairTaskDAO
+			op loadValue(pvalue : proxy of RCRepairTask) : UIRepairTask{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIRepairTask) : void{
+				uivalue.validateWith(reportValidator)
+				val v = (resolve uivalue)
+				mapper.transform(uivalue,v)
+				v.operator = systemUserService.currentUserAsParty
+				v.updated
+			}
+			op createValue(uivalue : UIRepairTask) : void{
+				uivalue.validateWith(reportValidator)
+				dao.createRepairTask4Reporter[
+					mapper.transform(uivalue,it)
+					^start(true)
+				]
+			}
+			
+			op loadFaultTypes(name : String) : UIFaultType[*]{
+				(entities.createQueryCriteria(typeof(RCFaultTypeContentProviderCriteria))=>[
+					it.limit = 20
+					it.name = '%'+name+'%'
+				]).list.^map[faultTypeMapper.transform(it)].unlazy
+			}
+			
+			op loadOrgRelatedInfoData(org : proxy of RCOrganization) : OrgRelatedInfoData{
+				val organization = resolve org
+				new OrgRelatedInfoData()=>[
+					it.pos = organization.positions.^map[positionMapper.transform(it)].unlazy
+//					it.workers = organization.onJobEmployees.^map[employeeMapper.transform(it)].unlazy
+					it.historyTasks = (entities.createQueryCriteria(typeof(RCRepairTaskCriteria))=>[
+						it.limit=20
+						it.reportOrg = organization
+						it.includeFinishedTask = true
+						WorkflowEnumWorkAround::initRepairTaskCriteria(it)
+					]).list.^map[mapper.transform(it)].unlazy
+				]
+			}
+	
+			op getFullPath(loc : proxy of RCOnsitePosition) : String{
+				(resolve loc).fullPath
+			}
+			
+			op loadOrgRelatedInfoData4Task(uivalue : proxy of RCRepairTask) : OrgRelatedInfoData{
+				loadOrgRelatedInfoData((resolve uivalue).reportOrg.toProxy)
+			}
+		
+			op getReportOrg() : proxy of RCOrganization{
+				(systemUserService.currentUser as RCEmployeeUser).employee.organization.toProxy
+			}
+			op getReporter() : UIEmployee{
+				employeeMapper.transform((systemUserService.currentUserAsParty as RCEmployee))
+			}
+			
+			op getLastReportContents() : String[*]{
+				(entities.createQueryCriteria(typeof(RCRepairTaskCriteria))=>[
+					it.reportOrg = getReportOrg
+					it.includeFinishedTask = true
+					it.limit = 100
+					WorkflowEnumWorkAround::initRepairTaskCriteria(it)					
+				]).list.^map[it.comment].filterNull.toSet.unlazy
+			}
+		}
+	}
+	
+	view CreateOrUpdateReportView for CreateOrUpdateReportPresenter implements IHasSize, IHasTitle{
+		required form : ReportForm
+		required historyTasksListGrid : RepairTaskSimpleListGrid
+		required positionsListGrid : OnsitePositionSimpleListGrid
+//		required workersListGrid : EmployeeSimpleListGrid
+		required historyReportContentListGrid : HistoryReportContentListGrid
+		required timeService : ServerSideTimeServiceAsync
+		
+		initializer{
+			historyTasksListGrid.asWidget
+			positionsListGrid.asWidget
+//			workersListGrid.asWidget
+			val positionAc = positionsListGrid.createActionContext
+//			val workersAc = workersListGrid.createActionContext
+			
+			this += widgets.HLayout=>[
+				add(widgets.VLayout=>[
+					add(
+						widgets.FieldSet("历史报修内容")=>[
+								widget = historyReportContentListGrid.asWidget=>[
+									setHideHeaders(true)
+									historyReportContentListGrid.addSelectEntityListener[
+										form.reportContentSelected(it.comment)
+									]
+							]
+						],
+						widgets.VLayoutData(1,0.6))
+					add(
+						widgets.FieldSet("位置")=>[
+							widget=positionsListGrid.asWidget=>[
+								setHideHeaders(true)
+							]
+							
+						],
+						widgets.VLayoutData(1,0.4)
+					)
+//					add(
+//						widgets.FieldSet("报修人")=>[
+//							widget=workersListGrid.asWidget=>[
+//								setHideHeaders(true)
+//							]
+//						],
+//						widgets.VLayoutData(1,1)
+//					)
+				],widgets.HLayoutData(300,500,2))
+
+				add(widgets.VLayout=>[
+					add(
+						widgets.FieldSet("报修信息")=>[widget=form.asWidget=>[
+							timeService.getTime(onSuccess[
+								form.reportDate.value = it.trimDate
+								form.reportTime.value = it
+								form.reserveDate.value = it.trimDate
+								form.reserveTime.value = it
+							])
+						]],
+						widgets.VLayoutData(1,270))
+					add(widgets.FieldSet("历史报修信息")=>[widget=historyTasksListGrid.asWidget]
+						,widgets.VLayoutData(1,1))
+				],widgets.HLayoutData(600,500,2))				
+				
+				positionAc.addSelectionChangedListener[
+					forOnlySelected[
+						fire view.locationSelected(it.toProxy)
+					]
+				]
+//				workersAc.addSelectionChangedListener[
+//					forOnlySelected[selected|
+//						form.reporterName.value = selected.toProxy.name
+//						form.reporterPhone.value = selected.workTel
+//					]
+//				]
+			]
+			
+		}
+		op getValue() : UIRepairTask{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIRepairTask value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(920,600)
+		}
+		op getTitle():String{
+			'故障报修'
+		}
+		
+		interaction{
+			
+			input view.setReportOrg(reportOrg : proxy of RCOrganization){
+				form.reportOrg.value = reportOrg
+				form.faultEmergencyLevel.selectFirst
+			}
+			
+			input view.setDefaultReporter(reporter : UIEmployee){
+				form.reporterName.value = reporter.name
+				form.reporterPhone.value = reporter.workTel
+				
+//				workersListGrid.select(workersListGrid.objects.findFirst[it.id==reporter.id])
+			}
+			
+			input view.showOrgRelatedInfo(positions : UIOnsitePosition[*], workers : UIEmployee[*], historyTasks: UIRepairTask[*]){
+				positionsListGrid.objects = positions
+//				workersListGrid.objects = workers
+				historyTasksListGrid.objects = historyTasks
+				if(positions.size>0)
+					positionsListGrid.select(positions.head)
+			}
+			
+			input view.setLocation(loc : String){
+				form.location.value = loc
+			}
+			
+			input view.showHistoryReportContents(reportContents : String[*]){
+				historyReportContentListGrid.objects = reportContents.^map[reportContent|
+					new HistoryReportContent()=>[
+						it.comment = reportContent
+				]]
+			}
+		}
+					
+	}
+	
+}

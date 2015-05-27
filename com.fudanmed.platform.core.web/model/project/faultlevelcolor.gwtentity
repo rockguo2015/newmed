@@ -1,0 +1,153 @@
+package com.fudanmed.platform.core.web feature organization{
+	
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.organization.*
+	 
+	ui-enum UIStandardColor for RCStandardColor{
+		title{
+			red = "红"
+			blue ="蓝"
+			gray = "灰"
+			green = "绿"
+			orange = "桔黄"
+			purple = "紫"
+			aqua = "天蓝"
+			fuchsia= "品红"
+			yellow = "黄"
+			black = "黑"
+		}
+	}
+	
+	ui-entity UIFaultLevelColorAdaptor for RCFaultLevelColorAdaptor{
+		color : UIStandardColor "提示颜色"
+		faultLevel : proxy of RCFaultLevel "风险等级"
+		
+		map FaultLevelColorAdaptorMapper{
+			direct{color,faultLevel}
+		}
+		
+		ui-component FaultLevelColorAdaptorForm as GXTForm{
+			binding{faultLevel as ReadonlyItem,color as ComboBoxItem}
+			op createWidget():Widget{
+				widgets.VLayout=>[
+					addFill(faultLevel.asWidget)
+					addFill(color.asWidget)
+				]
+			}
+		}
+		
+		ui-component FaultLevelColorAdaptorListGrid as GXTGrid{
+			binding{faultLevel,color}
+		}
+	}
+	
+	signal FaultLevelColorAdaptorsChanged
+	
+	presenter CreateOrUpdateFaultLevelColorAdaptorPresenter for UIFaultLevelColorAdaptor{
+		view interface{
+		}
+		
+		interaction{
+			
+			input prepare.setup4Update(
+				value : proxy of RCFaultLevelColorAdaptor){
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			input form-commit {
+				service.updateValue(getView().value,onSuccess[
+					fire eventbus.FaultLevelColorAdaptorsChanged()
+					notifier.success
+				])
+			}			
+		}
+		
+		service{
+			@Inject mapper : FaultLevelColorAdaptorMapper
+			op loadValue(pvalue : proxy of RCFaultLevelColorAdaptor) : UIFaultLevelColorAdaptor{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIFaultLevelColorAdaptor) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+		}
+	}
+	
+	view CreateOrUpdateFaultLevelColorAdaptorView<FaultLevelColorAdaptorForm> for CreateOrUpdateFaultLevelColorAdaptorPresenter
+	ui-size:(300,200) ui-title:"风险等级颜色设置" 
+	{
+		initializer{
+			this += form.asWidget
+		}
+	}		
+	
+	presenter FaultLevelColorAdaptorListPresenter{
+		view interface{
+			signal in setResults(results : UIFaultLevelColorAdaptor[*])
+			signal out updateRequest(value : proxy of RCFaultLevelColorAdaptor)
+		}
+		
+		interaction{
+			factory createOrUpdateFaultLevelColorAdaptorPresenter : CreateOrUpdateFaultLevelColorAdaptorPresenter
+			input prepare.setup(){
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.refresh(){
+				service.loadFaultLevelColorAdaptorList(onSuccess[items|
+					fire view.setResults(items)
+				])
+			}
+			
+			input view.updateRequest(value : proxy of RCFaultLevelColorAdaptor){
+				createOrUpdateFaultLevelColorAdaptorPresenter.get.setup4Update(value)[popup(it)]
+			}
+			
+			input eventbus.FaultLevelColorAdaptorsChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : FaultLevelColorAdaptorMapper
+			@Inject dao : RCFaultLevelColorAdaptorDao
+			op loadFaultLevelColorAdaptorList() : UIFaultLevelColorAdaptor[*]{
+				dao.findAll().^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view FaultLevelColorAdaptorListView for FaultLevelColorAdaptorListPresenter{
+		con : Widget
+		@Inject listGrid : FaultLevelColorAdaptorListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = widgets.FramedPanel("风险等级颜色设置")=>[
+				widget = listGrid.asWidget
+				addButton(listGrid.createActionContext.onSingleObjectAction[
+					onExecute[UIFaultLevelColorAdaptor v|
+						fire view.updateRequest(v.toProxy)
+					]
+				].asButtonRequester("修改"))
+			]
+		}
+		
+		interaction{
+			input view.setResults(results : UIFaultLevelColorAdaptor[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+}

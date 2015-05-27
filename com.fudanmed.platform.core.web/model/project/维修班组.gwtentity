@@ -1,0 +1,166 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.server.^service.organization.*
+	import com.fudanmed.platform.core.web.*
+	
+	
+	ui-entity UIMaintenanceTeam for RCMaintenanceTeam{
+		organization : proxy of RCOrganization "维修班组"
+		map MaintenanceTeamMapper{
+			direct{organization}
+		}
+	
+		ui-component MaintenanceTeamListGrid as GXTGrid{
+			binding{organization}
+		}
+	}
+
+	presenter MaintenanceTeamManagementPresenter{
+		view interface{
+			signal in showTeams(teams : UIMaintenanceTeam[*])
+			signal out selectAsTeam(org : proxy of RCOrganization) @maintenanceTeamManagementPresenter "选定维修班组"
+			signal out removeFromTeam(team : proxy of RCMaintenanceTeam) @maintenanceTeamManagementPresenter "移除维修班组"
+			signal in setOrganizationOutlinePresenter(organizationOutlinePresenter : OrganizationOutlinePresenter)
+		}
+		
+		interaction{
+			@Inject organizationOutlinePresenter : OrganizationOutlinePresenter
+			
+			input call.setup(postInit : (MaintenanceTeamManagementPresenter)=>void){
+				organizationOutlinePresenter.setupAsSimpleTree[
+					fire view.setOrganizationOutlinePresenter(it)
+					this.registerPart(it)
+					this.activate[
+						refresh
+						postInit.apply(this)
+					]
+				]
+			}
+			input view.selectAsTeam(org : proxy of RCOrganization){
+				service.selectAsTeam(org,onSuccess[team|
+					refresh
+				])
+			}
+			
+			input view.removeFromTeam(team : proxy of RCMaintenanceTeam){
+				service.removeFromTeam(team,onSuccess[org|
+					refresh
+				])
+			}
+			input call.refresh(){
+				service.loadTeams(onSuccess[
+					fire view.showTeams(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject organizationService : RCOrganizationService
+			@Inject mapper : MaintenanceTeamMapper
+			@Inject securityService : SecurityService
+			op selectAsTeam(org : proxy of RCOrganization) : proxy of RCMaintenanceTeam{
+				organizationService.selectAsMaintenanceTeam(resolve org).toProxy
+			}
+			op removeFromTeam(team : proxy of RCMaintenanceTeam) : proxy of RCOrganization{
+				val result = (resolve team).organization.toProxy
+				organizationService.removeMaintenanceTeam(resolve team)
+				result
+			}
+			op loadTeams() : UIMaintenanceTeam[*]{
+				entities.all(typeof(RCMaintenanceTeam)).^map[mapper.transform(it)].unlazy
+   			}
+   		}
+	}
+	
+	
+	view MaintenanceTeamManagementView for MaintenanceTeamManagementPresenter{
+		@Inject maintenanceTeamListGrid : MaintenanceTeamListGrid
+		organizationOutlinePresenter : OrganizationOutlinePresenter
+		
+		con : Widget
+		asWidget():Widget{
+			con
+		}
+	
+		layout{
+			con = widgets.FramedPanel("维修班组设置")=>[
+				widget = widgets.HLayout=>[
+					maintenanceTeamListGrid.asWidget
+					val ac = organizationOutlinePresenter.getView().actionContext
+					add(
+						widgets.FieldSet("组织机构")=>[
+							widget = organizationOutlinePresenter.getView().asWidget
+						]
+						,widgets.HLayoutData(0.4,1,1)
+					)
+					add(TABLE=>[
+						tr=>[
+							td=>[
+							securities.check(ui-requester.selectAsTeam)[v|
+								
+							it += ac.onSingleObjectAction[
+								onExecute[UIOrganization org|
+									ac.deselect
+									fire view.selectAsTeam(org.toProxy)
+								]
+								onCheckEnable[
+									ac.isOnlySelectedAnd[selected|
+										!maintenanceTeamListGrid.objects.exists[it.organization.id==selected.id]
+									]
+								]
+							].asButtonRequester("=>")=>[width=50]
+							]
+							
+						]]
+						tr=>[td=>[
+							securities.check(ui-requester.removeFromTeam)[v|
+							it += maintenanceTeamListGrid.createActionContext.onSingleObjectAction[
+								onExecute[UIMaintenanceTeam team|
+									ac.deselect
+									fire view.removeFromTeam(team.toProxy)
+								]
+							].asButtonRequester("<=")=>[width=50]
+							]
+							]]
+						
+					],widgets.HLayoutData(50,1))
+					add(
+						widgets.FieldSet("维修班组")=>[
+							widget = widgets.ContentPanel=>[
+							 	widget=maintenanceTeamListGrid.asWidget=>[it.hideHeaders = true]]
+						],widgets.HLayoutData(350,1,1)
+					)
+			]
+				
+			]
+		}
+		
+		interaction{
+			input view.showTeams(teams : UIMaintenanceTeam[*]){
+				maintenanceTeamListGrid.objects = teams
+			}
+			input view.setOrganizationOutlinePresenter(organizationOutlinePresenter : OrganizationOutlinePresenter){
+				this.organizationOutlinePresenter = organizationOutlinePresenter
+			}
+		}
+	}
+		
+}

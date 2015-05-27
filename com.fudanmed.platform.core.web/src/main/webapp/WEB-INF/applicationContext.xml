@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:aop="http://www.springframework.org/schema/aop" xmlns:tx="http://www.springframework.org/schema/tx"
+	xmlns:jee="http://www.springframework.org/schema/jee" xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:mvc="http://www.springframework.org/schema/mvc" 
+	xsi:schemaLocation="http://www.springframework.org/schema/beans   http://www.springframework.org/schema/beans/spring-beans-3.0.xsd   http://www.springframework.org/schema/context   http://www.springframework.org/schema/context/spring-context-3.0.xsd   http://www.springframework.org/schema/aop   http://www.springframework.org/schema/aop/spring-aop-3.0.xsd   http://www.springframework.org/schema/jee   http://www.springframework.org/schema/jee/spring-jee-3.0.xsd   http://www.springframework.org/schema/tx   http://www.springframework.org/schema/tx/spring-tx-3.0.xsd http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc-3.0.xsd">
+
+	<bean id="dataSource"
+		class="org.springframework.jdbc.datasource.DriverManagerDataSource">
+		<property name="driverClassName" value="com.mysql.jdbc.Driver" />
+		<property name="url" value="jdbc:mysql://localhost:3306/fudanmedcore" />
+		<property name="username" value="fudanmedcore" />
+		<property name="password" value="fudanmedcore" />
+	</bean>
+	<bean id="sessionFactory"
+		class="org.springframework.orm.hibernate4.LocalSessionFactoryBean">
+		<property name="dataSource" ref="dataSource" />
+		<property name="hibernateProperties">
+			<props>
+				<prop key="hibernate.dialect">
+					 org.hibernate.dialect.MySQL5InnoDBDialect
+				</prop>
+
+				<prop key="hibernate.show_sql">false</prop>
+				<prop key="hibernate.format_sql">true</prop>
+
+				<prop key="hibernate.generate_statistics">false</prop>
+				<prop key="hibernate.hbm2ddl.auto">update</prop>
+				<prop key="hibernate.max_fetch_depth">0</prop>
+
+				<prop key="c3p0.acquire_increment">1</prop>
+				<prop key="c3p0.idle_test_period">100</prop>
+				<prop key="c3p0.max_size">20</prop>
+				<prop key="c3p0.max_statements">0</prop>
+				<prop key="c3p0.min_size">10</prop>
+				<prop key="c3p0.timeout">100</prop>
+				
+				<prop key="hibernate.search.default.directory_provider">filesystem</prop>
+				<prop key="hibernate.search.default.indexBase">C:\lucene\trade</prop>
+				<prop key="hibernate.search.default.indexmanager">near-real-time</prop>
+				
+			</props>
+		</property>		
+		<property name="packagesToScan">
+			<list>
+				<value>edu.fudan.langlab.domain.common.impl</value>
+ 				<value>edu.fudan.langlab.domain.organization.impl</value>
+ 				<value>edu.fudan.langlab.domain.security.impl</value>
+ 				<value>edu.fudan.langlab.domain.task.impl</value>	
+ 				<value>edu.fudan.langlab.domain.updater.impl</value>	
+				<value>edu.fudan.langlab.domain.workflow.impl</value>  				
+				<value>edu.fudan.langlab.domain.statemachine.impl</value>  				
+ 				<value>edu.fudan.langlab.datatypes.impl</value>
+   				<value>com.fudanmed.platform.core.common.impl</value>
+   				<value>com.fudanmed.platform.core.device.impl</value>
+   				<value>com.fudanmed.platform.core.device.pm.impl</value>
+   				<value>com.fudanmed.platform.core.entityextension.impl</value>
+ 				<value>com.fudanmed.platform.core.domain.impl</value>
+ 				<value>com.fudanmed.platform.core.warehouse.impl</value>
+ 				<value>com.fudanmed.platform.core.measure.impl</value>
+ 				<value>com.fudanmed.platform.core.deliver.impl</value>
+ 				
+			</list>
+		</property>		
+	</bean>
+
+	<bean id="transactionManager"
+		class="org.springframework.orm.hibernate4.HibernateTransactionManager">
+		<property name="sessionFactory" ref="sessionFactory" />
+	</bean>
+
+	<bean id="objectFactory"
+		class="edu.fudan.mylang.pf.ObjectFactoryHibernate4Impl">
+		<property name="sessionFactory" ref="sessionFactory" />
+	</bean>
+ 
+     
+	<bean id="convertService" class ="com.uniquesoft.uidl.transform.ConvertService"/>
+<!-- 	<bean id="NameProvider" class="com.lanmon.business.server.service.naming.NameProvider"/>
+ -->	<context:annotation-config />
+	<context:component-scan base-package="com.uniquesoft.uidl" />
+	<context:component-scan base-package="edu.fudan.mylang.pf" />
+	<context:component-scan base-package="edu.fudan.langlab" />
+	<context:component-scan base-package="com.fudanmed.platform.core" />
+		
+	<mvc:annotation-driven/>
+	<tx:annotation-driven transaction-manager="transactionManager" />
+</beans>

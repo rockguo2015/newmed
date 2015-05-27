@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module rename-to='fudanmedcoreweb'>
+	<!-- Inherit the core Web Toolkit stuff. -->
+	<inherits name='com.google.gwt.user.User' />
+	<inherits name="com.google.gwt.i18n.I18N"/>
+	<inherits name="com.google.gwt.inject.Inject" />
+	<inherits name="com.google.common.collect.Collect" />
+	<inherits name='org.eclipse.xtext.xbase.lib.Lib' />	
+	<inherits name='com.uniquesoft.gwt.Sharedlib' />
+	<inherits name='com.sencha.gxt.ui.GXT'/>
+	<inherits name='com.sencha.gxt.chart.Chart'/>
+	
+	<inherits name='edu.fudan.langlab.gxt.GXT'/>
+	<inherits name='edu.fudan.langlab.csv.Csv'/>
+	<inherits name='edu.fudan.langlab.security.Security'/>
+	<inherits name='edu.fudan.langlab.common.Common'/>
+	<inherits name='edu.fudan.langlab.uidl.domain.app.App'/>
+	<inherits name='edu.fudan.langlab.uidl.domain.code.Code'/>
+	<inherits name='edu.fudan.langlab.uidl.domain.document.Document'/>
+	<inherits name="gwtupload.GWTUpload"/>
+	<inherits name="edu.fudan.langlab.domain.Domain"/>
+	<inherits name="com.fudanmed.platform.core.Fudanmedcore"/>
+	<inherits name="com.fudanmed.platform.core.web.Interfaces"/>
+	
+    <inherits name="edu.fudan.langlab.theme.blue.Blue"/>
+<!-- 
+    <inherits name="com.fudanmed.platform.deliver.web.Deliver"/>
+ -->    
+	
+<!--      	<inherits name="com.sencha.gxt.theme.gray.Gray"/>
+ --> 	
+  <inherits name='edu.fudan.langlab.theme.fudanmed.FudanMed'/>
+
+ <!--  <inherits name="edu.fudan.langlab.theme.blue.Blue"/>
+ -->	
+	<!-- Super-dev mode stuff, redirect should be false in production! -->
+	<!-- 
+	<add-linker name="xsiframe"/>
+	<set-configuration-property name="devModeRedirectEnabled" value="true"/>
+	-->
+	<!-- 
+	<set-configuration-property name="CssResource.style" value="pretty"/>
+	 -->
+	<!-- Specify the app entry point class. -->
+	<entry-point class="com.fudanmed.platform.core.web.client.app.MainApplication" />
+
+	<!-- Specify the paths for translatable code -->
+	<source path='client' />
+	<source path='shared' />
+
+	<!-- for I18N -->
+	<extend-property name="locale" values="zh_CN" />
+  <replace-with class="com.fudanmed.platform.core.web.client.score.ScoreFieldDefaultAppearance">
+    <when-type-is class="com.fudanmed.platform.core.web.client.score.ScoreFieldCell.ScoreFieldAppearance" />
+  </replace-with>
+
+</module>
+

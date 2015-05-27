@@ -1,0 +1,186 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.Collection
+	import java.lang.Math
+	import edu.fudan.langlab.uidl.domain.app.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.server.^service.^template.*
+	import com.fudanmed.platform.core.web.shared.project.*
+	import com.google.gwt.user.client.^ui.*
+	
+	ui-datatype EBoardResult{
+		totalPage : Integer
+		curPage : Integer
+		^contents : String
+	}
+
+	presenter EBoardPresenter{
+		view interface{
+			op showResults(html : String) : void
+		}
+		interaction{
+			curPage : Integer
+			input prepare.setup(){
+				curPage = 0
+				this.activate[
+					service.loadActiveTasks(curPage+1,onSuccess[
+						curPage = it.curPage
+						getView().showResults(it.^contents)
+						service.loadRefreshInterval(onSuccess[interval|
+							(new com.uniquesoft.gwt.client.common.Timer()=>[timer|
+								timer.process = [
+									service.loadActiveTasks(curPage+1,onSuccess[
+										curPage = it.curPage
+										getView().showResults(it.^contents)
+										timer.schedule(1500*interval)
+									])
+								]
+							]).schedule(1500*interval)
+							done
+						])
+					])
+				]
+			}
+		}
+		
+		service{
+			@Inject criteriaMapper : RepairTaskCriteriaMapper
+			@Inject mapper : RepairTaskMapper
+			@Inject eboardMessageService : RCEBoardMessageService
+			@Inject systemParameterService :RCSystemParameterService
+			
+			op loadRefreshInterval():Integer{
+				systemParameterService.systemParameter.eboardRefreshInterval
+			}
+			op loadActiveTasks(requestPage : Integer):EBoardResult{
+				val uicriteria =new UIRepairTaskCriteria()=>[
+					it.page = requestPage
+					it.pageSize = 7
+					it.includeFinishedTask = false
+				]
+				val c = uicriteria.createPagedCriteria(typeof(RCRepairTaskCriteria),criteriaMapper,entities)
+				
+				val tempPagedResult = c.listAndTransform[mapper.apply(it)]
+				val pagedResult = 
+					(
+						if(tempPagedResult.result.size==0 && tempPagedResult.totalRecords!=0)
+							 (c=>[it.^start=0]).listAndTransform[mapper.apply(it)]
+						else 
+							tempPagedResult
+					) as IPagedResult 
+				new EBoardResult=>[
+					it.curPage = pagedResult.page
+					it.totalPage = Math::ceil(pagedResult.totalRecords / 7d).intValue 
+					it.^contents = EBoardTemplate::^template(it.curPage,it.totalPage,eboardMessageService.message,pagedResult.result)
+				]
+				
+			}
+		}
+	}	
+	
+	view EBoardView for EBoardPresenter{
+		con : HTML
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = new HTML()=>[
+			]
+		}
+		op showResults(html:String) : void{
+			con.setHTML(html)
+		}
+	}
+	
+	ui-entity UIEBoardMessage for RCEBoardMessage{
+		message : String "内容"
+		map EBoardMessageMapper validate by EBoardMessageValidator{
+			direct{message}
+		}
+	
+		constraints EBoardMessageValidator{
+		}
+	
+		ui-component EBoardMessageForm as GXTForm{
+			binding{message as RichTextItem}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(message.asWidget=>[
+							height = 200
+						])
+					]
+				]
+			}			
+		}
+	}
+	
+	ui-command UpdateEBoardMessageCommand  "通知信息维护" @basic{
+		factory createOrUpdateEBoardMessagePresenter : CreateOrUpdateEBoardMessagePresenter
+		execute{
+			service.loadEBoardMessage(onSuccess[
+				createOrUpdateEBoardMessagePresenter.get.setup4Update(it)[
+					popup(it)
+				]
+			])
+		}
+		service{
+			@Inject eboardMessageService : RCEBoardMessageService
+			op loadEBoardMessage():proxy of RCEBoardMessage{
+				eboardMessageService.getEBoardMessage().toProxy
+			}
+		}
+	}
+
+	presenter CreateOrUpdateEBoardMessagePresenter for UIEBoardMessage{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			
+			input prepare.setup4Update(value : proxy of RCEBoardMessage){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : EBoardMessageMapper
+			@Inject dao : RCEBoardMessageService
+			op loadValue(pvalue : proxy of RCEBoardMessage) : UIEBoardMessage{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIEBoardMessage) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+		}
+	}
+	
+	view CreateOrUpdateEBoardMessageView<EBoardMessageForm> for CreateOrUpdateEBoardMessagePresenter ui-size:(500,300) ui-title:"通知信息维护"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}
+
+	
+}

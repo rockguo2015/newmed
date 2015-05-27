@@ -1,0 +1,296 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import com.uniquesoft.gwt.shared.datatype.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.sencha.gxt.data.shared.TreeStore
+	import com.sencha.gxt.widget.core.client.treegrid.TreeGrid
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.validation.ValidationException
+	import com.uniquesoft.uidl.validation.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	
+	ui-enum UIPrimaryTypeEnum{
+		number,numberWithUnit,range,string,date
+		title{
+			
+		}
+	}
+	
+	
+	/*
+	 * extension PrimaryTypeExtension{
+	 * 		interface{
+	 * 		}
+	 * }
+	 */
+	
+	ui-entity UIAttributeSlot for RCAttributeSlot{
+	
+		parentSlot : UIAttributeSlot
+		slotName : String "参数名"
+		type : proxy of RCType "参数类型"
+		slotValue : proxy of RCValue "值"
+		isPrimary : Boolean
+		typeEnum : UIPrimaryTypeEnum
+		
+		map AttributeSlotMapper{
+			direct{{slotName,entity.attr.name} readonly,{type,entity.valueType} readonly,{slotValue,entity.value} readonly}
+			from entity{
+				ui.isPrimary = entity.getValueType instanceof RCPrimaryType
+				switch(entity.valueType){
+					RCNumberType:{
+						ui.typeEnum = UIPrimaryTypeEnum::number 
+					}
+					RCNumberWithUnitType:{
+						ui.typeEnum = UIPrimaryTypeEnum::numberWithUnit
+					}
+					RCRangeType:{
+						ui.typeEnum = UIPrimaryTypeEnum::range
+					}
+					RCStringType:{
+						ui.typeEnum = UIPrimaryTypeEnum::string
+					}
+					RCDateType:{
+						ui.typeEnum = UIPrimaryTypeEnum::date
+					}
+				}
+			}
+		}
+	
+		ui-component AttributeSlotForm as GXTForm{
+			binding{}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+					]
+				]
+			}			
+		}
+	
+		ui-component AttributeSlotListGrid as GXTTreeGrid{
+			binding{slotName as StringColumn(100),type as DefaultColumn(60),slotValue as AutoExpandColumn}
+			
+		}
+	}
+	signal AttributeSlotChanged(slot : UIAttributeSlot)
+	signal AttributeSlotDeleted(slot : proxy of RCAttributeSlot)
+	signal AttributeSlotAdded(slot : UIAttributeSlot)
+	
+	presenter AttributeSlotTreeListPresenter{
+		view interface{
+			signal in setResults(results : UIAttributeSlot[*])
+			signal out editSlotValueRequest(slot : UIAttributeSlot) @deviceManagementPresenter "修改设备参数"
+			signal in activateEditor(editor : IValueEditor)
+			signal in deactivateEditor()
+			op getActionContext():ActionContext<UIAttributeSlot>
+			
+			signal in addSlot(slot : UIAttributeSlot, parent : UIAttributeSlot)
+			signal in updateSlot(slot : UIAttributeSlot)
+		}
+		
+		interaction{
+			context : proxy of RCExtensiableEntity
+			factory numberValueEditorPresenter  : NumberValueEditorPresenter
+			factory rangeValueEditorPresenter : RangeValueEditorPresenter
+			factory stringValueEditorPresenter : StringValueEditorPresenter
+			factory dateValueEditorPresenter : DateValueEditorPresenter
+			
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(context : proxy of RCExtensiableEntity){
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.setExtensiableEntity(context : proxy of RCExtensiableEntity){
+				this.context = context
+				refresh
+			}
+			
+			input view.editSlotValueRequest(slot : UIAttributeSlot){
+				switch(slot.typeEnum){
+					case UIPrimaryTypeEnum::number:{
+						numberValueEditorPresenter.get.setup4Number(slot.toProxy)[
+							fire view.activateEditor(it)
+						]
+					}
+					case UIPrimaryTypeEnum::numberWithUnit:{
+						numberValueEditorPresenter.get.setup4NumberWithUnit(slot.toProxy)[
+							fire view.activateEditor(it)
+						]
+					}
+					case UIPrimaryTypeEnum::range:{
+						rangeValueEditorPresenter.get.setup(slot.toProxy)[
+							fire view.activateEditor(it)
+						]
+					}
+					case UIPrimaryTypeEnum::string:{
+						stringValueEditorPresenter.get.setup(slot.toProxy)[
+							fire view.activateEditor(it)
+						]
+					}
+					case UIPrimaryTypeEnum::date:{
+						dateValueEditorPresenter.get.setup(slot.toProxy)[
+							fire view.activateEditor(it)
+						]
+					}
+					default:{
+						fire view.deactivateEditor()
+					}
+				}
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadAttributeSlotList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			
+			input eventbus.AttributeSlotAdded(slot : UIAttributeSlot){
+//				service.getParentSlot(slot.toProxy,onSuccess[parent|
+//					fire view.addSlot(slot,parent)
+//				])
+				refresh();
+			}
+			
+			input eventbus.AttributeSlotChanged(slot : UIAttributeSlot){
+				fire view.updateSlot(slot)
+			}
+			input eventbus.AttributeSlotDeleted(slot : proxy of RCAttributeSlot){
+				refresh();
+			}
+			
+			
+//			input eventbus.AttributeSlotsChanged(){
+//				refresh
+//			}
+		}
+		
+		service{
+			@Inject mapper : AttributeSlotMapper
+			
+			op getParentSlot(slot : proxy of RCAttributeSlot) :  UIAttributeSlot{
+				mapper.transform((resolve slot).value.slotOwner)
+			}
+			
+			op loadAttributeSlotList(context : proxy of RCExtensiableEntity) : UIAttributeSlot[*]{
+				val result = <UIAttributeSlot>newArrayList();
+				
+				(resolve context).value.slots.forEach[
+					val uislot = mapper.transform(it)
+					result += uislot
+					loadAttributeSlotListFromSlot(uislot,result)
+				]
+				result
+			}
+			
+			op loadAttributeSlotListFromSlot(slot : UIAttributeSlot, result : Collection<UIAttributeSlot>) : void{
+				val slotValue =  (resolve slot).value
+				if(slotValue instanceof RCCompositeValue){
+					(slotValue as RCCompositeValue).slots.forEach[
+						val uislot = mapper.transform(it)
+						uislot.parentSlot = slot
+						result += uislot
+						loadAttributeSlotListFromSlot(uislot,result)
+					]
+				}
+			}
+		}
+	}
+	
+	view AttributeSlotTreeListView for AttributeSlotTreeListPresenter{
+		con : Widget
+		editorPart : IPresenterContainer
+		activeEditor : IValueEditor
+		confirmButton : TextButton
+		@Inject listGrid : AttributeSlotListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = widgets.HLayout=>[
+				add(listGrid.asWidget,widgets.HLayoutData(1,1))
+				securities.check(ui-requester.editSlotValueRequest)[v|
+					listGrid.addSelectEntityListener[
+						fire view.editSlotValueRequest(it)
+					]
+					editorPart = widgets.PresenterContainer
+					add(widgets.ContentPanel=>[
+						widget = editorPart.asWidget
+							addButton(confirmButton = widgets.TextButton("确认")[
+								activeEditor.performCommit()
+							])
+					],widgets.HLayoutData(200,1))
+				]
+			]
+		}
+	
+		interaction{
+			input view.setResults(results : UIAttributeSlot[*]){
+				listGrid.setContentProvider(new ExtensiableValueTreeContentProvider(results))
+			}
+			input view.activateEditor(editor : IValueEditor){
+				activeEditor = editor
+				editorPart.showActivatedPresenter(editor as Presenter)
+				confirmButton.enable
+			}
+		}
+		
+		op getActionContext():ActionContext<UIAttributeSlot>{
+			listGrid.createActionContext
+		}
+		
+		op addSlot(slot : UIAttributeSlot,parent : UIAttributeSlot):void{
+			var TreeStore store = listGrid.store
+			if(parent==null){
+				store.add(slot);
+			}else{
+				var parentInStore = store.findModelWithKey(parent.hashCode.toString)				
+				store.add(parentInStore,slot);
+			}
+		}
+		
+		op updateSlot(slot : UIAttributeSlot):void{
+			var TreeStore store = listGrid.store
+			store.update(slot)			
+		}
+		op deactivateEditor():void{
+			editorPart.clear
+			confirmButton.disable
+		}
+		op destory():void{
+			editorPart.destory
+		}
+	}
+}
+	

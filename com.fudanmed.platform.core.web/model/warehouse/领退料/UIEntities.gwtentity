@@ -1,0 +1,91 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.GWTEntity
+	import com.uniquesoft.gwt.client.common.print.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	
+	content-provider CurrentUserStockTeamProvider for proxy of RCMaintenanceTeam{
+		required dao : RCMaintenanceTeamDao
+		contents{
+			dao.allStoreValidTeam4CurrentUser.unlazy
+		}
+	}
+
+	ui-entity UIWorkItemStockRecord for RCWorkItemStockRecord{
+		typeName : String "操作类型"
+		reportSid : String "报修单号"
+		sid : String "领/退料单号"
+		sourceStore : proxy of RCWarehouse "仓库"
+		workItem : proxy of RCWorkItemTask "工单"
+		date : Date "领/退料日期"
+		operator : proxy of RCEmployee "操作员"
+		comment : String "备注"
+
+		map WorkItemStockRecordMapper{
+			direct{typeName readonly,sid readonly,sourceStore,workItem,date,operator,comment,{reportSid,entity.workItem.groupTask.repairTask.reportSid}readonly}
+		}
+		ui-component WorkItemStockRecordListGrid as GXTGrid{
+			binding{typeName,sid,reportSid,workItem,sourceStore,operator,date,comment}
+		}
+
+	}
+
+	ui-entity UIWorkItemStockRecordItem for RCWorkItemStockRecordItem{
+	
+		workItem : proxy of RCWorkItemTask "工单编号"
+		sourceStore : proxy of RCWarehouse "出库仓库"
+		sid : String "入库批号"
+		productSid : String "条码"
+		materialId : String "物品编号"
+		productSpec : proxy of RCProductSpecification "物品名称"
+		typeDesc : String  "规格型号"
+		price : Double "单价"		
+		quantity : Integer "数量"
+		unit : proxy of RCProduceSpecificationUnit "计量单位"
+		brand : proxy of RCMaterialBrand "品牌"
+		
+		
+		map WorkItemStockRecordItemMapper validate by WorkItemStockRecordItemValidator{
+			direct{
+				{quantity,entity.recordItem.quantity} readonly,
+				{workItem,entity.record.workItem} readonly,
+				{sourceStore,entity.record.sourceStore} readonly,
+				{productSpec,entity.recordItem.productEntry.productSpec} readonly,
+				{sid,entity.recordItem.productEntry.sid} readonly,
+				{productSid,entity.recordItem.productEntry.productSpec.sid} readonly,
+				{typeDesc,entity.recordItem.productEntry.productSpec.typeDesc} readonly,
+				{materialId,entity.recordItem.productEntry.productSpec.materialId} readonly,
+				{price,entity.recordItem.productEntry.price} readonly,
+				{unit,entity.recordItem.productEntry.productSpec.unit} readonly,
+				{brand,entity.recordItem.productEntry.productSpec.brandType} readonly
+			}
+		}
+	
+		constraints WorkItemStockRecordItemValidator{
+		}
+		
+		ui-component WorkItemStockRecordItemListGrid as GXTGrid{
+			binding{workItem,sourceStore,sid,productSid,materialId,productSpec,typeDesc,brand,price,quantity,unit}
+		}
+	}
+	
+	signal WorkItemStockRecordsChanged
+	
+}

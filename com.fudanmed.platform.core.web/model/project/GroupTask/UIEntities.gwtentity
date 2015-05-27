@@ -1,0 +1,387 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.Collection
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.server.^service.common.*
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	
+	ui-enum UIGeneralTaskType{
+		workitemTask,groupTask
+		title{
+			workitemTask = "派发工单"
+			groupTask = "派发班组"
+		}
+	}
+	ui-datatype UIGeneralTask{
+		objectId : Long
+		taskType : UIGeneralTaskType "任务类型"
+		taskOwner : String "执行者"
+//		date : Date "派发日期"
+//		time : Date "派发时间"
+		dateTime : Date "派发时间"
+//		finishDate : Date "完工日期"
+//		finishTime : Date "完工时间"
+		finishDateTime : Date "完工时间"
+		status : String "任务状态"
+		operator : proxy of RCEmployee "任务派发人"
+		parent : Integer
+	
+		op hashCode():int{
+			(taskType.name + objectId.toString).hashCode
+		}
+	
+		ui-component GeneralTaskTreeList as GXTTreeGrid{
+			binding{taskType,taskOwner,status,dateTime as DateTimeColumn,finishDateTime as DateTimeColumn,operator}
+		}
+		
+	}
+
+	signal GroupTasksChanged
+	ui-entity UIGroupTask for RCGroupTask{
+		reportSid : String "报修单号"
+		date : Date "派发日期"
+		time : Date "派发时间"
+		dateTime : Date "派发时间"
+		faultLevel : proxy of RCFaultLevel "风险等级"
+		faultLevelColor : String
+		finishDate : Date "完工上报日期"
+		finishTime : Date "完工上报时间"
+		finishDateTime : Date "完工上报时间"
+	
+		planFinishDateTime : Date "计划完成时间"
+		
+		status : UIGroupTaskStatus "状态"
+		location : String "报修地点"
+		comment : String "报修内容"
+		reporterName : String "报修人"
+		reportOrg : proxy of RCOrganization "报修部门"
+		team : proxy of RCMaintenanceTeam "班组" 
+		submitNow : Boolean ""
+		
+		needAudit : Boolean "需要审批"
+		
+		map GroupTaskMapper {
+			@Inject dao: RCFaultLevelColorAdaptorDao
+			
+			direct{
+				date readonly, time readonly, finishDate readonly, finishTime readonly,status readonly, {location,entity.repairTask.location} readonly,
+				{comment,entity.repairTask.comment},{reporterName,entity.repairTask.reporterName},{reportOrg,entity.repairTask.reportOrg},team readonly,
+				{faultLevel,entity.repairTask.faultLevel},{needAudit,entity.repairTask.faultType.needAudit} readonly
+			}
+			from entity{
+				ui.reportSid = entity.repairTask.reportSid
+				ui.finishDateTime = entity.finishDate.appendTime(entity.finishTime)
+				ui.dateTime = entity.date.appendTime(entity.time)
+				ui.planFinishDateTime = entity.repairTask.planFinishDate.appendTime(entity.repairTask.planFinishTime)
+				ui.faultLevelColor = dao.getColor(entity.repairTask.faultLevel)
+				
+			}
+		}
+		
+		ui-component GroupTaskListGrid as GXTGrid{
+			binding{
+				needAudit as BooleanColumn,
+				reportSid as StringColumn(130),
+				status as DefaultColumn(80),
+				faultLevel as DefaultColumn(80),
+				
+				dateTime as DateTimeColumn(120),
+				planFinishDateTime as DateTimeColumn(120),
+				location as StringColumn(200),comment as StringColumn(197),
+				reportOrg as DefaultColumn,
+				reporterName,			
+				finishDateTime as DateTimeColumn(110)
+				// team as  DefaultColumn
+			}
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+				needAudit.render=[context,value,sb|
+					if(value==null)return;
+					if(value)
+						sb.appendHtmlConstant("<SPAN style='color:red;'>"+'是'+'</SPAN>')
+					else
+						sb.appendHtmlConstant("<SPAN>"+'否'+'</SPAN>')
+					
+				]
+
+				faultLevel.render=[context,value,sb|
+					if(value==null)return;
+					val m = this.grid.store.get(context.index)
+					sb.appendHtmlConstant("<SPAN style='color:"+m.faultLevelColor+";'>"+value.toString+"</SPAN>")
+					
+				]
+				
+				status.render=[context,value,sb|
+					if(value==null) return;
+					if(
+						value == UIGroupTaskStatus::newCreated || value == UIGroupTaskStatus::wait4TeamOwnerProcess
+					){
+						sb.appendHtmlConstant("<B style='color:red;'>"+value.toString+"</B>")
+					}else{
+						sb.appendHtmlConstant(value.toString)
+					}
+				]
+				planFinishDateTime.render=[context,value,sb|
+					if(value==null)return;
+					val m = this.grid.store.get(context.index)
+					if((m.status != UIGroupTaskStatus::finished && m.status != UIGroupTaskStatus::misDispatched) && now > value){
+						sb.appendHtmlConstant("<SPAN style='color:red;'>"+value.formatDateTime+"</SPAN>")
+					}else
+						sb.appendHtmlConstant(value.formatDateTime)
+				]
+			}			
+		}
+		
+		ui-component GroupTaskOutlineListGrid as GXTGrid{
+			binding{
+				status,
+				team,
+				date,
+				time as TimeColumn,
+				finishDate,
+				finishTime
+			}
+			op initializeComponent():void{
+				status.render=[context,value,sb|
+					if(
+						value == UIGroupTaskStatus::newCreated || value == UIGroupTaskStatus::wait4TeamOwnerProcess
+					){
+						sb.appendHtmlConstant("<B style='color:red;'>"+value.toString+"</B>")
+					}else{
+						sb.appendHtmlConstant(value.toString)
+					}
+				]
+			}			
+			
+		}
+	}
+	
+	ui-entity UIWorker for RCEmployee{
+		cardNumber : String "工牌号"
+		name : String "姓名"		
+		isBusy : Boolean "在派"
+		map WorkerMapper{
+			required workItemTaskDAO: RCWorkItemTaskDAO
+			direct{name readonly, cardNumber readonly}
+			from entity{
+				ui.isBusy = workItemTaskDAO.workerIsBusy(entity)
+			}
+		}
+
+	}	
+	signal WorkItemTasksChanged
+	ui-entity UIWorkItemTask for RCWorkItemTask{
+		reportSid : String "报修单号"
+		sid : String "工单编号"
+		date : Date "派工日期"
+		time : Date "派工时间"
+		dateTime : Date "派工时间"
+		
+		operator : proxy of RCEmployee "维修主管"
+		faultType : proxy of RCFaultType "维修类别"
+		faultDescription : String "维修内容"
+		
+		stockStatus : String "领料状态"
+		bStockStatus : Boolean
+		finishDate : Date "完工日期"
+		finishTime : Date "完工时间"
+		finishDateTime : Date "完工时间"
+		
+		workers : UIWorker[*] "维修人员"
+		comment : String "维修说明"
+		status : UIWorkItemTaskStatus "工单状态"
+		
+//		documents : Collection<UIDocument>
+		hasDocuments : Boolean
+		
+		print : Boolean "打印工单"
+		
+		map WorkItemTaskMapper validate by WorkItemTaskValidator{
+			@Inject documentMapper : DocumentMapper
+			direct{
+				sid readonly,operator,date,time, finishTime readonly, finishDate readonly,workers, comment, status readonly, faultType, faultDescription,
+				{reportSid,entity.groupTask.repairTask.reportSid} readonly
+			}
+			from entity{
+				if(entity.storage.size!=0){
+					ui.stockStatus = "已领料"
+					ui.bStockStatus = true
+				}else{
+					ui.stockStatus = "未领料"
+					ui.bStockStatus = false
+				}
+				ui.finishDateTime = entity.finishDate.appendTime(entity.finishTime)
+				ui.dateTime = entity.date.appendTime(entity.time)
+				ui.hasDocuments = entity.documents.size!=0
+				
+			}
+			to entity{
+				entity.updateDerived
+			}
+		}
+		constraints WorkItemTaskValidator{
+			rule Required on date
+			rule Required on time
+			rule Required on faultType
+			rule Required on workers
+		}
+	
+		ui-component WorkItemTaskForm as GXTForm{
+			binding{workers as RequiredDualListItem content from AllWorkers4OrgContentProvider,comment as TextAreaItem,
+				date as DateItem, time as TimeItem, operator as ReadonlyItem, faultDescription as TextAreaItem,
+				faultType as ComboBoxItem content from AllFaultTypeContentProvider,print
+			}
+			con : Widget
+			op asWidget() : Widget{
+//				workers.labelProvider= new WorkerLabelProvider()
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(TABLE=>[
+							tr=>[
+								td=>[it += operator.asWidget]
+								td=>[it += faultType.asWidget]
+							]
+							tr=>[
+								td=>[it += date.asWidget]
+								td=>[it += time.asWidget]
+							]
+							tr=>[td=>[colSpan=2 it += faultDescription.asWidget=>[height = 40 width=507]]]
+							tr=>[td=>[colSpan=2 it += comment.asWidget=>[height = 40 width=507]]]
+							tr=>[td=>[colSpan=2 it += workers.asWidget=>[width=507]]]
+						])
+						add(print.asWidget=>[it.width="200" print.value=true])
+					]
+				]
+			}			
+		}
+		
+		ui-component WorkItemTaskListGrid as GXTGrid{
+			binding{
+				reportSid as StringColumn(130),
+				sid as StringColumn(130),
+				status as DefaultColumn(80),
+				dateTime as DateTimeColumn(120),
+				finishDateTime as DateTimeColumn(120),
+				operator ,
+				workers,
+				stockStatus,
+				comment as StringColumn(405)
+			}
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+				status.render=[context,value,sb|
+					if(
+						value == UIWorkItemTaskStatus::processing || value == UIWorkItemTaskStatus::pending ||
+						value == UIWorkItemTaskStatus::outsourcing || value == UIWorkItemTaskStatus::followuping  
+					){
+						sb.appendHtmlConstant("<SPAN style='color:red;'>"+value.toString+"</SPAN>")
+					}else{
+						sb.appendHtmlConstant(value.toString)
+					}
+				]
+			}			
+		}
+		
+		ui-component WorkItemTaskOutlineListGrid as GXTGrid{
+			binding{
+				status as DefaultColumn(30),
+				workers,
+				dateTime as DateTimeColumn,
+				finishDateTime as DateTimeColumn
+			}
+			op initializeComponent():void{
+				status.render=[context,value,sb|
+					if(
+						value == UIWorkItemTaskStatus::processing || value == UIWorkItemTaskStatus::pending ||
+						value == UIWorkItemTaskStatus::outsourcing || value == UIWorkItemTaskStatus::followuping  
+					){
+						sb.appendHtmlConstant("<B style='color:red;'>"+value.toString+"</B>")
+					}else{
+						sb.appendHtmlConstant(value.toString)
+					}
+				]
+			}			
+			
+		}
+	}
+	
+	presenter WorkItemTaskListPresenter{
+		view interface{
+			signal in showResults(result : UIWorkItemTask[*])
+			op getActionContext() : ActionContext<UIWorkItemTask>
+		}
+		interaction{
+			parent : proxy of RCGroupTask
+			input call.setup(parent : proxy of RCGroupTask, postInit:(WorkItemTaskListPresenter)=>void){
+				this.parent = parent
+				this.activate[
+					service.load(parent,onSuccess[
+						fire view.showResults(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			
+			input call.setup( postInit:(WorkItemTaskListPresenter)=>void){
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			
+			input call.setValue(parent : proxy of RCGroupTask){
+				this.parent = parent
+				service.load(parent,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			
+			input eventbus.WorkItemTasksChanged(){
+				if(parent!=null)
+					service.load(parent,onSuccess[
+						fire view.showResults(it)
+					])
+			}
+		}
+		
+		service{
+			@Inject mapper : WorkItemTaskMapper
+			op load(parent : proxy of RCGroupTask) : UIWorkItemTask[*]{
+				(resolve parent).tasks.filter(typeof(RCWorkItemTask)).^map[mapper.transform(it)].unlazy
+			}
+		}
+	}
+	
+	view WorkItemTaskListView for WorkItemTaskListPresenter{
+		@Inject listGrid : WorkItemTaskListGrid
+		
+		con : Widget
+		asWidget() : Widget{
+			con
+		}
+		
+		layout{
+			con = widgets.VLayout=>[
+				add(listGrid.asWidget,widgets.VLayoutData(1,1))
+			]
+		}
+		op getActionContext() : ActionContext<UIWorkItemTask>{
+			listGrid.createActionContext
+		}
+		interaction{
+			input view.showResults(results : UIWorkItemTask[*]){
+				listGrid.objects = results.sortBy[dateTime].reverse
+			}
+		}
+	}
+
+
+}
+
+
+

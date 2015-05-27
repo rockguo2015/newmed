@@ -1,0 +1,696 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.uniquesoft.gwt.shared.datatype.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.device.^proxy.*
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.web.*
+	import com.sencha.gxt.widget.core.client.ContentPanel
+	
+	ui-entity UIDeviceType for RCDeviceType{
+		category : proxy of RCDeviceTypeCategory "设备大类"
+		code : String "类型编码"
+		name : String "名称"
+		depreciationYears : Integer "折旧年限"
+		
+		map DeviceTypeMapper validate by DeviceTypeValidator{
+			direct{code,name,depreciationYears}
+			to entity{
+				var path = ""
+				var curObj = entity.category
+				while(curObj!=null){
+					path = path + '['+curObj.id.toString+']'
+					curObj = curObj.parent
+				}
+				entity.path = path
+				
+			}
+		}
+	
+		constraints DeviceTypeValidator{
+			@Inject dao : RCDeviceTypeDAO
+			rule Required on name
+			constraint codeUniqueCheck on code "代码必须唯一"{
+				entity.isUnique[
+					dao.findByCode(entity.code)
+				]
+			}
+		}
+	
+		ui-component DeviceTypeForm as GXTForm{
+			binding{category as ReadonlyItem,name,depreciationYears,code}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(category.asWidget)
+						addFill(code.asWidget)
+						addFill(name.asWidget)
+						addFill(depreciationYears.asWidget)
+					]
+				]
+			}
+		}
+	
+		ui-component DeviceTypeListGrid as GXTGrid{
+			binding{code,name,depreciationYears }
+		}
+	}
+	
+	signal DeviceTypesChanged
+	
+	presenter CreateOrUpdateDeviceTypePresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIDeviceType
+			op setValue(value : UIDeviceType) : void
+			op setCategory(category : proxy of RCDeviceTypeCategory):void
+		}
+		
+		interaction{
+			used4Update : boolean
+			cloneSource : proxy of RCDeviceType
+			typeCategory : proxy of RCDeviceTypeCategory
+			input prepare.setup4Create(typeCategory : proxy of RCDeviceTypeCategory){
+				this.typeCategory = typeCategory
+				used4Update = false
+				this.activate[
+					getView().setCategory(typeCategory)
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of RCDeviceType){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			input prepare.setup4Clone(cloneSource : proxy of RCDeviceType){
+				this.cloneSource = cloneSource
+				service.loadCategory(cloneSource,onSuccess[typeCategory|
+					this.typeCategory = typeCategory
+					this.activate[
+						getView().setCategory(typeCategory)
+						done
+					]
+				])
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.DeviceTypesChanged()
+						notifier.success
+					])
+				else{
+					if(cloneSource==null)
+						service.createValue(typeCategory,getView().value,onSuccess[
+							fire eventbus.DeviceTypesChanged()
+							notifier.success
+						])
+					else{
+						service.createValueWithClone(typeCategory,cloneSource,getView().value,onSuccess[
+							fire eventbus.DeviceTypesChanged()
+							notifier.success
+						])
+						
+					}
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : DeviceTypeMapper
+			@Inject dao : RCDeviceTypeCategoryDAO
+			op loadValue(pvalue : proxy of RCDeviceType) : UIDeviceType{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIDeviceType) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValueWithClone(categoryType:proxy of RCDeviceTypeCategory,cloneSource :proxy of RCDeviceType,uivalue : UIDeviceType) : void{
+				(resolve categoryType).cloneDeviceType(resolve cloneSource)=>[
+					mapper.transform(uivalue,it)
+				]
+			}
+			op createValue(categoryType:proxy of RCDeviceTypeCategory,uivalue : UIDeviceType) : void{
+				mapper.transform(uivalue,(resolve categoryType).createDeviceType)
+			}
+			op loadCategory(deviceType : proxy of RCDeviceType):proxy of RCDeviceTypeCategory{
+				(resolve deviceType).category.toProxy
+			}
+		}
+	}
+	
+	view CreateOrUpdateDeviceTypeView for CreateOrUpdateDeviceTypePresenter implements IHasSize, IHasTitle{
+		@Inject form : DeviceTypeForm
+		initializer{
+				this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIDeviceType{
+			form.value
+		}	
+		op setCategory(category : proxy of RCDeviceTypeCategory):void{
+			form.category.value = category
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIDeviceType value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(300,200)
+		}
+		op getTitle():String{
+			'设备类型维护'
+		}
+	}
+	
+	ui-criteria UIDeviceTypeCriteria for RCDeviceTypeCriteria{
+		name : String "名称"
+		category : String
+		map DeviceTypeCriteriaMapper{
+			direct{name,category}
+		}
+		ui-component DeviceTypeCriteriaForm as GXTForm{
+			binding{name,category as ReadonlyItem}
+		}
+	}
+	
+	presenter DeviceTypeManagementPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UIDeviceType>)
+			signal in refresh()
+			
+			signal out createChildRequest(category : proxy of RCDeviceTypeCategory) @deviceTypeCategoryManagementPresenter "新建设备类型"
+			signal out cloneChildRequest(child : proxy of RCDeviceType)
+			signal out modifyChildRequest(child : proxy of RCDeviceType) @deviceTypeCategoryManagementPresenter "修改设备类型"
+			signal out deleteChildRequest(child : proxy of RCDeviceType) @deviceTypeCategoryManagementPresenter "删除设备类型"
+			
+	
+			signal out filterRequest(c : UIDeviceTypeCriteria)
+			
+			signal out newParameterRequest(slot : proxy of RCAttributeSlot)
+			signal out newCategoryRequest(slot : proxy of RCAttributeSlot)
+			signal out deleteAttributeRequest(slot : proxy of RCAttributeSlot)
+			
+			signal out showAttributeSlotEditorRequest(value : proxy of RCDeviceType) @deviceTypeCategoryManagementPresenter "扩展技术参数"
+			
+			signal out deviceTypeSelected(value : proxy of RCDeviceType)
+			op getSelectedDeviceType() : RCDeviceTypeProxy
+			op getActionContext() : ActionContext<UIDeviceType>
+			
+			op setTypeCategoryActionContext(ac:ActionContext<UIDeviceTypeCategory>):void
+			
+			signal in filterByCategory(category : proxy of RCDeviceTypeCategory)
+			
+			
+		}
+	
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateDeviceTypePresenter
+			factory createPrimaryTypePresenter : CreatePrimaryTypePresenter
+			factory createCompositeTypePresenter  : CreateCompositeTypePresenter
+
+			factory createOrUpdateDeviceTypePresenter : CreateOrUpdateDeviceTypePresenter
+			factory attributeSlotEditPresenter : AttributeSlotEditPresenter
+			
+			
+			part partTypeListPresenter : PartTypeListPresenter
+			part attributeSlotTreeListPresenter : AttributeSlotTreeListPresenter
+			part defaultIntervalAssociationListPresenter : PMDefaultIntervalAssociationListPresenter
+			part deviceDocumentStorageListPresenter : DocumentStorageListPresenter
+			part devicepictureListPresenter : PictureListPresenter
+			
+			category : proxy of RCDeviceTypeCategory
+			input prepare.setup( ){
+				initPart(attributeSlotTreeListPresenter).setup[
+					initPart(defaultIntervalAssociationListPresenter).setup[
+					initPart(partTypeListPresenter).setup[
+						initPart(deviceDocumentStorageListPresenter).setup[
+						initPart(devicepictureListPresenter).setup[
+						
+					this.activate[
+						defaultIntervalAssociationListPresenter.setActionContext(this.getView().getActionContext.adapt[toProxy])
+						fire view.refresh
+						done
+					]
+				]]]]]
+			}
+			input call.setTypeCategoryActionContext(ac:ActionContext<UIDeviceTypeCategory>){
+				getView().setTypeCategoryActionContext(ac)
+			}
+			input call.selectCategory(category : proxy of RCDeviceTypeCategory){
+				this.category = category
+				fire view.filterByCategory(category)
+			}
+			
+			input view.filterRequest(c : UIDeviceTypeCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input view.deviceTypeSelected(value : proxy of RCDeviceType){
+				service.loadEntityExtension(value,onSuccess[
+					attributeSlotTreeListPresenter.setExtensiableEntity(it)
+				])
+				defaultIntervalAssociationListPresenter.setDeviceType(value)
+				partTypeListPresenter.setDeviceType(value)
+				deviceDocumentStorageListPresenter.setDevice(new DeviceTypeFileContainerProxy(value))
+				devicepictureListPresenter.setDevice(new DeviceTypePictureContainerProxy(value))
+				
+			}
+			input view.showAttributeSlotEditorRequest(value : proxy of RCDeviceType){
+				service.loadEntityExtension(value,onSuccess[
+					attributeSlotEditPresenter.get.setup(it)[
+						popup(it)
+					]
+//					attributeSlotTreeListPresenter.setExtensiableEntity(it)
+				])
+				
+			}
+			input view.deleteAttributeRequest(slot : proxy of RCAttributeSlot){
+				service.deleteSlotAttribute(slot,onSuccess[
+					fire eventbus.AttributeSlotDeleted(slot)
+				])
+			}
+			input view.newParameterRequest(slot : proxy of RCAttributeSlot){
+				if(slot==null){
+					service.loadEntityExtension(getView().selectedDeviceType,onSuccess[ee|
+						createPrimaryTypePresenter.get.setup4ExtensiableEntity(ee)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					])
+				}else{
+					createPrimaryTypePresenter.get.setup4CompositeSlot(slot)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				}
+			}
+			input view.newCategoryRequest(slot : proxy of RCAttributeSlot){
+				if(slot==null){
+					service.loadEntityExtension(getView().selectedDeviceType,onSuccess[ee|
+						createCompositeTypePresenter.get.setup4ExtensiableEntity(ee)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					])
+				}else{
+					createCompositeTypePresenter.get.setup4CompositeSlot(slot)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				}
+			}
+			
+			input view.createChildRequest(category : proxy of RCDeviceTypeCategory){
+				if(category==null) display("错误","请选择设备大类")
+				else 
+					createOrUpdateDeviceTypePresenter.get=>[setup4Create(category)[
+						fire eventbus.PopActivatedPresenter(it)
+					]]
+			}
+			input view.cloneChildRequest(child : proxy of RCDeviceType){
+				createOrUpdateDeviceTypePresenter.get=>[setup4Clone(child)[
+					fire eventbus.PopActivatedPresenter(it)
+				]]				
+			}
+			input view.modifyChildRequest(child : proxy of RCDeviceType){
+				createOrUpdateDeviceTypePresenter.get=>[setup4Update(child)[
+					fire eventbus.PopActivatedPresenter(it)
+				]]				
+			}
+			input view.deleteChildRequest(child : proxy of RCDeviceType){
+				service.deleteChild(child,onSuccess[
+					fire eventbus.DeviceTypesChanged()
+				])
+			}
+			
+			
+			input eventbus.DeviceTypesChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : DeviceTypeCriteriaMapper
+			@Inject mapper : DeviceTypeMapper
+	
+			op filter(uicriteria : UIDeviceTypeCriteria) : IPagedResult<UIDeviceType>{
+				var c = uicriteria.createPagedCriteria(typeof(RCDeviceTypeCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op loadEntityExtension(value : proxy of RCDeviceType) : proxy of RCExtensiableEntity{
+				(resolve value).defaultValue.toProxy
+			}
+			op deleteSlotAttribute(slot : proxy of RCAttributeSlot):void{
+				val s = resolve slot;
+				s.attrValue.removeAttribute(s.attr)
+			}
+			op deleteChild(child : proxy of RCDeviceType) : void{
+				(resolve child).category.deleteDeviceType(resolve child)
+			}
+			
+		}
+	}
+	ui-command PopulatePMPlantoAllDeviceCommand "PM初始化" @deviceTypeCategoryManagementPresenter{
+		execute{
+			widgets.ConfirmMessageBox("确认","生成所有PM计划")[
+				service.populateAll(onSuccess[
+					display("success","生成所有PM计划")
+				])
+			].show
+		}
+		service{
+			@Inject deviceTypeDAO : RCDeviceDAO 
+			op populateAll():void{
+//				entities.all(typeof(RCDevicePMSpecification)).forEach[
+//					entities.delete(it)
+//				]
+				val devicesHasPmSpec = entities.all(typeof(RCDevicePMSpecification)).^map[it.device].toList
+				entities.all(typeof(RCPMDeviceTypeEntry)).forEach[pmentry|
+					deviceTypeDAO.findDevicesByType(pmentry.deviceType).forEach[device|
+						if(!devicesHasPmSpec.contains(device))
+							pmentry.populateToDevice(device)
+					]
+				]
+			}
+		}
+	}
+	view DeviceTypeManagementView for DeviceTypeManagementPresenter{
+		@Inject listGrid : DeviceTypeListGrid
+		@Inject criteriaForm : DeviceTypeCriteriaForm
+		contentPanel : edu.fudan.langlab.gxt.client.widget.ContentPanel
+		pager : IPager 
+		@Inject createDeviceDocmentStorageCommand : CreateDeviceTypeDocumentStorageCommand
+		@Inject updateDeviceDocmentStorageCommand : UpdateDeviceTypeDocumentStorageCommand
+		@Inject deleteDeviceDocmentStorageCommand : DeleteDeviceTypeDocumentStorageCommand
+		@Inject createDevicePictureCommand : CreateDeviceTypePictureCommand
+		@Inject updateDevicePictureCommand : UpdateDeviceTypePictureCommand
+		@Inject deleteDevicePictureCommand : DeleteDeviceTypePictureCommand
+		@Inject populatePMPlantoAllDeviceCommand : PopulatePMPlantoAllDeviceCommand
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			listGrid.keepSelection
+			val deviceTypeAc = listGrid.createActionContext
+			con = widgets.ContentPanel=>[
+				setBodyBorder(false)
+				setBorders(false)
+				setWidget(widgets.VLayout=>[
+					add(
+						widgets.HTableLayout()=>[
+							add(<Widget>newArrayList(
+								criteriaForm.name.asWidget,
+								widgets.TextButton("筛选")=>[
+									setWidth("80px")
+									addSelectHandler[
+										fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+											page = 1
+										])
+									]
+								]
+							)	
+						)]
+	
+					)
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]
+					add(contentPanel = widgets.ContentPanel=>[
+						widget = widgets.VLayout=>[
+							add(listGrid.asWidget,widgets.VLayoutData(1,1))
+							add(pager.asWidget)
+						]
+
+								
+					],widgets.VLayoutData(1,0.6))
+					add(widgets.TabPanel=>[
+						add(widgets.ContentPanel=>[
+							setBodyBorder(false)
+							setBorders(false)
+							widget = attributeSlotTreeListPresenter.getView().asWidget
+							val ac = attributeSlotTreeListPresenter.getView().actionContext
+							addButton(deviceTypeAc.onSingleObjectAction[
+								onExecute[UIDeviceType dt|
+									val selected = ac.selectedObjects?.head
+									if(selected!=null && selected.isPrimary){
+										display("错误","该基本参数下无法建立基本参数")
+									}else
+										fire view.newParameterRequest(ac.selectedObjects?.head?.toProxy)
+									
+								]
+							].asButtonRequester("新建基本参数"))
+							
+							addButton(deviceTypeAc.onSingleObjectAction[
+								onExecute[UIDeviceType dt|
+									val selected = ac.selectedObjects?.head
+									if(selected!=null && selected.isPrimary){
+										display("错误","该基本参数无法建立复合参数")
+									}else
+										fire view.newCategoryRequest(ac.selectedObjects?.head?.toProxy)
+									
+								]
+							].asButtonRequester("新建复合参数"))
+							
+							addButton(ac.onSingleObjectAction[
+								onExecute[UIAttributeSlot slot|
+									widgets.ConfirmMessageBox("确认","所有关联设备中的参数都将被删除!")[
+										fire view.deleteAttributeRequest(slot.toProxy)
+									].show
+								]
+							].asButtonRequester("删除参数"))
+						],"扩展技术参数")
+						
+						add(defaultIntervalAssociationListPresenter.getView.asWidget,"默认PM计划")
+						add(partTypeListPresenter.getView.asWidget,"配件类型")
+							add(widgets.ContentPanel=>[
+								widget = deviceDocumentStorageListPresenter.getView().asWidget
+								addCommand(deviceTypeAc.adapt[new DeviceTypeFileContainerProxy(toProxy)],createDeviceDocmentStorageCommand,"上传")
+								val deviceDocumentAc = deviceDocumentStorageListPresenter.getView().actionContext.adapt[toProxy]
+								addCommand(deviceDocumentAc,updateDeviceDocmentStorageCommand,"修改")
+								addCommand(deviceDocumentAc,deleteDeviceDocmentStorageCommand,"删除")
+							],"关联文档")
+							add(widgets.ContentPanel=>[
+								widget = devicepictureListPresenter.getView().asWidget
+								addCommand(deviceTypeAc.adapt[new DeviceTypePictureContainerProxy(toProxy)],createDevicePictureCommand,"上传")
+								val deviceDocumentAc = devicepictureListPresenter.getView().actionContext.adapt[toProxy]
+								addCommand(deviceDocumentAc,updateDevicePictureCommand,"修改")
+								addCommand(deviceDocumentAc,deleteDevicePictureCommand,"删除")
+							],"设备图片")
+					],widgets.VLayoutData(1,0.4))
+				])
+				
+				listGrid.addSelectEntityListener[UIDeviceType device|
+					fire view.deviceTypeSelected(device.toProxy)
+				]
+			
+			]					
+		}
+		
+		op setTypeCategoryActionContext(typeCategoryAC:ActionContext<UIDeviceTypeCategory>):void{
+				val ac = listGrid.createActionContext
+			
+						securities.check(ui-requester.createChildRequest)[v|
+							contentPanel.addButton(
+							typeCategoryAC.onSingleObjectAction[
+								onExecute[UIDeviceTypeCategory category|
+									fire view.createChildRequest(category.toProxy)
+								]
+							].asButtonRequester("新建")
+							
+							)
+//							addButton(
+//								widgets.TextButton("新建")[
+//									fire view.createChildRequest()
+//								]
+//							)
+						]
+						securities.check(ui-requester.createChildRequest)[v|
+							contentPanel.addButton(
+							ac.onSingleObjectAction[
+								onExecute[UIDeviceType item|
+									fire view.cloneChildRequest(item.toProxy)
+								]
+							].asButtonRequester("复制")
+							
+							)
+						]
+						securities.check(ui-requester.modifyChildRequest)[v|
+							contentPanel.addButton(
+								ac.onSingleObjectAction[
+									onExecute[UIDeviceType item|
+										fire view.modifyChildRequest(item.toProxy)
+									]
+								].asButtonRequester("修改")				
+							)
+						]
+						securities.check(ui-requester.deleteChildRequest)[v|
+							contentPanel.addButton(
+								ac.onSingleObjectAction[
+									onExecute[UIDeviceType item|
+										widgets.ConfirmMessageBox("确认","确认删除选定设备类别")[
+											fire view.deleteChildRequest(item.toProxy)
+										].show
+									]
+								].asButtonRequester("删除")				
+							)
+						]
+						securities.check(ui-requester.showAttributeSlotEditorRequest)[v|
+							contentPanel.addButton(
+								ac.onSingleObjectAction[
+									onExecute[UIDeviceType item|
+										fire view.showAttributeSlotEditorRequest(item.toProxy)
+									]
+								].asButtonRequester("扩展技术参数")				
+							)
+						]
+						contentPanel.addSimpleCommand(populatePMPlantoAllDeviceCommand)			
+		}
+		op showResults(results : IPagedResult<UIDeviceType>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op getSelectedDeviceType() : proxy of RCDeviceType{
+			listGrid.selectedObjects?.head.toProxy
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		interaction{
+			input view.filterByCategory(category : proxy of RCDeviceTypeCategory){
+				if(category!=null)
+					criteriaForm.category.value = '%['+category.id+']%'
+				fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+					page = 1
+				])
+				
+			}
+		}
+		op getActionContext() : ActionContext<UIDeviceType>{
+			listGrid.createActionContext
+		}
+	}	
+	
+	presenter AttributeSlotEditPresenter{
+		view interface{
+			signal out newParameterRequest(slot : proxy of RCAttributeSlot)
+			signal out newCategoryRequest(slot : proxy of RCAttributeSlot)
+			signal out deleteAttributeRequest(slot : proxy of RCAttributeSlot)
+			
+		}
+		interaction{
+			part attributeSlotTreeListPresenter : AttributeSlotTreeListPresenter
+			factory createPrimaryTypePresenter : CreatePrimaryTypePresenter
+			factory createCompositeTypePresenter  : CreateCompositeTypePresenter
+			
+			extensiableEntity : proxy of RCExtensiableEntity
+			input prepare.setup(extensiableEntity : proxy of RCExtensiableEntity){
+				this.extensiableEntity = extensiableEntity
+				initPart(attributeSlotTreeListPresenter).setup(extensiableEntity)[
+					this.activate[
+						done
+					]
+				]
+			}
+			input view.newParameterRequest(slot : proxy of RCAttributeSlot){
+				if(slot==null){
+						createPrimaryTypePresenter.get.setup4ExtensiableEntity(extensiableEntity)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+				}else{
+					createPrimaryTypePresenter.get.setup4CompositeSlot(slot)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				}
+			}
+			input view.deleteAttributeRequest(slot : proxy of RCAttributeSlot){
+				service.deleteSlotAttribute(slot,onSuccess[
+					fire eventbus.AttributeSlotDeleted(slot)
+				])
+			}
+			
+			input view.newCategoryRequest(slot : proxy of RCAttributeSlot){
+				if(slot==null){
+						createCompositeTypePresenter.get.setup4ExtensiableEntity(extensiableEntity)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+				}else{
+					createCompositeTypePresenter.get.setup4CompositeSlot(slot)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				}
+			}
+		}
+		
+		service{
+			op deleteSlotAttribute(slot : proxy of RCAttributeSlot):void{
+				val s = resolve slot;
+				s.attrValue.removeAttribute(s.attr)
+			}
+			
+		}
+	}
+	
+	view AttributeSlotEditView for AttributeSlotEditPresenter ui-title:"定义扩展技术参数" ui-size:(800,500){
+			con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			con = widgets.ContentPanel=>[
+				widget = attributeSlotTreeListPresenter.getView().asWidget
+				val ac = attributeSlotTreeListPresenter.getView().actionContext
+				addButton(widgets.TextButton("新建基本参数")[
+					val selected = ac.selectedObjects?.head
+					if(selected!=null && selected.isPrimary){
+						display("错误","该基本参数下无法建立基本参数")
+					}else
+						fire view.newParameterRequest(ac.selectedObjects?.head?.toProxy)
+				])
+							
+				addButton(widgets.TextButton("新建复合参数")[
+					val selected = ac.selectedObjects?.head
+					if(selected!=null && selected.isPrimary){
+						display("错误","该基本参数无法建立复合参数")
+					}else
+						fire view.newCategoryRequest(ac.selectedObjects?.head?.toProxy)
+				])
+							
+				addButton(ac.onSingleObjectAction[
+					onExecute[UIAttributeSlot slot|
+						widgets.ConfirmMessageBox("确认","所有关联设备中的参数都将被删除!")[
+							fire view.deleteAttributeRequest(slot.toProxy)
+						].show
+					]
+				].asButtonRequester("删除参数"))				
+			]
+		}
+		
+	}
+	
+}

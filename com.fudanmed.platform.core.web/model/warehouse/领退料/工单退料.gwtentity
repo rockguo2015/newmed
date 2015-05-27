@@ -1,0 +1,407 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.GWTEntity
+	import com.uniquesoft.gwt.client.common.print.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.fudanmed.platform.core.web.server.^service.^template.*
+	
+	ui-datatype UIWorkItemProductSpecSummary extends GWTEntity{
+		productSpecSummary : UIProductSpecificationSummary "已领材料"
+		productName : String "物品"
+		quantity : Integer "退料数量"
+		sourceQuantity : Integer "已领数量"
+		productSid : String "条码"
+		typeDesc : String  "规格型号"
+		unit : proxy of RCProduceSpecificationUnit "计量单位"
+		
+		ui-component WorkItemProductSpecSummaryListGrid as GXTGrid{
+			binding{
+				productSid,productName,typeDesc,sourceQuantity,quantity as EditableIntegerColumn,unit
+			}
+		}
+		ui-component WorkItemProductSpecSummaryForm as GXTForm{
+			@Inject productSpecificationSummaryListView : ProductSpecificationSummaryListView
+			binding{
+				productSpecSummary as SuggestionItem(productSpecificationSummaryListView) content from AllWorkItemProductSpecSummaryContentProvider,
+				quantity,sourceQuantity as ReadonlyItem
+			}
+			
+			op setWorkItem(workItem : proxy of RCWorkItemTask) : void{
+				this.productSpecSummaryContentProvider.createCriteria=>[
+					it.workItem = workItem 
+				]
+			}
+		}
+		
+	}
+	
+	ui-entity UIWorkItemReturnStockRecord for RCWorkItemReturnStockRecord{
+		reportSid : String "报修单号"
+		sid : String "退料单号"
+		sourceStore : proxy of RCWarehouse "入库仓库"
+		workItem : proxy of RCWorkItemTask "工单号"
+		date : Date "退料日期"
+		operator : proxy of RCEmployee "操作员"
+		itemSummarys : UIWorkItemProductSpecSummary[*] "退料明细"
+		comment : String "备注"
+		print : Boolean "打印退料单"
+	
+		map WorkItemReturnStockRecordMapper validate by WorkItemReturnStockRecordValidator{
+			direct{sid readonly,sourceStore,workItem,date,operator,comment,{reportSid,entity.workItem.groupTask.repairTask.reportSid}readonly}
+			to entity{
+				entity.initItemsFromSummary(
+					ui.itemSummarys.^map[itemSummary|
+						new RCProductSpecificationSummary=>[
+							it.productSpec = entities.get(typeof(RCProductSpecification),itemSummary.productSpecSummary.productSpec.id)
+							it.quantity = itemSummary.quantity
+						]
+					].toList
+				)
+			}
+			
+		}
+	
+		constraints WorkItemReturnStockRecordValidator{
+			rule Required on sourceStore
+			rule Required on workItem
+		}
+
+		ui-component WorkItemReturnStockRecordDetailForm as GXTForm{
+			binding{
+				sid as ReadonlyItem,sourceStore as ReadonlyItem, workItem as ReadonlyItem, date as ReadonlyItem,
+				operator as ReadonlyItem,comment as ReadonlyItem,reportSid as ReadonlyItem
+			}
+			con : Widget
+			asWidget() : Widget{
+				con = con.lazy[
+					TABLE=>[
+						tr=>[
+							td=>[it += reportSid.asWidget]
+							td=>[it += sid.asWidget]
+							td=>[it += workItem.asWidget]
+						]
+						tr=>[
+							td=>[it += sourceStore.asWidget]
+							td=>[it += date.asWidget]
+							td=>[it += operator.asWidget]
+						]
+					]
+				]
+			}
+		}
+	
+		ui-component WorkItemReturnStockRecordForm as GXTForm{
+			@Inject transferRecordItemListGrid : WorkItemProductSpecSummaryListGrid
+			@Inject transferRecordItemForm : WorkItemProductSpecSummaryForm
+			required timeService : client.common.ServerSideTimeServiceAsync
+			binding{
+				sourceStore as RequiredComboBoxItem content from AllWarehouseByManagerContentProvider,
+				reportSid as ReadonlyItem,
+				workItem as ReadonlyItem,
+				itemSummarys as ListGridBasedItem(transferRecordItemListGrid),
+				comment,
+				date as ReadonlyItem,
+				print as CheckBoxItem
+				
+			}
+			con : Widget
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+				this.sourceStoreContentProvider.load(employee)[
+					notifier.apply(null)
+				]
+			}
+			
+			op setWorkItemTask(workItem : proxy of RCWorkItemTask) : void{
+				transferRecordItemForm.setWorkItem(workItem)
+			}
+			
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						add(TABLE=>[
+							tr=>[
+								td=>[it += date.asWidget=>[
+									timeService.getTime(onSuccess[
+										date.value=it
+									])
+								]]
+								td=>[it += sourceStore.asWidget]
+
+							]
+							tr=>[
+								td=>[it += reportSid.asWidget]
+								td=>[it += workItem.asWidget]
+
+							]
+						],widgets.VLayoutData(1,-1))
+						add(widgets.FieldSet("退料明细")=>[
+							widget = widgets.VLayout=>[
+								it += TABLE=>[
+									tr=>[
+										td=>[it += transferRecordItemForm.productSpecSummary.asWidget=>[
+											width = 585
+											transferRecordItemForm.productSpecSummary.addSelectionChangedListener[
+												transferRecordItemForm.sourceQuantity.value = it.head.quantity
+											]
+										]]
+									]
+								]
+								it += TABLE=>[
+									tr=>[
+										td=>[ width="330" it += transferRecordItemForm.sourceQuantity.asWidget]
+										td=>[it += transferRecordItemForm.quantity.asWidget]
+									]
+								]
+								addFill(itemSummarys.asWidget=>[height=250])
+								itemSummarys.objectCreater=[
+									if(transferRecordItemForm.quantity.value == null ||
+										transferRecordItemForm.productSpecSummary.value == null
+									)
+										null
+									else	 
+										transferRecordItemForm.valueAsNew=>[
+											val v = transferRecordItemForm.productSpecSummary.value
+											it.productName = v.productSpec.name
+											it.sourceQuantity = v.quantity
+											it.productSid = v.sid
+											it.typeDesc = v.typeDesc
+											it.unit = v.unit
+											it.id = -now.time
+											
+											transferRecordItemForm.quantity.value = null
+											transferRecordItemForm.sourceQuantity.value = null
+											transferRecordItemForm.productSpecSummary.value = null
+										]
+								]
+							]
+						],widgets.VLayoutData(1,-1))
+						transferRecordItemListGrid.addEditCompleteListener[
+							transferRecordItemListGrid.updateElement(it=>[
+							])
+						]
+						add( print.asWidget,widgets.VLayoutData(130,-1,2))
+					]
+				]
+			}			
+		}
+	
+		ui-component WorkItemReturnStockRecordListGrid as GXTGrid{
+			binding{sid,sourceStore,workItem,operator,date,comment}
+		}
+	}
+	
+	/*工单退料 */
+	presenter CreateOrUpdateWorkItemReturnStockRecordPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIWorkItemReturnStockRecord
+			op setValue(value : UIWorkItemReturnStockRecord) : void
+			op setWorkItemTask(workItem   : proxy of RCWorkItemTask, repairTask : proxy of RCRepairTask):void
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void			
+			
+		}
+		
+		interaction{
+			
+			input call.setup4Create(workItem: proxy of RCWorkItemTask,
+				(CreateOrUpdateWorkItemReturnStockRecordPresenter)=>void postInitializer
+			){
+				this.activate[
+					service.getCurrentUser(onSuccess[
+						getView().setSourceWarehouseContext(it)[
+							service.getRepairTask(workItem,onSuccess[
+								getView().setWorkItemTask(workItem,it)
+								postInitializer.apply(this)
+							])
+						]
+					])
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.createValue(getView().value,onSuccess[value|
+					fire eventbus.WorkItemStockRecordsChanged()
+					if(getView().value.print)
+						service.generatePrintContents(value,onSuccess[html|
+							Print::it(html)
+						])
+					notifier.success
+				])
+			}			
+		}
+		
+		service{
+			@Inject mapper : WorkItemReturnStockRecordMapper
+			@Inject systemUserService : ISystemUserService
+			@Inject warehouseService : RCWarehouseService
+			@Inject systemParameter : RCSystemParameterService
+			
+			op loadValue(pvalue : proxy of RCWorkItemReturnStockRecord) : UIWorkItemReturnStockRecord{
+				mapper.transform(resolve pvalue)
+			}
+			op createValue(uivalue : UIWorkItemReturnStockRecord) : proxy of RCWorkItemReturnStockRecord{
+				val result = warehouseService.createWorkItemReturnStockRecord[
+					mapper.transform(uivalue,it)
+				]
+				result.commit((systemUserService.currentUser as RCEmployeeUser).employee)
+				result.toProxy
+			}
+			op getRepairTask(workItem : proxy of RCWorkItemTask):proxy of RCRepairTask{
+				val repairTask = (resolve workItem).groupTask.repairTask
+				repairTask.toProxy=>[it.name=repairTask.reportSid]
+			}			
+			
+			op getCurrentUser():proxy of RCEmployee{
+				(systemUserService.currentUserAsParty as RCEmployee).toProxy
+			}
+			op generatePrintContents(record : proxy of RCWorkItemReturnStockRecord) : String{
+				WorkOrderReturnTemplate::^template(resolve record,systemParameter.systemParameter)
+			}
+			
+		}
+	}
+	
+	view CreateOrUpdateWorkItemReturnStockRecordView for CreateOrUpdateWorkItemReturnStockRecordPresenter implements IHasSize, IHasTitle{
+		@Inject form : WorkItemReturnStockRecordForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIWorkItemReturnStockRecord{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIWorkItemReturnStockRecord value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(810,550)
+		}
+		op getTitle():String{
+			'工单退料'
+		}
+		op setWorkItemTask(workItem   : proxy of RCWorkItemTask, repairTask : proxy of RCRepairTask):void{
+			form.workItem.value = workItem
+			form.setWorkItemTask(workItem)
+			form.reportSid.value = repairTask.name
+		}
+		
+		op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+			form.setSourceWarehouseContext(employee)[
+				form.sourceStore.selectFirst
+				notifier.apply(null)
+			]
+		}
+		
+	}		
+	presenter WorkItemReturnStockRecordItemDetailPresenter{
+		view interface{
+			signal in setResults(value : UIWorkItemReturnStockRecord,results : UIWorkItemStockRecordItem[*])
+		}
+		
+		interaction{
+			context : proxy of RCWorkItemReturnStockRecord
+			input call.setup(postInit : (WorkItemReturnStockRecordItemDetailPresenter)=>void){
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			input call.setup(context : proxy of RCWorkItemReturnStockRecord,postInit : (WorkItemReturnStockRecordItemDetailPresenter)=>void){
+				this.context = context
+				this.activate[
+					refresh
+					postInit.apply(this)
+				]
+			}
+			
+			input call.setWorkItemOutStockRecord(context : proxy of RCWorkItemReturnStockRecord){
+				this.context = context
+				refresh
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadWorkItemStockRecordItemList(context,onSuccess[items|
+						service.loadValue(context,onSuccess[value|
+							fire view.setResults(value,items)
+						])
+					])
+				}
+			}
+		}
+		
+		service{
+			@Inject mapper : WorkItemStockRecordItemMapper
+			@Inject valueMapper : WorkItemReturnStockRecordMapper
+			
+			op loadWorkItemStockRecordItemList(context : proxy of RCWorkItemReturnStockRecord) : UIWorkItemStockRecordItem[*]{
+				(resolve context).items.^map[mapper.transform(it)].unlazy
+			}
+			op loadValue(context : proxy of RCWorkItemReturnStockRecord) : UIWorkItemReturnStockRecord{
+				valueMapper.transform((resolve context))
+			}
+			
+		}
+	}
+
+	view WorkItemReturnStockRecordItemDetailView for WorkItemReturnStockRecordItemDetailPresenter  implements IHasTitle, IHasSize{
+		con : Widget
+		@Inject listGrid : WorkItemStockRecordItemListGrid
+		@Inject detail : WorkItemReturnStockRecordDetailForm
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = widgets.ContentPanel=>[
+				widget = widgets.VLayout=>[
+					add(detail.asWidget)
+					add(widgets.FieldSet("退料明细")=>[
+						it.widget = listGrid.asWidget
+					],widgets.VLayoutData(1,1))
+				]
+				addButton(widgets.TextButton("打印")=>[
+					addSelectHandler[
+						Print::it(con)
+					]
+				])
+			]
+		}
+		op getTitle():String{
+			"退料信息"
+		}
+	
+		op getSize() : Size{
+			new Size(800,550)
+		}
+		
+		interaction{
+			input view.setResults(value : UIWorkItemReturnStockRecord ,results : UIWorkItemStockRecordItem[*]){
+				detail.value = value
+				listGrid.objects = results
+			}
+		}
+	}
+
+		
+}

@@ -1,0 +1,196 @@
+package com.fudanmed.platform.core.web feature workbench{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.sencha.gxt.data.shared.TreeStore
+	import com.sencha.gxt.widget.core.client.treegrid.TreeGrid
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.fudanmed.platform.core.web.*
+
+
+	ui-entity UISystemParameter for RCSystemParameter{
+		applicationTitle : String "应用系统标题"
+		/*客户端读取状态时间间隔 */
+		refreshInterval : Integer "客户端刷新间隔(秒)"
+		/*客户评价延迟天数，超过此天数的报修单将自动以“满意”状态提交 */
+		customerEvalCommitInterval : Integer "科室反馈超时(天)"
+		eboardRefreshInterval : Integer "电子屏刷新间隔(秒)"
+		orgName : String "用户名称"
+	
+		map SystemParameterMapper validate by SystemParameterValidator{
+			direct{applicationTitle,refreshInterval,customerEvalCommitInterval,orgName,eboardRefreshInterval}
+		}
+	
+		constraints SystemParameterValidator{
+			rule Required on applicationTitle
+			rule Required on refreshInterval
+			rule Required on customerEvalCommitInterval
+			rule Required on eboardRefreshInterval
+			rule Required on orgName
+		}
+
+		ui-component SystemParameterDetailForm as GXTPropertyView{
+			binding{applicationTitle ,orgName,refreshInterval ,eboardRefreshInterval,customerEvalCommitInterval}
+		}
+	
+		ui-component SystemParameterForm as GXTForm{
+			binding{applicationTitle,orgName,refreshInterval,customerEvalCommitInterval,eboardRefreshInterval}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(applicationTitle.asWidget)
+						addFill(orgName.asWidget)
+						addFill(refreshInterval.asWidget)
+						addFill(eboardRefreshInterval.asWidget)
+						addFill(customerEvalCommitInterval.asWidget)
+					]
+				]
+			}			
+		}
+	}
+	
+	signal SystemParametersChanged
+	
+	presenter SystemParameterPresenter{
+		view interface{
+			signal in showParameter(value : UISystemParameter)
+			signal out modifyParameterRequest()  @systemParameterPresenter "修改系统参数" 
+		}
+		
+		interaction{
+			factory createOrUpdateSystemParameterPresenter : CreateOrUpdateSystemParameterPresenter
+			input call.setup((SystemParameterPresenter)=>void postInit){
+				this.activate[
+					service.loadParameter(onSuccess[
+						fire view.showParameter(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			input view.modifyParameterRequest(){
+				createOrUpdateSystemParameterPresenter.get.setup[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			input eventbus.SystemParametersChanged(){
+				service.loadParameter(onSuccess[
+					fire view.showParameter(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject parameterService : RCSystemParameterService
+			@Inject mapper : SystemParameterMapper
+			op loadParameter() : UISystemParameter{
+				mapper.transform(parameterService.systemParameter)
+			}
+ 		}
+	}
+
+	view SystemParameterView for SystemParameterPresenter{
+		con : Widget
+		required form : SystemParameterDetailForm
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = widgets.FramedPanel("系统参数设置")=>[
+			 	
+				widget = form.asWidget
+				securities.check(ui-requester.modifyParameterRequest)[v|
+					addButton(widgets.TextButton("修改")[
+						fire view.modifyParameterRequest
+					])
+				]
+			]
+		}
+		interaction{
+			input view.showParameter(value : UISystemParameter){
+				form.value = value
+			}
+		}
+	}
+	
+	presenter CreateOrUpdateSystemParameterPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UISystemParameter
+			op setValue(value : UISystemParameter) : void
+		}
+		
+		interaction{
+			input call.setup(
+				(CreateOrUpdateSystemParameterPresenter)=>void postInitializer
+			){
+				this.activate[
+					service.loadValue(onSuccess[
+						getView().setValue(it)
+						postInitializer.apply(this)
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.SystemParametersChanged()
+						notifier.success
+					])
+			}			
+		}
+		
+		service{
+			
+			@Inject parameterService : RCSystemParameterService
+			@Inject mapper : SystemParameterMapper
+			op loadValue() : UISystemParameter{
+				mapper.transform(parameterService.systemParameter)
+			}
+			
+			op updateValue(uivalue : UISystemParameter) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+		}
+	}
+	
+	view CreateOrUpdateSystemParameterView for CreateOrUpdateSystemParameterPresenter implements IHasSize, IHasTitle{
+		@Inject form : SystemParameterForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UISystemParameter{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UISystemParameter value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(300,250)
+		}
+		op getTitle():String{
+			'系统参数维护'
+		}
+					
+	}		
+	
+}

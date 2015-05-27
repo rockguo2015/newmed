@@ -1,0 +1,787 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.domain.^proxy.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.warehouse.^proxy.*	
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.GWTEntity
+	import com.uniquesoft.gwt.client.common.print.*
+	import com.fudanmed.platform.core.web.server.^service.^template.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.sencha.gxt.widget.core.client.Component
+	
+	content-provider AllOutStockTypeContentProvider for proxy of RCOutStockType{
+		contents{
+			entities.all(typeof(RCOutStockType)).sortBy[codeid].unlazy
+		}
+	}
+
+	ui-entity UIOutStockRecord for RCOutStockRecord{
+		sid : String "出库单号"
+		sourceStore : proxy of RCWarehouse "出库仓库"
+		date : Date "出库日期"
+		operator : proxy of RCEmployee "操作员"
+		itemSummarys : UIWarehouseProductSpecSummary[*] "出库明细"
+		comment : String "备注"
+		print : Boolean "打印出库单"
+		committed : Boolean
+		type : proxy of RCOutStockType "出库类型"
+		team : proxy of RCMaintenanceTeam "领料班组"
+		worker : proxy of RCEmployee "领料人"
+		
+	
+		map OutStockRecordMapper validate by OutStockRecordValidator{
+			direct{sid readonly,sourceStore,date,operator,comment,committed readonly,type,team,worker}
+			to entity{
+				entity.initItemsFromSummary(
+					ui.itemSummarys.^map[itemSummary|
+						new RCProductSpecificationSummary=>[
+							it.productSpec = entities.get(typeof(RCProductWarehouseStorageSummary),itemSummary.storageSummary.id).productSpec
+							it.quantity = itemSummary.quantity
+						]
+					].toList
+				)
+			}
+			from entity{
+				ui.itemSummarys = entity.items.^map[item|
+					new UIWarehouseProductSpecSummary()=>[
+						
+					]
+				].unlazy
+			}
+			
+		}
+	
+		constraints OutStockRecordValidator{
+			rule Required on sourceStore
+			rule Required on itemSummarys
+			rule Required on type
+		}
+
+		ui-component OutStockRecordDetailForm as GXTForm{
+			binding{
+				sid as ReadonlyItem,sourceStore as ReadonlyItem, date as ReadonlyItem,
+				operator as ReadonlyItem,comment as ReadonlyItem
+			}
+			con : Widget
+			asWidget() : Widget{
+				con = con.lazy[
+					TABLE=>[
+						tr=>[
+							td=>[it += sid.asWidget]
+							td=>[it += sourceStore.asWidget]
+						]
+						tr=>[
+							td=>[it += date.asWidget]
+							td=>[it += operator.asWidget]
+						]
+					]
+				]
+			}
+		}
+	
+		ui-component OutStockRecordForm as GXTForm{
+			@Inject transferRecordItemListGrid : WarehouseProductSpecSummaryListGrid
+			@Inject transferRecordItemForm : WarehouseProductSpecSummaryForm
+			required timeService : client.common.ServerSideTimeServiceAsync
+			binding{
+				sourceStore as RequiredComboBoxItem content from AllWarehouseByManagerContentProvider,
+				itemSummarys as ListGridBasedItem(transferRecordItemListGrid),
+				comment,
+				date as ReadonlyItem,
+				print as CheckBoxItem,
+				type as ComboBoxItem content from AllOutStockTypeContentProvider,
+				team as ComboBoxItem content from AllMaintenanceTeamContentProvider,
+				worker as ComboBoxItem content from AllOrgEmployeeContentProvider
+				
+				
+			}
+			con : Widget
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+				this.sourceStoreContentProvider.load(employee)[
+					notifier.apply(null)
+				]
+			}
+			
+			op setSourceWarehouse(store : proxy of RCWarehouse) : void{
+				transferRecordItemForm.setSourceWarehouse(store)
+			}
+			op setSelectedOrganization(newOrg : proxy of RCOrganization) : void{
+				workerContentProvider.load(newOrg)[]
+			}
+			action:(RCMaintenanceTeamProxy)=>void
+			op whenTeamChanged(action:(RCMaintenanceTeamProxy)=>void):void{
+				this.action = action
+			}
+			
+			op setProductSummary(productSummary : UIProductWarehouseStorageSummary):void{
+				transferRecordItemForm.storageSummary.value = productSummary
+				transferRecordItemForm.sourceQuantity.value = productSummary?.quantity.nullsafe
+			}
+			productSidSelectedHandler:(String, RCWarehouseProxy)=>void
+			op setProductSidSelectedHandler(callback:(String,RCWarehouseProxy)=>void):void{
+				this.productSidSelectedHandler = callback
+			}
+			lastInputComponent : Component
+						
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						add(TABLE=>[
+							tr=>[
+								td=>[it += date.asWidget=>[
+									timeService.getTime(onSuccess[
+										date.value=it
+									])
+								]]
+								td=>[it += sourceStore.asWidget=>[
+									sourceStore.addValueChangedListener[
+										transferRecordItemForm.setSourceWarehouse(it)
+										transferRecordItemForm.storageSummary.clear		
+										itemSummarys.value = newArrayList							
+									]
+								]]
+								td=>[it += type.asWidget]
+							]
+							tr=>[
+								td=>[it+=team.asWidget=>[
+									team.addValueChangedListener[
+										action.apply(team.value)
+									]
+								]]
+								td=>[it+=worker.asWidget]
+								td=>[]
+							]
+						],widgets.VLayoutData(1,-1))
+						add( widgets.FieldSet("出库明细")=>[
+							widget = widgets.VLayout=>[
+								it += TABLE=>[
+									lastInputComponent = transferRecordItemForm.storageSummary.field									
+									tr=>[
+										td=>[it += transferRecordItemForm.storageSummary.asWidget=>[
+											width = 485
+											transferRecordItemForm.storageSummary.addSelectionChangedListener[
+												transferRecordItemForm.sourceQuantity.value = it.head.quantity
+											]
+											transferRecordItemForm.storageSummary.field.addBlurHandler[
+												transferRecordItemForm.productSid.value = transferRecordItemForm.storageSummary.value?.productSpecsSid
+											]
+											OnEnter[
+												lastInputComponent = transferRecordItemForm.storageSummary.field
+												transferRecordItemForm.quantity.focus
+											]											
+										]]
+										td=>[
+											it += transferRecordItemForm.productSid.asWidget=>[
+												transferRecordItemForm.productSid.field.addBlurHandler[
+													productSidSelectedHandler?.apply(transferRecordItemForm.productSid.value,sourceStore.value)
+												]
+												OnEnter[
+													lastInputComponent = transferRecordItemForm.productSid.field
+													transferRecordItemForm.quantity.focus
+												]
+											]
+										]										
+									]
+								]
+								it += TABLE=>[
+									tr=>[
+										td=>[ width="330" it += transferRecordItemForm.sourceQuantity.asWidget]
+										td=>[
+											it += transferRecordItemForm.quantity.asWidget
+											OnEnter[
+												createItem()=>[
+													if(it!=null){
+														transferRecordItemListGrid.addElement(it)
+														lastInputComponent.focus
+														
+													}
+												]
+											]											
+										]
+									]
+								]
+								addFill(itemSummarys.asWidget=>[height=250])
+								itemSummarys.objectCreater=[
+									createItem
+								]
+							]
+						],widgets.VLayoutData(1,-1))
+						transferRecordItemListGrid.addEditCompleteListener[
+							transferRecordItemListGrid.updateElement(it=>[
+								sourceQuantity = storageSummary.quantity
+							])
+						]
+						add(print.asWidget,widgets.VLayoutData(130,-1,2))
+					]
+				]
+			}
+			
+			op createItem():UIWarehouseProductSpecSummary{
+				if(transferRecordItemForm.quantity.value == null ||
+					transferRecordItemForm.storageSummary.value == null
+				)
+					null
+				else if(transferRecordItemForm.quantity.value>transferRecordItemForm.storageSummary.value.quantity){
+					widgets.MessageBox("无效输入","库存数量不足").show
+					null
+				}else	 
+					transferRecordItemForm.valueAsNew=>[
+						val v = transferRecordItemForm.storageSummary.value
+						it.productName = v.name
+						it.sourceQuantity = v.quantity
+						it.productSid = v.productSpecsSid
+						it.typeDesc = v.typeDesc
+						it.brand = v.brand
+						it.unit = v.unit
+						it.id = -now.time
+						
+						transferRecordItemForm.quantity.value = null
+						transferRecordItemForm.sourceQuantity.value = null
+						transferRecordItemForm.productSid.value = null
+						transferRecordItemForm.storageSummary.value = null
+					]				
+			}			
+		}
+	
+		ui-component OutStockRecordListGrid as GXTGrid{
+			binding{sid,type,sourceStore,operator,date,team,worker,comment}
+		}
+	}
+
+	ui-entity UIOutStockRecordItem for RCOutStockRecordItem{
+	
+		sourceStore : proxy of RCWarehouse "出库仓库"
+		productSpec : proxy of RCProductSpecification "物品名称"
+	
+		materialId : String "物品编号"
+		brand : proxy of RCMaterialBrand "品牌"
+		price : Double	"单价"
+		sid : String "入库批号"
+		quantity : Integer "数量"
+	
+		productSid : String "条码"
+		typeDesc : String  "规格型号"
+		unit : proxy of RCProduceSpecificationUnit "计量单位"
+		
+		map OutStockRecordItemMapper validate by OutStockRecordItemValidator{
+			direct{
+				{quantity,entity.recordItem.quantity} readonly,
+				{sourceStore,entity.record.sourceStore} readonly,
+				{productSpec,entity.recordItem.productEntry.productSpec} readonly,
+				{sid,entity.recordItem.productEntry.sid} readonly,
+				{productSid,entity.recordItem.productEntry.productSpec.sid} readonly,
+				{typeDesc,entity.recordItem.productEntry.productSpec.typeDesc} readonly,
+				{unit,entity.recordItem.productEntry.productSpec.unit} readonly,
+				{materialId,entity.recordItem.productEntry.productSpec.materialId}readonly,
+				{brand,entity.recordItem.productEntry.productSpec.brandType}readonly,
+				{price,entity.recordItem.productEntry.price}readonly
+			}
+		}
+	
+		constraints OutStockRecordItemValidator{
+		}
+		
+		ui-component OutStockRecordItemListGrid as GXTGrid{
+			binding{sourceStore,productSpec,sid,productSid,typeDesc,quantity,unit}
+		}
+		
+		ui-component OutStockRecordItemReadonlyListGrid as GXTGrid{
+			@Inject productSpecificationListView : ProductSpecificationListView
+			binding{
+				sid as StringColumn(70),
+				productSid as StringColumn(70),
+				materialId as StringColumn(70),
+				productSpec as DefaultColumn(100),
+//				uiProductSpec ,
+				typeDesc as StringColumn(60),
+				brand,
+				price,
+				quantity,unit as DefaultColumn(50)
+			}
+		}
+		
+	}
+	
+	ui-criteria UIOutStockRecordCriteria for RCOutStockRecordCriteria{
+		sid : String "出库单号"
+		dateFrom : Date "起始日期"		
+		dateTo : Date "结束日期"		
+		stores : Collection<Long> 		
+		
+		map OutStockRecordCriteriaMapper{
+			@Inject warehouseDAO : RCWarehouseDAO
+			
+			direct{sid,dateFrom,dateTo}
+			to entity{
+				entity.stores = warehouseDAO.findManagedWarehouse.^map[^id].unlazy
+				
+			}
+			
+		}
+		ui-component OutStockRecordCriteriaForm as GXTForm{
+			binding{sid,dateFrom,dateTo}
+		}
+	}
+	signal OutStockRecordsChanged
+	presenter OutStockRecordListPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UIOutStockRecord>)
+			signal in showDetails(detail:UIOutStockRecord ,details : UIOutStockRecordItem[*])
+			signal in refresh()
+			signal out OutStockRequest() @outStockRecordListPresenter "物品出库"
+			signal out filterRequest(c : UIOutStockRecordCriteria)
+			signal out showDetailRequest(value : proxy of RCOutStockRecord)
+			signal out print(value : proxy of RCOutStockRecord)
+		}
+	
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateOutStockRecordPresenter
+			input call.setup(postInit : (OutStockRecordListPresenter)=>void ){
+				this.activate[
+					fire view.refresh
+					postInit.apply(this)
+				]
+			}
+			
+			input view.filterRequest(c : UIOutStockRecordCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input view.showDetailRequest(value : proxy of RCOutStockRecord){
+				service.loadDetails(value,onSuccess[details|
+					service.loadOutStockRecordInfo(value,onSuccess[detail|
+						fire view.showDetails(detail,details)
+					])
+				])
+			}
+			input eventbus.OutStockRecordsChanged(){
+				fire view.refresh
+			}
+			
+
+			input view.OutStockRequest(){
+				createOrUpdatePresenter.get=>[
+					setup4Create[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			
+			input view.print(value : proxy of RCOutStockRecord){
+				service.generatePrintContents(value,onSuccess[html|
+					Print::it(html)
+				])
+				
+			}
+			
+		}
+		service{
+			@Inject criteriaMapper : OutStockRecordCriteriaMapper
+			@Inject mapper : OutStockRecordMapper
+			@Inject itemMapper : OutStockRecordItemMapper
+			@Inject systemParameter : RCSystemParameterService
+
+			op generatePrintContents(record : proxy of RCOutStockRecord) : String{
+				OutStockTemplate::^template(resolve record,systemParameter.systemParameter,itemMapper)
+			}
+				
+			op filter(uicriteria : UIOutStockRecordCriteria) : IPagedResult<UIOutStockRecord>{
+				var c = uicriteria.createPagedCriteria(typeof(RCOutStockRecordCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op delete(value : proxy of RCOutStockRecord) : void {
+				entities.delete(resolve value)
+			}
+			op loadDetails(parent : proxy of RCOutStockRecord) : UIOutStockRecordItem[*]{
+				(resolve parent).items.^map[itemMapper.transform(it)].unlazy
+			}
+			op loadOutStockRecordInfo(record : proxy of RCOutStockRecord) : UIOutStockRecord{
+				mapper.transform(resolve record)
+			}
+		}
+	}
+	
+	view OutStockRecordListView for OutStockRecordListPresenter{
+		@Inject listGrid : OutStockRecordListGrid
+		@Inject criteriaForm : OutStockRecordCriteriaForm
+		@Inject detailsListGrid : OutStockRecordItemReadonlyListGrid
+//		@Inject OutStockRecordDetail : OutStockRecordDetail
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.FramedPanel("出库管理")=>[
+				setWidget(widgets.VLayout=>[
+					add(
+						widgets.HTableLayout()=>[
+							add(<Widget>newArrayList(
+								criteriaForm.sid.asWidget,
+								criteriaForm.dateFrom.asWidget,
+								criteriaForm.dateTo.asWidget,
+								widgets.TextButton("查询")=>[
+									setWidth("80px")
+									addSelectHandler[
+										fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+											page = 1
+										])
+									]
+								]
+							)	
+						)]
+					)
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]	
+					add( widgets.ContentPanel()=>[
+							widget = widgets.VLayout=>[
+								add(listGrid.asWidget,widgets.VLayoutData(1,1))
+								add(pager.asWidget,widgets.VLayoutData(1,-1))
+							]
+							securities.check(ui-requester.OutStockRequest)[v|
+								addButton(widgets.TextButton("物品出库")=>[
+									addSelectHandler[
+										fire view.OutStockRequest()
+									]
+								])
+							]
+							addButton(listGrid.createActionContext.onSingleObjectAction[
+								onExecute[UIOutStockRecord record|
+									fire view.print(record.toProxy)
+								]
+							].asButtonRequester("打印出库单"))
+							
+						],widgets.VLayoutData(1,0.55))					
+
+					add(widgets.TabPanel=>[
+						add(detailsListGrid.asWidget,"出库明细")
+//						add(OutStockRecordDetail.asWidget,"入库详情")
+					],widgets.VLayoutData(1,0.45))
+					listGrid.addSelectEntityListener[
+						fire view.showDetailRequest(it.toProxy)
+					]
+					listGrid.addSelectionChangedListener[
+						if(it.isNullOrEmpty)
+							detailsListGrid.objects = newArrayList
+					]
+				])
+			
+			]					
+		}
+	
+		op showResults(results : IPagedResult<UIOutStockRecord>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op showDetails(detail:UIOutStockRecord ,details : UIOutStockRecordItem[*]):void{
+//			OutStockRecordDetail.value = detail
+			detailsListGrid.objects = details
+		}
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+	}	
+	
+	presenter CreateOrUpdateOutStockRecordPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIOutStockRecord
+			op setValue(value : UIOutStockRecord) : void
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void		
+			op setSelectedOrganization(newOrg : proxy of RCOrganization) : void
+			signal out teamChanged(newTeam : proxy of RCMaintenanceTeam)
+			signal out productSidEntered(productSid : String, store : proxy of RCWarehouse)
+			op setProductSummary(productSummary : UIProductWarehouseStorageSummary):void				
+			op postInitialize():void
+		}
+		
+		interaction{
+			used4Update : boolean
+			
+			input call.setup4Create(
+				(CreateOrUpdateOutStockRecordPresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.activate[
+					service.loadCurrentUser(onSuccess[
+						getView().setSourceWarehouseContext(it)[
+							postInitializer.apply(this)
+							getView().postInitialize()
+						]
+					])
+				]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCOutStockRecord,
+				(CreateOrUpdateOutStockRecordPresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadCurrentUser(onSuccess[
+						getView().setSourceWarehouseContext(it)[
+						service.loadValue(value,onSuccess[
+							getView().setValue(it)
+								postInitializer.apply(this)
+								
+							])
+						]
+					])
+				]
+			}
+			input view.teamChanged(newTeam : proxy of RCMaintenanceTeam){
+				service.loadOrganization(newTeam,onSuccess[
+					getView().setSelectedOrganization(it)
+				])
+			}
+			input view.productSidEntered(sid : String, store : proxy of RCWarehouse){
+				service.getProductSummaryByProductSid(sid,store,onSuccess[
+					getView().setProductSummary(it)
+				])
+			}			
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.OutStockRecordsChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value,onSuccess[record|
+						fire eventbus.OutStockRecordsChanged()
+						if(getView().value.print){
+							service.generatePrintContents(record,onSuccess[html|
+								Print::it(html)
+							])
+						}
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : OutStockRecordMapper
+			@Inject systemUserService : ISystemUserService
+			@Inject warehouseService : RCWarehouseService
+			@Inject systemParameter : RCSystemParameterService
+			@Inject itemMapper : OutStockRecordItemMapper
+			@Inject productSpecificationDAO : RCProductSpecificationDAO
+			@Inject productWarehouseStorageSummaryMapper : ProductWarehouseStorageSummaryMapper
+			
+			op getProductSummaryByProductSid(sid : String, store : proxy of RCWarehouse):UIProductWarehouseStorageSummary{
+				val productSpec = productSpecificationDAO.findBySid(sid)
+				if(productSpec!=null){
+					productWarehouseStorageSummaryMapper.transform(
+						(entities.createQueryCriteria(typeof(RCProductWarehouseStorageSummaryCriteria))=>[
+							it.productSpec = productSpec
+							it.store = resolve store
+						]).list.head
+					)
+				}
+			}			
+			op loadValue(pvalue : proxy of RCOutStockRecord) : UIOutStockRecord{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIOutStockRecord) : void{
+				val result = resolve uivalue
+				mapper.transform(uivalue,result)
+				result.commit((systemUserService.currentUser as RCEmployeeUser).employee)
+				
+			}
+			op loadOrganization(team : proxy of RCMaintenanceTeam) : proxy of RCOrganization{
+				(resolve team).organization.toProxy
+			}
+			
+			op createValue(uivalue : UIOutStockRecord) : proxy of RCOutStockRecord{
+				val result = warehouseService.createOutStockRecord[
+					mapper.transform(uivalue,it)
+				]
+				result.commit((systemUserService.currentUser as RCEmployeeUser).employee)
+				result.toProxy
+			}
+			op getHostWarehouse() : proxy of RCWarehouse{
+				warehouseService.majorWarehouse.toProxy
+			}
+			op loadCurrentUser() : proxy of RCEmployee{
+				(systemUserService.currentUserAsParty as RCEmployee).toProxy
+			}
+			
+			op generatePrintContents(record : proxy of RCOutStockRecord) : String{
+				OutStockTemplate::^template(resolve record,systemParameter.systemParameter,itemMapper)
+			}
+			
+		}
+	}
+	
+	view CreateOrUpdateOutStockRecordView for CreateOrUpdateOutStockRecordPresenter implements IHasSize, IHasTitle{
+		@Inject form : OutStockRecordForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+			form.whenTeamChanged[
+				fire view.teamChanged(it)
+			]
+			form.setProductSidSelectedHandler[sid,store|
+				fire view.productSidEntered(sid,store)
+			]			
+		}
+		op getValue() : UIOutStockRecord{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIOutStockRecord value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(810,530)
+		}
+		op getTitle():String{
+			'物品出库'
+		}
+		op postInitialize():void{
+			form.type.selectFirst
+		}
+		op setSelectedOrganization(newOrg : proxy of RCOrganization) : void{
+			form.setSelectedOrganization(newOrg)
+		}		
+		op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+			form.setSourceWarehouseContext(employee)[
+				form.sourceStore.selectFirst
+				form.setSourceWarehouse(form.sourceStore.value)
+				notifier.apply(null)
+			]
+		}
+		op setProductSummary(productSummary : UIProductWarehouseStorageSummary):void{
+			form.setProductSummary(productSummary)
+		}		
+	}	
+	presenter OutStockRecordItemDetailPresenter{
+		view interface{
+			signal in setResults(value : UIOutStockRecord,results : UIOutStockRecordItem[*])
+			signal out print()
+		}
+		
+		interaction{
+			context : proxy of RCOutStockRecord
+			input call.setup(postInit : (OutStockRecordItemDetailPresenter)=>void){
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			input call.setup(context : proxy of RCOutStockRecord,postInit : (OutStockRecordItemDetailPresenter)=>void){
+				this.context = context
+				this.activate[
+					refresh
+					postInit.apply(this)
+				]
+			}
+			
+			input call.setOutStockRecord(context : proxy of RCOutStockRecord){
+				this.context = context
+				refresh
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadWorkItemStockRecordItemList(context,onSuccess[items|
+						service.loadValue(context,onSuccess[value|
+							fire view.setResults(value,items)
+						])
+					])
+				}
+			}
+			input view.print(){
+				service.generatePrintContents(context,onSuccess[html|
+					Print::it(html)
+				])
+			}
+		}
+		
+		service{
+			@Inject mapper : OutStockRecordItemMapper
+			@Inject valueMapper : OutStockRecordMapper
+			@Inject systemParameter : RCSystemParameterService
+			@Inject itemMapper : OutStockRecordItemMapper
+			
+			op loadWorkItemStockRecordItemList(context : proxy of RCOutStockRecord) : UIOutStockRecordItem[*]{
+				(resolve context).items.^map[mapper.transform(it)].unlazy
+			}
+			op loadValue(context : proxy of RCOutStockRecord) : UIOutStockRecord{
+				valueMapper.transform((resolve context))
+			}
+			op generatePrintContents(record : proxy of RCOutStockRecord) : String{
+				OutStockTemplate::^template(resolve record,systemParameter.systemParameter,itemMapper)
+			}
+			
+		}
+	}
+	
+	view OutStockRecordItemDetailView for OutStockRecordItemDetailPresenter  implements IHasTitle, IHasSize{
+		con : Widget
+		@Inject listGrid : OutStockRecordItemListGrid
+		@Inject detail : OutStockRecordDetailForm
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = widgets.ContentPanel=>[
+				widget = widgets.VLayout=>[
+					add(detail.asWidget)
+					add(widgets.FieldSet("出库明细")=>[
+						it.widget = listGrid.asWidget
+					],widgets.VLayoutData(1,1))
+				]
+				addButton(widgets.TextButton("打印")=>[
+					addSelectHandler[
+						fire view.print()
+					]
+				])
+				
+			]
+		}
+		op getTitle():String{
+			"出库信息"
+		}
+		
+		op getSize() : Size{
+			new Size(800,555)
+		}
+		
+		interaction{
+			input view.setResults(value : UIOutStockRecord ,results : UIOutStockRecordItem[*]){
+				detail.value = value
+				listGrid.objects = results
+			}
+		}
+	}
+}
+	
+	
+
+
+	

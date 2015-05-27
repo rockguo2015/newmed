@@ -1,0 +1,118 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import com.uniquesoft.gwt.shared.datatype.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.sencha.gxt.data.shared.TreeStore
+	import com.sencha.gxt.widget.core.client.treegrid.TreeGrid
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.validation.ValidationException
+	import com.uniquesoft.uidl.validation.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	 
+	ui-datatype DateValueData{
+		theValue : Date "值"
+		ui-component DateValueDataForm as GXTForm{
+			binding{theValue}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(theValue.asWidget)
+					]
+				]
+			}
+		}
+		constraints DateValueDataValidator{
+			rule Required on theValue
+		}
+	}
+	
+	presenter DateValueEditorPresenter with-validation implements IValueEditor{
+		view interface{
+			op getValue() : DateValueData
+			op setValue(value : Date) : void
+		}
+		
+		interaction{
+			commiter : ()=>void
+			input call.setup(slot : proxy of RCAttributeSlot, callback : (DateValueEditorPresenter)=>void){
+				commiter = [|
+					service.updateValue(slot,getView().value,onSuccess[
+						fire eventbus.AttributeSlotChanged(it)
+					])
+				]
+				this.activate[
+					service.loadValue(slot,onSuccess[
+						getView().setValue(it)
+						callback.apply(this)
+					])
+				]
+			}
+			
+			input call.performCommit() {
+				commiter.apply()
+			}			
+		}
+		
+		service{
+			@Inject dateValueDataValidator : DateValueDataValidator
+			@Inject attributeSlotMapper : AttributeSlotMapper
+			op updateValue(slot:proxy of RCAttributeSlot,theValue : DateValueData) : UIAttributeSlot{
+				theValue.validateWith(dateValueDataValidator)
+				((resolve slot).value as RCDateValue).setValue(theValue.theValue)
+				attributeSlotMapper.transform(resolve slot)
+			}
+			op loadValue(slot : proxy of RCAttributeSlot):Date{
+				((resolve slot).value as RCDateValue).date
+			}
+
+		}
+	}
+	
+	view DateValueEditorView for DateValueEditorPresenter{
+		@Inject form : DateValueDataForm
+		initializer{
+			this += form.asWidget
+		}
+		op getValue() : DateValueData{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(value : Date) : void{
+			form.theValue.value = value
+		}
+		op getSize():Size{
+			new Size(300,200)
+		}
+		op getTitle():String{
+			'设置日期'
+		}
+	}
+
+}

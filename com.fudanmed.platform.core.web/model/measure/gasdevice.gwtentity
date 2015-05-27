@@ -1,0 +1,254 @@
+package com.fudanmed.platform.core.web feature measure{
+	
+	import java.util.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.measure.*
+	import com.fudanmed.platform.core.measure.^proxy.*
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import  com.fudanmed.platform.core.web.shared.measure.*
+	
+	ui-entity UIGasMeasureDevice for RCGasMeasureDevice{
+		sid : String "编号"
+		name:String "名称"
+		location : String "安装位置"
+		map GasMeasureDeviceMapper validate by GasMeasureDeviceValidator{
+			direct{sid,name,location}
+		}
+	
+		constraints GasMeasureDeviceValidator{
+		}
+	
+		ui-component GasMeasureDeviceForm as GXTForm{
+			binding{sid,name,location}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(sid.asWidget)
+						addFill(name.asWidget)
+						addFill(location.asWidget)
+					]
+				]
+			}			
+		}
+	
+		ui-component GasMeasureDeviceListGrid as GXTGrid{
+			binding{sid,name,location}
+		}
+		
+	}
+	
+	signal GasMeasureDevicesChanged
+	
+	ui-command CreateGasMeasureDeviceCommand require proxy of RCGasMeasureDeviceType "新建"{
+		factory createOrUpdateGasMeasureDevicePresenter : CreateOrUpdateGasMeasureDevicePresenter
+		execute{
+			createOrUpdateGasMeasureDevicePresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command UpdateGasMeasureDeviceCommand require proxy of RCGasMeasureDevice "修改"{
+		factory createOrUpdateGasMeasureDevicePresenter : CreateOrUpdateGasMeasureDevicePresenter
+		execute{
+			createOrUpdateGasMeasureDevicePresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeleteGasMeasureDeviceCommand require proxy of RCGasMeasureDevice "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.GasMeasureDevicesChanged
+				])
+			].show
+		}
+		service{
+			op delete(value : proxy of RCGasMeasureDevice):void{
+				//TODO Delete
+			}
+		}
+	}
+
+	presenter CreateOrUpdateGasMeasureDevicePresenter for UIGasMeasureDevice{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : proxy of RCGasMeasureDeviceType){
+				commiter=[notifier|
+					service.createValue(getView().value,parent,onSuccess[
+						fire eventbus.GasMeasureDevicesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of RCGasMeasureDevice){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.GasMeasureDevicesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+	
+		service{
+			@Inject mapper : GasMeasureDeviceMapper
+			op loadValue(pvalue : proxy of RCGasMeasureDevice) : UIGasMeasureDevice{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIGasMeasureDevice) : void{
+				(resolve uivalue).update[
+					mapper.transform(uivalue,it)
+				]
+				
+			}
+			op createValue(uivalue : UIGasMeasureDevice,parent : proxy of RCGasMeasureDeviceType) : void{
+				(resolve parent).createDevice[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateGasMeasureDeviceView<GasMeasureDeviceForm> for CreateOrUpdateGasMeasureDevicePresenter ui-size:(300,200) ui-title:"气表信息维护"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}
+	
+	presenter GasMeasureDeviceListPresenter {
+		view interface{
+			signal in setResults(results : UIGasMeasureDevice[*])
+			op getActionContext() : ActionContext< UIGasMeasureDevice>	
+		}
+		
+		interaction{
+			context : proxy of RCGasMeasureDeviceType
+			
+			input prepare.setup(context : proxy of RCGasMeasureDeviceType){
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadGasMeasureDeviceList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input eventbus.GasMeasureDevicesChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : GasMeasureDeviceMapper
+			
+			op loadGasMeasureDeviceList(context : proxy of RCGasMeasureDeviceType) : UIGasMeasureDevice[*]{
+				(resolve context).measureDevices.filter(typeof(RCGasMeasureDevice)).^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view GasMeasureDeviceListView for GasMeasureDeviceListPresenter{
+		con : Widget
+		@Inject listGrid : GasMeasureDeviceListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		
+		interaction{
+			input view.setResults(results : UIGasMeasureDevice[*]){
+				listGrid.objects = results
+			}
+		}
+		op getActionContext() : ActionContext< UIGasMeasureDevice>{
+				listGrid.createActionContext
+		}
+	}
+	
+	
+	ui-command ShowGasMeasureDeviceManagementCommand require  proxy of RCGasMeasureDeviceType ""{
+		factory managementPresenter : GasMeasureDeviceManagementPresenter
+		execute{
+			managementPresenter.get.setup(value)[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}	
+	presenter GasMeasureDeviceManagementPresenter{
+		view interface{
+			op setContext(context : proxy of RCGasMeasureDeviceType):void			
+		}
+		interaction{
+			part queryListPresenter : GasMeasureDeviceListPresenter
+			input prepare.setup(context : proxy of RCGasMeasureDeviceType){
+				initPart(queryListPresenter).setup(context)[
+					this.activate[
+						getView().setContext(context)
+						done
+					]
+				]
+			}
+		}
+	}
+	
+	view GasMeasureDeviceManagementView for GasMeasureDeviceManagementPresenter{
+		con: Widget
+		asWidget() : Widget{
+			con
+		}	
+		context : proxy of RCGasMeasureDeviceType
+		@Inject createGasMeasureDeviceCommand : CreateGasMeasureDeviceCommand
+		@Inject updateGasMeasureDeviceCommand : UpdateGasMeasureDeviceCommand
+		@Inject deleteGasMeasureDeviceCommand : DeleteGasMeasureDeviceCommand
+		
+		layout{
+			val ac = queryListPresenter.getView().actionContext.adapt[toProxy]
+			con = widgets.ContentPanel=>[
+				widget = queryListPresenter.getView().asWidget
+				addCommand([|context],createGasMeasureDeviceCommand)
+				addCommand(ac,updateGasMeasureDeviceCommand)
+				addCommand(ac,deleteGasMeasureDeviceCommand)
+			]
+		}
+		op setContext(context : proxy of RCGasMeasureDeviceType):void{
+			this.context = context
+		}
+	}	
+}
+		

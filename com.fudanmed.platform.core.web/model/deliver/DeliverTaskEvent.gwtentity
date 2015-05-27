@@ -1,0 +1,115 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.domain.organization.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	ui-enum UIPatientCheckDeliverTaskEventType for DLPatientCheckDeliverTaskEventType{
+		title{
+			create = '新建'
+			performUpdate = '修改'
+			dispatch = '派发'
+			cancel = '取消'
+			cancelDispatch = '取消派发'
+			finish = '完成任务'
+		}
+	}
+	ui-entity UIPatientCheckDeliverTaskEvent for DLPatientCheckDeliverTaskEvent{
+		createTime : Date "事件时间"
+		operator : proxy of RCEmployee "操作人"
+		description : String "事件描述"
+		eventType : UIPatientCheckDeliverTaskEventType
+		map PatientCheckDeliverTaskEventMapper{
+			direct{eventType readonly,createTime readonly,operator readonly,description readonly}
+		}
+	
+		ui-component PatientCheckDeliverTaskEventListGrid as GXTGrid{
+			binding{eventType,createTime as DateTimeColumn, operator, description}
+		}
+	}
+	
+	presenter PatientCheckDeliverTaskEventListPresenter require proxy of DLCenterlizedDeliverTask{
+		view interface{
+			signal in setResults(results : UIPatientCheckDeliverTaskEvent[*])
+			op getActionContext() : ActionContext< UIPatientCheckDeliverTaskEvent>		
+			op clear():void
+		}
+		
+		interaction{
+			context : proxy of DLCenterlizedDeliverTask
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(context : proxy of DLCenterlizedDeliverTask){
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.setTask(context : proxy of DLCenterlizedDeliverTask){
+				this.context = context
+				refresh
+			}
+			input call.setContext(ac : ActionContext<DLCenterlizedDeliverTaskProxy>){
+				ac.addSelectionChangedListener[Iterable<DLCenterlizedDeliverTaskProxy> selections|
+					if(selections.size==1){
+						setTask(selections.head)
+					}else{
+						getView().clear
+					}
+				]
+			}			
+			input call.refresh(){
+				if(context!=null){
+					service.loadPatientCheckDeliverTaskEventList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+		}
+		
+		service{
+			@Inject mapper : PatientCheckDeliverTaskEventMapper
+			
+			op loadPatientCheckDeliverTaskEventList(context : proxy of DLCenterlizedDeliverTask) : UIPatientCheckDeliverTaskEvent[*]{
+				(resolve context).events.filter(typeof(DLPatientCheckDeliverTaskEvent)).^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view PatientCheckDeliverTaskEventListView for PatientCheckDeliverTaskEventListPresenter{
+		con : Widget
+		@Inject listGrid : PatientCheckDeliverTaskEventListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		
+		interaction{
+			input view.setResults(results : UIPatientCheckDeliverTaskEvent[*]){
+				listGrid.objects = results
+			}
+		}
+		op getActionContext() : ActionContext< UIPatientCheckDeliverTaskEvent>{
+				listGrid.createActionContext
+		}
+		op clear():void{
+			listGrid.objects = newArrayList
+		}
+		
+	}		
+}

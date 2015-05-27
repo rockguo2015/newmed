@@ -1,0 +1,115 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	 
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.fudanmed.platform.core.web.client.common.*
+	
+	ui-datatype GroupTaskFinishReportData{
+		finishDate : Date "完工上报日期"
+		finishTime : Date "完工上报时间"
+		comment : String "上报信息"
+		constraints GroupTaskFinishReportDataValidator{
+			rule Required on finishDate
+			rule Required on finishTime
+		}
+		
+		ui-component GroupTaskFinishReportDataForm as GXTForm{
+			binding{ finishDate, finishTime as TimeItem, comment as TextAreaItem}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						add(finishDate.asWidget,widgets.VLayoutData(1,-1))
+						add(finishTime.asWidget,widgets.VLayoutData(1,-1))
+						add(comment.asWidget,widgets.VLayoutData(366,80))
+					]
+				]
+			}			
+		}
+	}
+	
+	presenter GroupTaskFinishReportPresenter  with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : GroupTaskFinishReportData
+		}
+		
+		interaction{
+			context : proxy of RCGroupTask
+			input call.setup(context : proxy of RCGroupTask,postInit : (GroupTaskFinishReportPresenter)=>void){
+				this.context = context
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.commit(context,getView().value,onSuccess[
+					fire eventbus.GroupTasksChanged
+					notifier.success
+				])
+			}
+		}
+	
+		service{
+			@Inject ^validator : GroupTaskFinishReportDataValidator
+			op commit(context : proxy of RCGroupTask,data : GroupTaskFinishReportData) : void{
+				data.validateWith(^validator)
+				val value = (resolve context)
+				value.finishDate = data.finishDate
+				value.finishTime = data.finishTime
+				value.comment = data.comment
+				value.reportFinish
+			}
+		}
+	}
+	
+	view GroupTaskFinishReportView for GroupTaskFinishReportPresenter  implements IHasSize, IHasTitle{
+		@Inject form : GroupTaskFinishReportDataForm
+		required timeService : ServerSideTimeServiceAsync
+		initializer{
+			this += widgets.VLayout=>[add(
+				form.asWidget=>[
+					timeService.getTime(onSuccess[
+						form.finishDate.value = it.trimDate
+						form.finishTime.value = it
+					])
+				],widgets.VLayoutData(1,-1,10))
+				
+			]
+		}
+		
+		op getValue() : GroupTaskFinishReportData{
+			form.value
+		}
+		
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{   
+			form.clearErrors
+		}
+		
+		op getSize():Size{
+			new Size(400,240)
+		}
+		op getTitle():String{
+			"完工上报"
+		}
+		
+	}	
+}

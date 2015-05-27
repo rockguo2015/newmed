@@ -1,0 +1,91 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	
+	ui-command ShowDeliverMaterialCategoryManagementCommand "运送材料维护"{
+		factory managementPresenter : DeliverMaterialCategoryManagementPresenter
+		execute{
+			managementPresenter.get.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}	
+	presenter DeliverMaterialCategoryManagementPresenter{
+		view interface{
+		}
+		interaction{
+			part queryListPresenter : DeliverMaterialCategoryListPresenter
+			part deliverMaterialTypeQueryListPresenter : DeliverMaterialTypeQueryListPresenter
+			
+			input prepare.setup(){
+				initPart(queryListPresenter).setup[
+					initPart(deliverMaterialTypeQueryListPresenter).setup(queryListPresenter.getView().actionContext.adapt[toProxy])[
+						this.activate[
+							done
+						]					
+					]
+				]
+			}
+		}
+	}
+	
+	view DeliverMaterialCategoryManagementView for DeliverMaterialCategoryManagementPresenter{
+		
+		@Inject createDeliverMaterialCategoryCommand : CreateDeliverMaterialCategoryCommand 
+		@Inject updateDeliverMaterialCategoryCommand : UpdateDeliverMaterialCategoryCommand 
+		@Inject deleteDeliverMaterialCategoryCommand : DeleteDeliverMaterialCategoryCommand
+				
+		@Inject createDeliverMaterialTypeCommand : CreateDeliverMaterialTypeCommand
+		@Inject updateDeliverMaterialTypeCommand : UpdateDeliverMaterialTypeCommand
+		@Inject deleteDeliverMaterialTypeCommand : DeleteDeliverMaterialTypeCommand
+		
+		con: Widget
+		
+		asWidget() : Widget{
+			con
+		}	
+		layout{
+			val categoryAC = queryListPresenter.getView().actionContext.adapt[toProxy]
+			con = widgets.FramedPanel("运送材料维护")=>[
+				widget = widgets.HLayout=>[
+					add(widgets.FieldSet("运送材料大类")=>[
+						widget = widgets.ContentPanel=>[
+						widget = queryListPresenter.getView().asWidget
+						addCommand([|categoryAC.onlySelected],createDeliverMaterialCategoryCommand)
+						addCommand(categoryAC,updateDeliverMaterialCategoryCommand)
+						addCommand(categoryAC,deleteDeliverMaterialCategoryCommand)
+						]
+					],widgets.HLayoutData(0.3,1))
+					add(widgets.FieldSet("运送材料类别")=>[
+						widget = widgets.ContentPanel=>[
+							val typeAC = deliverMaterialTypeQueryListPresenter.getView().actionContext.adapt[toProxy]
+							widget = deliverMaterialTypeQueryListPresenter.getView().asWidget
+							addCommand(categoryAC,createDeliverMaterialTypeCommand)
+							addCommand(typeAC,updateDeliverMaterialTypeCommand)
+							addCommand(typeAC,deleteDeliverMaterialTypeCommand)
+						]
+					],widgets.HLayoutData(0.7,1))					
+					
+				]
+			]				
+		}		
+	}
+}

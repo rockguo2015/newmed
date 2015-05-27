@@ -1,0 +1,237 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.warehouse.^proxy.RCProductStorageProxy
+	
+//	ui-criteria UIProductStoreTransactionCriteria for RCProductStoreTransactionCriteria{
+//		productStorage : proxy of RCProductStorage
+//		map ProductStoreTransactionCriteriaMapper{
+//			direct{productStorage}
+//		}
+//	}
+	
+	ui-entity UIProductStoreTransaction for RCProductStoreTransaction{
+		transactionTypeDesc : String "事件名称"
+		eventRecordSid : String "单据编号"
+		date : Date "日期"
+		quantity : Integer "数量"
+		price : Double "金额"
+		operator : proxy of RCEmployee "操作员"
+	
+		map ProductStoreTransactionMapper {
+			direct{eventRecordSid readonly, transactionTypeDesc readonly,date readonly, quantity readonly, operator readonly}
+			from entity{
+				ui.price = entity.productStorage.productEntry.price * entity.quantity
+			}
+		}
+	
+		ui-component ProductStoreTransactionListGrid as GXTGrid{
+			binding{transactionTypeDesc,eventRecordSid,date,quantity,price,operator}
+		}
+	}
+	
+	signal ProductStoreTransactionsChanged
+	presenter ProductStoreTransactionListPresenter{
+		view interface{
+			signal in setResults(results : UIProductStoreTransaction[*])
+		}
+		
+		interaction{
+			input call.setup(postInit : (ProductStoreTransactionListPresenter)=>void){
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			input call.setup(context : proxy of RCProductStorage,postInit : (ProductStoreTransactionListPresenter)=>void){
+				this.activate[
+					refresh4Storage(context)
+					postInit.apply(this)
+				]
+			}
+			
+			input call.setProductStorage(context : proxy of RCProductStorage){
+				refresh4Storage(context)
+			}
+			
+			input call.setProductStorage4Summary(context : proxy of RCProductWarehouseStorageSummary){
+				refresh4Summary(context)
+			}
+			input call.setProductStorage4Summary(context : proxy of RCProductWarehouseStorageSummary, dateFrom : Date, dateTo : Date){
+				refresh4Summary(context,dateFrom,dateTo)
+			}
+			
+			input call.refresh4Storage(context : proxy of RCProductStorage){
+				if(context!=null){
+					service.loadProductStoreTransactionList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input call.refresh4Summary(context : proxy of RCProductWarehouseStorageSummary){
+				if(context!=null){
+					service.loadProductStoreTransactionList4Summary(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			input call.refresh4Summary(context : proxy of RCProductWarehouseStorageSummary, dateFrom : Date, dateTo:Date){
+				if(context!=null){
+					service.loadProductStoreTransactionList4Summary(context,dateFrom,dateTo,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input call.reset(){
+				fire view.setResults(<UIProductStoreTransaction>newArrayList)
+			}
+		}
+		
+		service{
+			@Inject mapper : ProductStoreTransactionMapper
+			
+			op loadProductStoreTransactionList(context : proxy of RCProductStorage) : UIProductStoreTransaction[*]{
+				(resolve context).transactions.^map[mapper.transform(it)].unlazy
+			}
+			op loadProductStoreTransactionList4Summary(context : proxy of RCProductWarehouseStorageSummary): UIProductStoreTransaction[*]{
+				(resolve context).transactions.^map[mapper.transform(it)].unlazy
+			}
+			op loadProductStoreTransactionList4Summary(context : proxy of RCProductWarehouseStorageSummary,dateFrom : Date, dateTo:Date): UIProductStoreTransaction[*]{
+				(resolve context).transactions.filter[
+					if(dateFrom!=null) date >= dateFrom.trimDate else true && if(dateTo!=null) date<=dateTo.addDays(1).trimDate else true
+				].^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view ProductStoreTransactionListView for ProductStoreTransactionListPresenter{
+		con : Widget
+		@Inject listGrid : ProductStoreTransactionListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		
+		interaction{
+			input view.setResults(results : UIProductStoreTransaction[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+	
+
+
+//	ui-criteria UIProductStoreTransactionCriteria for RCProductStoreTransactionCriteria{
+//		productStorage : proxy of RCProductStorage
+//		map ProductStoreTransactionCriteriaMapper{
+//			direct{productStorage}
+//		}
+////		ui-component ProductStoreTransactionCriteriaForm as GXTForm{
+////			binding{}
+////		}
+//	}
+//	
+//	presenter ProductStoreTransactionQueryListPresenter provide UIProductStoreTransaction{
+//		view interface{
+//			signal in showResults(results : IPagedResult<UIProductStoreTransaction>)
+//			signal in refresh()
+//
+//			signal out filterRequest(c : UIProductStoreTransactionCriteria)
+//			op getActionContext():ActionContext<UIProductStoreTransaction>
+//		}
+//
+//		interaction{
+//			contextProvider : ()=>RCProductStorageProxy
+//			input prepare.setup(){
+//				this.activate[
+//					fire view.refresh
+//					done
+//				]
+//			}
+//			input prepare.setup(context : proxy of RCProductStorage){
+//				this.activate[
+//					contextProvider =[|context]
+//					fire view.refresh
+//					done
+//				]
+//			}
+//			
+//			input view.filterRequest(c : UIProductStoreTransactionCriteria){
+//				service.filter(c=>[it.productStorage = contextProvider.apply()],onSuccess[
+//					fire view.showResults(it)
+//				])
+//			}
+//			input eventbus.ProductStoreTransactionsChanged(){
+//				fire view.refresh
+//			}
+//		}
+//		service{
+//			@Inject criteriaMapper : ProductStoreTransactionCriteriaMapper
+//			@Inject mapper : ProductStoreTransactionMapper
+//			op filter(uicriteria : UIProductStoreTransactionCriteria) : IPagedResult<UIProductStoreTransaction>{
+//				var c = uicriteria.createPagedCriteria(typeof(RCProductStoreTransactionCriteria),criteriaMapper,entities)
+//				c.listAndTransform[mapper.apply(it)]
+//			}
+//		}
+//	}
+//	
+//	view ProductStoreTransactionQueryListView for ProductStoreTransactionQueryListPresenter{
+//		@Inject listGrid : ProductStoreTransactionListGrid
+//		
+//		pager : IPager 
+//		
+//		con: Widget
+//		asWidget() : Widget{
+//			con
+//		}		
+//		layout{
+//			listGrid.asWidget
+//			con = widgets.VLayout=>[
+//
+//				pager = listGrid.createPager=>[
+//					pagerHandler = [int pageNum, int recordsPerPage|
+//						fire view.filterRequest(new UIProductStoreTransactionCriteria().withPagerInfo(pager)=>[
+//							page = pageNum
+//							pageSize = recordsPerPage
+//						])							
+//					]
+//				]
+//				
+//				add(listGrid.asWidget,widgets.VLayoutData(1,1))
+//				add(pager.asWidget)
+//			]
+//		}
+//		
+//		op showResults(results : IPagedResult<UIProductStoreTransaction>) : void{
+//			pager.pageLoaded(results)
+//		}
+//		
+//		op refresh() : void{
+//			pager.gotoPage(pager.activePage)
+//		}
+//		
+//		op getActionContext():ActionContext<UIProductStoreTransaction>{
+//			listGrid.createActionContext
+//		}
+//	}	
+
+ 
+}

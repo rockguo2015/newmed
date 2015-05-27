@@ -1,0 +1,524 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.Date
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.web.*
+
+	ui-entity UIDevicePMSpecification for RCDevicePMSpecification{
+		device : proxy of RCDevice "维保设备"
+		
+		sid : String "设备编号"
+		name : String "设备名称"
+		specification : String "规格型号"
+		location : proxy of RCOnsitePosition "安装地点"
+		productor : proxy of RCSupplier "生产厂商"
+		supplier : proxy of RCSupplier "供应厂商"
+		deviceType : proxy of RCDeviceType "设备类型"
+		
+		
+		pmType : proxy of RCDevicePMType "维保类别"
+		intervalInDays : Integer "维保周期(天)"
+		description : String "维保内容"
+		lastPMPlanDate : Date "最后PM计划日期"
+	
+		map DevicePMSpecificationMapper validate by DevicePMSpecificationValidator{
+			direct{
+				device,pmType,intervalInDays,description,lastPMPlanDate readonly,
+				{sid,entity.device.sid} readonly,
+				{name,entity.device.name} readonly,
+				{specification,entity.device.specification} readonly,
+				{location,entity.device.location} readonly,
+				{productor,entity.device.productor} readonly,
+				{supplier,entity.device.supplier} readonly,
+				{deviceType,entity.device.deviceType} readonly
+			}
+		}
+	
+		constraints DevicePMSpecificationValidator{
+			rule Required on device
+			rule Required on pmType
+			rule Required on intervalInDays
+		}
+	
+		ui-component DevicePMSpecificationForm as GXTForm{
+//			@Inject deviceListView : DeviceListView
+			binding{
+//				device as RequiredSuggestionItem(deviceListView) content from AllDeviceContentProvider, 
+				device as ReadonlyItem,
+				pmType as ComboBoxItem content from RCDevicePMTypeContentProvider,
+				intervalInDays,
+				description as TextAreaItem
+			}
+			op createWidget() : Widget{
+				widgets.VLayout=>[
+					add(device.asWidget,widgets.VLayoutData(1,-1))
+					add(pmType.asWidget,widgets.VLayoutData(1,-1))
+					add(intervalInDays.asWidget,widgets.VLayoutData(1,-1))
+					add(description.asWidget,widgets.VLayoutData(525,160))
+				]
+			}			
+		}
+	
+		ui-component DevicePMSpecificationListGrid as GXTGrid{
+			binding{sid,name,specification,location,productor,supplier,deviceType,pmType,intervalInDays,description as StringColumn(200),lastPMPlanDate}
+			op initializeComponent():void{
+				this.withExpander[value,sb|
+					sb.appendEscapedLines(value.description.nullsafe)
+				]
+			}
+		}
+		ui-component DevicePMSpecification4DeviceListGrid as GXTGrid{
+			binding{pmType,intervalInDays,description as StringColumn(200),lastPMPlanDate}
+			op initializeComponent():void{
+				this.withExpander[value,sb|
+					sb.appendEscapedLines(value.description.nullsafe)
+				]
+			}
+			
+		}
+	}
+	
+	presenter DevicePMSpecificationListPresenter{
+		view interface{
+			signal in setResults(results : UIDevicePMSpecification[*])
+			op getActionContext() : ActionContext<UIDevicePMSpecification>
+		}
+		
+		interaction{
+			context : proxy of RCDevice
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(context : proxy of RCDevice){
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.setDevice(context : proxy of RCDevice){
+				this.context = context
+				refresh
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadDevicePMSpecificationList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input eventbus.DevicePMSpecificationsChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : DevicePMSpecificationMapper
+			@Inject dao : RCDevicePMSpecificationDAO
+			op loadDevicePMSpecificationList(context : proxy of RCDevice) : UIDevicePMSpecification[*]{
+				dao.findByDevice(resolve context).^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view DevicePMSpecificationListView for DevicePMSpecificationListPresenter{
+		con : Widget
+		@Inject listGrid : DevicePMSpecification4DeviceListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		
+		interaction{
+			input view.setResults(results : UIDevicePMSpecification[*]){
+				listGrid.objects = results
+			}
+		}
+		op getActionContext() : ActionContext<UIDevicePMSpecification>{
+			listGrid.createActionContext
+		}		
+	}
+	
+	signal DevicePMSpecificationsChanged
+	
+	presenter CreateOrUpdateDevicePMSpecificationPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIDevicePMSpecification
+			op setValue(value : UIDevicePMSpecification) : void
+			op setDevice(device : proxy of RCDevice):void
+		}
+		
+		interaction{
+			used4Update : boolean
+			input prepare.setup4Create(device : proxy of RCDevice){
+				used4Update = false
+				this.activate[
+					getView().setDevice(device)
+					done
+				]
+			}
+			
+			input prepare.setup4Update(
+				value : proxy of RCDevicePMSpecification
+			){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.DevicePMSpecificationsChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.DevicePMSpecificationsChanged()
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : DevicePMSpecificationMapper
+			op loadValue(pvalue : proxy of RCDevicePMSpecification) : UIDevicePMSpecification{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIDevicePMSpecification) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIDevicePMSpecification) : void{
+				var value = entities.create(typeof(RCDevicePMSpecification))
+				mapper.transform(uivalue,value)
+			}
+		}
+	}
+	
+	view CreateOrUpdateDevicePMSpecificationView for CreateOrUpdateDevicePMSpecificationPresenter implements IHasSize, IHasTitle{
+		@Inject form : DevicePMSpecificationForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+			
+		}
+		op getValue() : UIDevicePMSpecification{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIDevicePMSpecification value) : void{
+			form.value = value
+			if(value.id!=null){
+				form.device.asWidget.disable
+			}
+		}
+		op getSize():Size{
+			new Size(560,340)
+		}
+		op getTitle():String{
+			'PM计划维护'
+		}
+		op setDevice(device : proxy of RCDevice):void{
+			form.device.value = device
+		}
+	}
+	
+	ui-criteria UIDevicePMSpecificationCriteria for RCDevicePMSpecificationCriteria{
+		sid : String "设备编号"
+		map DevicePMSpecificationCriteriaMapper{
+			direct{sid}
+		}
+		ui-component DevicePMSpecificationCriteriaForm as GXTForm{
+			binding{sid}
+		}
+	}
+	
+	presenter DevicePMSpecificationManagementPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UIDevice>)
+			signal in refresh()
+	
+			signal out createRequest(device : proxy of RCDevice) @devicePMSpecificationManagementPresenter "新建PM计划类型"
+			signal out deleteRequest(value : proxy of RCDevicePMSpecification) @devicePMSpecificationManagementPresenter "删除PM计划类型"
+			signal out modifyRequest(value : proxy of RCDevicePMSpecification) @devicePMSpecificationManagementPresenter "修改PM计划类型"
+			signal out filterRequest(c : UIDeviceCriteria)
+			signal out initPM4DeviceRequest(value : proxy of RCDevicePMSpecification) @devicePMSpecificationManagementPresenter "生成PM任务"
+			signal out pmSpecSelected(value : proxy of RCDevicePMSpecification)
+			signal out deviceSelected(value : proxy of RCDevice)
+		}
+	
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateDevicePMSpecificationPresenter
+			factory initializePMPlanPresenter : InitializePMPlanPresenter
+			part onsiteLocationOutlinePresenter : client.organization.OnsiteLocationOutlinePresenter
+			part deviceCategoryAndTypeListPresenter : DeviceCategoryAndTypeListPresenter
+			
+			part devicePMPlanListPresenter : DevicePMPlanListPresenter
+			part devicePMSpecificationListPresenter : DevicePMSpecificationListPresenter
+			input prepare.setup(){
+				initPart(devicePMPlanListPresenter).setup[
+				initPart(devicePMSpecificationListPresenter).setup[
+				initPart(onsiteLocationOutlinePresenter).setupAsSimpleTree[
+				initPart(deviceCategoryAndTypeListPresenter).setup[
+				this.activate[
+					fire view.refresh
+					done
+				]]]]]
+			}
+			
+			input view.createRequest(device : proxy of RCDevice){
+					createOrUpdatePresenter.get=>[
+						setup4Create(device)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]
+			}
+			input view.modifyRequest(value : proxy of RCDevicePMSpecification){
+					createOrUpdatePresenter.get=>[
+						setup4Update(value)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]				
+			}
+			input view.deviceSelected(value : proxy of RCDevice){
+				devicePMPlanListPresenter.setDevice(value)
+				devicePMSpecificationListPresenter.setDevice(value)
+			}
+			
+			input view.deleteRequest(value : proxy of RCDevicePMSpecification){
+				service.delete(value,onSuccess[
+					fire eventbus.DevicePMSpecificationsChanged
+				])
+			}
+			
+			input view.initPM4DeviceRequest(value : proxy of RCDevicePMSpecification){
+				initializePMPlanPresenter.get.setup4SingleDevice(value)[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			
+			input view.filterRequest(c : UIDeviceCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			
+			input eventbus.DevicePMSpecificationsChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : DeviceCriteriaMapper
+			@Inject mapper : DeviceMapper
+	
+			op filter(uicriteria : UIDeviceCriteria) : IPagedResult<UIDevice>{
+				var c = uicriteria.createPagedCriteria(typeof(RCDeviceCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op delete(value : proxy of RCDevicePMSpecification) : void {
+				entities.delete(resolve value)
+			}
+		}
+	}
+	
+	view DevicePMSpecificationManagementView for DevicePMSpecificationManagementPresenter{
+		@Inject listGrid : DeviceListGrid
+		@Inject categoryListGrid : UIDeviceCategoryAndTypeList
+		
+		@Inject criteriaForm : DeviceCriteriaForm
+		@Inject batchInitializePMPlanPresenterCommand : BatchInitializePMPlanPresenterCommand
+		@Inject deleteDevicePMPlanCommand : DeleteDevicePMPlanCommand
+		@Inject updateDevicePMPlanCommand : UpdateDevicePMPlanCommand
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			listGrid.keepSelection
+			val deviceAc = 	listGrid.createActionContext
+			val locationAc = onsiteLocationOutlinePresenter.getView().getActionContext
+			
+			con = widgets.FramedPanel("设备PM计划管理")=>[
+				widget = widgets.HLayout=>[
+					add(
+						widgets.VLayout=>[
+							add(widgets.FieldSet("设备类型")=>[
+								widget = widgets.ContentPanel=>[widget= deviceCategoryAndTypeListPresenter.getView().asWidget]
+							
+							],widgets.VLayoutData(1,0.5))
+							add(widgets.FieldSet("区域位置")=>[
+								widget = widgets.ContentPanel=>[widget= onsiteLocationOutlinePresenter.getView().asWidget]
+							
+							],widgets.VLayoutData(1,0.5))
+						],widgets.HLayoutData(200,1,0)
+					)
+					locationAc.addSelectionChangedListener[selected|
+						criteriaForm.location.value = locationAc.selectedObjects.head?.toProxy
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = 1
+						])							
+					]
+					deviceCategoryAndTypeListPresenter.onUnselected[
+						criteriaForm.deviceType.value = null
+						criteriaForm.category.value = null
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = 1
+						])							
+					]
+					deviceCategoryAndTypeListPresenter.onDeviceTypeSelected[
+						criteriaForm.deviceType.value = it
+						criteriaForm.category.value = null
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = 1
+						])							
+					]
+					deviceCategoryAndTypeListPresenter.onDeviceTypeCategorySelected[
+						criteriaForm.deviceType.value = null
+						criteriaForm.category.value = '%[' + it.id + ']%'
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = 1
+						])							
+					]	
+				add(widgets.ContentPanel=>[
+					bodyBorder = false
+					widget=widgets.BorderLayout=>[
+					center[
+						widgets.VLayout=>[
+							add(
+								widgets.HTableLayout()=>[
+									add(<Widget>newArrayList(
+										criteriaForm.sid.asWidget,
+										widgets.TextButton("筛选")=>[
+											setWidth("80px")
+											addSelectHandler[
+												fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+													page = 1
+												])
+											]
+										]
+									)	
+								)]
+							)
+							pager = listGrid.createPager=>[
+								pagerHandler = [int pageNum, int recordsPerPage|
+									fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+										page = pageNum
+										pageSize = recordsPerPage
+									])							
+								]
+							]
+							add(widgets.ContentPanel()=>[
+									widget = widgets.VLayout=>[
+									add(listGrid.asWidget,widgets.VLayoutData(1,1))
+									add(pager.asWidget,widgets.VLayoutData(1,-1))]
+									addCommand([|criteriaForm.value],batchInitializePMPlanPresenterCommand)		
+									
+								],widgets.VLayoutData(1,1))
+						]						
+					]
+					
+					south(0.4)[
+						widgets.ContentPanel()=>[
+						widget = widgets.TabPanel=>[
+							add(widgets.ContentPanel=>[pmspecs|
+								bodyBorder = false
+								pmspecs.add(devicePMSpecificationListPresenter.getView().asWidget)
+								val ac = devicePMSpecificationListPresenter.getView().actionContext
+								securities.check(ui-requester.createRequest)[v|
+									pmspecs.addButton(
+										deviceAc.onSingleObjectAction[
+											onExecute[UIDevice device|
+												fire view.createRequest(device.toProxy()=>[name=device.sid +","+ device.name])
+											]
+										].asButtonRequester("新建")
+									)
+								]
+								securities.check(ui-requester.modifyRequest)[v|
+									pmspecs.addButton(ac.onSingleObjectAction[
+										onExecute[UIDevicePMSpecification selectedValue |
+											fire view.modifyRequest(selectedValue.toProxy)
+										]
+									].asButtonRequester("修改"))					
+								]					
+								securities.check(ui-requester.initPM4DeviceRequest)[v|
+									pmspecs.addButton(ac.onSingleObjectAction[
+										onExecute[UIDevicePMSpecification selectedValue |
+											fire view.initPM4DeviceRequest(selectedValue.toProxy)
+										]
+									].asButtonRequester("生成PM计划"))					
+								]
+								securities.check(ui-requester.deleteRequest)[v|
+									pmspecs.addButton(ac.onSingleObjectAction[
+										onExecute[UIDevicePMSpecification selectedValue |
+											widgets.ConfirmMessageBox("确认","确认删除")[
+												fire view.deleteRequest(selectedValue.toProxy)
+											].show
+										]
+									].asButtonRequester("删除"))					
+								]								
+							],"PM计划类型")
+							//DeleteDevicePMPlanCommand
+							
+							add(widgets.ContentPanel=>[
+								val pac = devicePMPlanListPresenter.getView().getActionContext
+								val pmac = pac.adapt[toProxy]
+								widget = devicePMPlanListPresenter.getView().asWidget
+								addCommand(pmac,updateDevicePMPlanCommand)
+								addCommand(pac,deleteDevicePMPlanCommand)
+							],"PM计划清单")
+						]]					
+					]
+				]
+				
+				],widgets.HLayoutData(1,1,0)
+				
+				)
+				
+
+				listGrid.addSelectEntityListener[
+					fire view.deviceSelected(it.toProxy)
+				]
+			
+			]		
+			
+			]			
+		}
+		
+		op showResults(results : IPagedResult<UIDevice>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+	}	
+			
+	
+}

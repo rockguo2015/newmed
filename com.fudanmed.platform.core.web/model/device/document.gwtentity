@@ -1,0 +1,546 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.uniquesoft.gwt.shared.datatype.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.^proxy.*
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.device.*
+	import edu.fudan.langlab.common.client.widget.ContentPanel
+	import edu.fudan.mylang.utils.DateUtil
+	import edu.fudan.langlab.uidl.domain.document.server.DocumentDownloader
+	import edu.fudan.langlab.domain.document.*
+	import edu.fudan.langlab.domain.document.^proxy.*
+	import com.google.gwt.core.client.GWT
+	import com.fudanmed.platform.core.web.client.app.resource.MedImages
+	 
+	ui-entity UIDocumentStorage for DocumentStorage{
+		name : String "文档说明"
+		uploadTime : Date "更新时间"
+		download : ActionColumn "查看"
+		fileName : String"文件名称"
+		contentType : String "文件类型"
+		^content : File "选取文件"
+		map DocumentStorageMapper validate by DocumentStorageValidator{
+			direct{name,uploadTime readonly,fileName readonly,contentType readonly,^content writeonly}
+			to entity{
+				entity.uploadTime = DateUtil::now
+				entity.contentType = ui.^content.contentType
+				entity.fileName = ui.^content.fileName
+			}
+		}
+	
+		constraints DocumentStorageValidator{
+			rule Required on name
+		}
+	
+		ui-component DocumentStorageForm as GXTForm{
+			binding{name, ^content}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(name.asWidget)
+						addFill(^content.asWidget)
+					]
+				]
+			}			
+		}
+	
+		ui-component DocumentStorageListGrid as GXTGrid{
+			binding{name,uploadTime,download}
+		}
+		ui-component DocumentStorageSimpleListGrid as GXTGrid{
+			binding{name,uploadTime}
+		}
+	}
+	
+	signal DocumentStoragesChanged
+
+	ui-command CreateDocumentStorageCommand require proxy of IDocumentContainer "上传文档" {
+		factory createOrUpdateDocumentStoragePresenter : CreateOrUpdateDocumentStoragePresenter
+		execute{
+			createOrUpdateDocumentStoragePresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+ 
+	ui-command UpdateDocumentStorageCommand require proxy of DocumentStorage "修改文档"{
+		factory createOrUpdateDocumentStoragePresenter : CreateOrUpdateDocumentStoragePresenter
+		execute{
+			createOrUpdateDocumentStoragePresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+
+	ui-command DeleteDocumentStorageCommand require proxy of DocumentStorage "删除文档"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.DocumentStoragesChanged
+				])
+			].show
+		}
+		service{
+			op delete(value : proxy of DocumentStorage):void{
+				(resolve value).container.removeDocument(resolve value)
+			}
+		}
+	}
+
+	presenter CreateOrUpdateDocumentStoragePresenter for UIDocumentStorage{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : proxy of IDocumentContainer){
+				commiter=[notifier|
+					service.create(parent,getView().value,onSuccess[
+						notifier.success
+						fire eventbus.DocumentStoragesChanged()
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of DocumentStorage){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.DocumentStoragesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : DocumentStorageMapper
+			op loadValue(pvalue : proxy of DocumentStorage) : UIDocumentStorage{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIDocumentStorage) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op create(documentContainer : proxy of IDocumentContainer,uivalue : UIDocumentStorage): void{
+				(resolve documentContainer).createDocument[
+					mapper.transform(uivalue,it as DocumentStorage)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateDocumentStorageView<DocumentStorageForm> for CreateOrUpdateDocumentStoragePresenter ui-size:(400,200) ui-title:"文件上传"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}
+	
+	presenter DocumentStorageListPresenter require proxy of IDocumentContainer provide UIDocumentStorage{
+		view interface{
+			signal out viewDocument(document : proxy of DocumentStorage)
+			signal in setResults(results : UIDocumentStorage[*])
+			op getActionContext() : ActionContext< UIDocumentStorage>	
+			op clear():void	
+		}
+		
+		interaction{
+			context : proxy of IDocumentContainer
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(context : proxy of IDocumentContainer){
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			input call.setContext(ac : ActionContext<IDocumentContainerProxy>){
+				ac.addSelectionChangedListener[Iterable<IDocumentContainerProxy> selections|
+					if(selections.size==1){
+						setDevice(selections.head)
+					}else{
+						getView().clear
+					}
+				]
+			}
+			
+			input call.setDevice(context : proxy of IDocumentContainer){
+				this.context = context
+				refresh
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadDocumentStorageList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input eventbus.DocumentStoragesChanged(){
+				refresh
+			}
+			
+			input view.viewDocument(document : proxy of DocumentStorage){
+				service.prepareDownload(document,onSuccess[
+					it.doDownload
+				])
+			}
+		}
+		
+		service{
+			@Inject mapper : DocumentStorageMapper
+			
+			op loadDocumentStorageList(context : proxy of IDocumentContainer) : UIDocumentStorage[*]{
+				(resolve context).documents.^map[mapper.transform(it as DocumentStorage)].unlazy
+			}
+			
+			op prepareDownload(document : proxy of DocumentStorage):String{
+				prepareDownload(resolve document)
+			}
+		}
+	}
+	
+	view DocumentStorageListView for DocumentStorageListPresenter{
+		con : Widget
+		@Inject listGrid : DocumentStorageListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+			listGrid.download.setSelectHandler(listGrid)[g|
+				fire view.viewDocument(g.toProxy)
+			]
+			listGrid.download.setImage(MedImages::INSTANCE.download)
+		}
+		
+		interaction{
+			input view.setResults(results : UIDocumentStorage[*]){
+				listGrid.objects = results
+			}
+		}
+		op getActionContext() : ActionContext< UIDocumentStorage>{
+				listGrid.createActionContext
+		}
+		op clear():void{
+			listGrid.objects = newArrayList
+		}		
+	}	
+
+	ui-command CreatePictureCommand require proxy of IDocumentContainer "上传图片" {
+		factory createOrUpdateDocumentStoragePresenter : CreateOrUpdateDocumentStoragePresenter
+		execute{
+			createOrUpdateDocumentStoragePresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+ 
+	ui-command UpdatePictureCommand require proxy of DocumentStorage "修改图片" {
+		factory createOrUpdateDocumentStoragePresenter : CreateOrUpdateDocumentStoragePresenter
+		execute{
+			createOrUpdateDocumentStoragePresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+
+	ui-command DeletePictureCommand require proxy of DocumentStorage "删除图片"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.DocumentStoragesChanged
+				])
+			].show
+		}
+		service{
+			op delete(value : proxy of DocumentStorage):void{
+				(resolve value).container.removeDocument(resolve value)
+			}
+		}
+	}
+
+
+	presenter PictureListPresenter require proxy of IHasDocuments provide UIDocumentStorage{
+		view interface{
+			signal out viewDocument(document : proxy of DocumentStorage)
+			signal in setResults(results : UIDocumentStorage[*])
+			op getActionContext() : ActionContext< UIDocumentStorage>	
+			op clear():void	
+		}
+		
+		interaction{
+			factory showImagePresenter : ShowImagePresenter
+			context : proxy of IHasDocuments
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(context : proxy of IHasDocuments){
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			input call.setContext(ac : ActionContext<IHasDocumentsProxy>){
+				ac.addSelectionChangedListener[Iterable<IHasDocumentsProxy> selections|
+					if(selections.size==1){
+						setDevice(selections.head)
+					}else{
+						getView().clear
+					}
+				]
+			}
+			
+			input call.setDevice(context : proxy of IHasDocuments){
+				this.context = context
+				refresh
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadDocumentStorageList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input eventbus.DocumentStoragesChanged(){
+				refresh
+			}
+			
+			input view.viewDocument(document : proxy of DocumentStorage){
+				showImagePresenter.get.setup(document)[
+					popup(it)
+				]
+			}
+		}
+	
+		service{
+			@Inject mapper : DocumentStorageMapper
+			
+			op loadDocumentStorageList(context : proxy of IHasDocuments ) : UIDocumentStorage[*]{
+				(resolve context).documents.^map[mapper.transform(it as DocumentStorage)].unlazy
+			}
+			
+			op prepareDownload(document : proxy of DocumentStorage):String{
+				prepareDownload(resolve document)
+			}
+		}
+	}
+	
+	view PictureListView for PictureListPresenter{
+		@Inject listGrid : DocumentStorageListGrid
+		con : Widget
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+			listGrid.download.setSelectHandler(listGrid)[g|
+				fire view.viewDocument(g.toProxy)
+			]
+			listGrid.download.setImage(MedImages::INSTANCE.viewimage)
+			
+		}
+		
+		interaction{
+			input view.setResults(results : UIDocumentStorage[*]){
+				listGrid.objects = results
+			}
+		}
+		op getActionContext() : ActionContext< UIDocumentStorage>{
+				listGrid.createActionContext
+		}
+		op clear():void{
+			listGrid.objects = newArrayList
+		}		
+	}
+	
+	presenter PictureBrowsePresenter require proxy of IHasDocuments provide UIDocumentStorage{
+		view interface{
+			signal out viewDocument(document : proxy of DocumentStorage)
+			signal in setResults(results : UIDocumentStorage[*])
+			op getActionContext() : ActionContext< UIDocumentStorage>	
+			op clear():void	
+		}
+		
+		interaction{
+			part showImagePresenter : ShowImagePresenter
+			context : proxy of IHasDocuments
+			input prepare.setup(){
+				initPart(showImagePresenter).setup[
+					this.activate[
+						done
+					]
+				]
+			}
+			input prepare.setup(context : proxy of IHasDocuments){
+				this.context = context
+				initPart(showImagePresenter).setup[
+				this.activate[
+					refresh
+					done
+				]]
+			}
+			input call.setContext(ac : ActionContext<IHasDocumentsProxy>){
+				ac.addSelectionChangedListener[Iterable<IHasDocumentsProxy> selections|
+					if(selections.size==1){
+						setDevice(selections.head)
+					}else{
+						getView().clear
+					}
+				]
+			}
+			
+			input call.setDevice(context : proxy of IHasDocuments){
+				this.context = context
+				refresh
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadDocumentStorageList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input eventbus.DocumentStoragesChanged(){
+				refresh
+			}
+			
+			input view.viewDocument(document : proxy of DocumentStorage){
+				showImagePresenter.showPicture(document)
+			}
+		}
+	
+		service{
+			@Inject mapper : DocumentStorageMapper
+			
+			op loadDocumentStorageList(context : proxy of IHasDocuments ) : UIDocumentStorage[*]{
+				(resolve context).documents.^map[mapper.transform(it as DocumentStorage)].unlazy
+			}
+			
+			op prepareDownload(document : proxy of DocumentStorage):String{
+				prepareDownload(resolve document)
+			}
+		}
+	}
+	
+	view PictureBrowseView for PictureBrowsePresenter ui-size:(600,600) ui-title:'图片浏览'{
+		@Inject listGrid : DocumentStorageSimpleListGrid
+		con : Widget
+		asWidget():Widget{
+			con
+		}
+		layout{
+			listGrid.asWidget=>[listGrid.keepSelection]
+			con = widgets.ContentPanel=>[
+				widget = widgets.VLayout=>[
+					add(listGrid.asWidget,widgets.VLayoutData(1,0.3))
+					add(showImagePresenter.getView().asWidget,widgets.VLayoutData(1,0.7))
+				]
+			]
+			listGrid.addSelectEntityListener[g|
+				fire view.viewDocument(g.toProxy)
+			]
+			
+		}
+		
+		interaction{
+			input view.setResults(results : UIDocumentStorage[*]){
+				listGrid.objects = results
+			}
+		}
+		op getActionContext() : ActionContext< UIDocumentStorage>{
+				listGrid.createActionContext
+		}
+		op clear():void{
+			listGrid.objects = newArrayList
+		}		
+	}	
+	
+	presenter ShowImagePresenter{
+		view interface{
+			op setUrl(String imgUrl):void
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(document : proxy of IDocument){
+				this.activate[
+					service.prepareDownload(document,onSuccess[
+						getView.setUrl(it.buildUrl)
+						done
+					])
+				]
+			}
+			
+			input call.showPicture(document : proxy of IDocument){
+				service.prepareDownload(document,onSuccess[
+					getView.setUrl(it.buildUrl)
+				])
+			}
+		}
+		
+		service{
+			op prepareDownload(document : proxy of IDocument):String{
+				prepareDownload(resolve document)
+			}
+		}
+	}
+	
+	
+	
+	view ShowImageView for ShowImagePresenter ui-size:(800,600) ui-title:"图片浏览"{
+		img : Image
+		asWidget():Widget{
+			img
+		}
+		layout{
+			img = img.lazy[
+				new Image=>[
+				]
+			]
+		}
+		op setUrl(String imgUrl):void{
+			img.setUrl(imgUrl)
+		}
+	}
+	
+}

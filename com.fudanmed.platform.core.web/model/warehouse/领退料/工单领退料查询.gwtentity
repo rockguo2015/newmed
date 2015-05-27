@@ -1,0 +1,199 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.GWTEntity
+	import com.uniquesoft.gwt.client.common.print.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	
+	ui-criteria UIWorkItemStockRecordCriteria for RCWorkItemStockRecordCriteria{
+		info : String "领/退料单号"
+		map WorkItemStockRecordCriteriaMapper{
+			direct{{info,entity.sid}}
+		}
+		ui-component WorkItemStockRecordCriteriaForm as GXTForm{
+			binding{info as EscapedTextItem}
+		}
+	}
+
+	presenter WorkItemStockRecordManagementPresenter{
+		view interface{
+			signal in showDetail(detail : Collection<UIWorkItemStockRecordItem>)
+			signal in showResults(results : IPagedResult<UIWorkItemStockRecord>)
+			signal in refresh()
+			signal out showDetailRequest(value : proxy of RCWorkItemStockRecord)
+			signal out filterRequest(c : UIWorkItemStockRecordCriteria)
+		}
+	
+		interaction{
+			start{
+				fire view.refresh
+			}
+			input call.setup(postInit : (WorkItemStockRecordManagementPresenter)=>void ){
+				this.activate[
+					fire view.refresh
+					postInit.apply(this)
+				]
+			}
+			input view.showDetailRequest(value : proxy of RCWorkItemStockRecord){
+				service.loadDetail(value,onSuccess[
+					fire view.showDetail(it)
+				])
+			}
+			input view.filterRequest(c : UIWorkItemStockRecordCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.WorkItemStockRecordsChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : WorkItemStockRecordCriteriaMapper
+			@Inject mapper : WorkItemStockRecordMapper
+			@Inject itemMapper : WorkItemStockRecordItemMapper
+	
+			op filter(uicriteria : UIWorkItemStockRecordCriteria) : IPagedResult<UIWorkItemStockRecord>{
+				var c = uicriteria.createPagedCriteria(typeof(RCWorkItemStockRecordCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op loadDetail(value : proxy of RCWorkItemStockRecord) : Collection<UIWorkItemStockRecordItem>{
+				(resolve value).items.^map[itemMapper.transform(it)].unlazy
+			}
+		}
+	}
+	
+	view WorkItemStockRecordManagementView for WorkItemStockRecordManagementPresenter{
+		@Inject listGrid : WorkItemStockRecordListGrid
+		@Inject criteriaForm : WorkItemStockRecordCriteriaForm
+		@Inject detailGrid : WorkItemStockRecordItemListGrid
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.FramedPanel("工单领/退料单查询")=>[
+				setWidget(widgets.VLayout=>[
+					add(
+						widgets.HTableLayout()=>[
+							add(<Widget>newArrayList(
+								criteriaForm.info.asWidget,
+								widgets.TextButton("查询")=>[
+									setWidth("80px")
+									addSelectHandler[
+										fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+											page = 1
+										])
+									]
+								]
+							)	
+						)]
+					)
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]	
+					add( widgets.ContentPanel()=>[
+							widget = widgets.VLayout=>[
+								add(listGrid.asWidget,widgets.VLayoutData(1,1))
+								add(pager.asWidget,widgets.VLayoutData(1,-1))
+							]
+						],widgets.VLayoutData(1,0.45))					
+					add(widgets.TabPanel=>[add(detailGrid.asWidget,"领/退料明细")],widgets.VLayoutData(1,0.55))
+				])
+				listGrid.addSelectEntityListener[
+					fire view.showDetailRequest(it.toProxy)
+				]
+			]					
+		}
+		
+		op showResults(results : IPagedResult<UIWorkItemStockRecord>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op showDetail(detail : Collection<UIWorkItemStockRecordItem>):void{
+			detailGrid.objects = detail
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+	}	
+	
+	
+	presenter WorkItemOutStockRecordListPresenter{
+		view interface{
+			signal in setResults(results : UIWorkItemStockRecord[*])
+			op getActionContext() : ActionContext<UIWorkItemStockRecord>
+		}
+		
+		interaction{
+			input call.setup(postInit : (WorkItemOutStockRecordListPresenter)=>void){
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			input call.setWorkItemTask(context : proxy of RCWorkItemTask){
+				service.loadWorkItemOutStockRecordList(context,onSuccess[
+					fire view.setResults(it)
+				])
+			}
+			
+		}
+		
+		service{
+			@Inject mapper : WorkItemStockRecordMapper
+			
+			op loadWorkItemOutStockRecordList(context : proxy of RCWorkItemTask) : UIWorkItemStockRecord[*]{
+				(resolve context).outStoreRecord.^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view WorkItemOutStockRecordListView for WorkItemOutStockRecordListPresenter{
+		con : Widget
+		@Inject listGrid : WorkItemStockRecordListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		op getActionContext() : ActionContext<UIWorkItemStockRecord>{
+			listGrid.createActionContext
+		}
+		
+		interaction{
+			input view.setResults(results : UIWorkItemStockRecord[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+	
+	
+	
+}

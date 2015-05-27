@@ -1,0 +1,148 @@
+package com.fudanmed.platform.core.web feature workbench{
+	import com.google.gwt.core.client.*
+	import com.google.gwt.user.client.*
+	import com.google.gwt.user.client.^ui.*	
+
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.workbench.*
+	import com.fudanmed.platform.core.web.client.organization.SupplierManagementPresenter
+	import com.fudanmed.platform.core.web.client.project.ReportManagementPresenter
+	import com.fudanmed.platform.core.domain.*
+	import com.google.gwt.user.client.^ui.Anchor
+	import com.google.gwt.user.client.DOM
+	import com.google.gwt.core.client.Scheduler
+	import com.fudanmed.platform.core.web.client.utils.Deferred
+	import com.sencha.gxt.widget.core.client.container.HtmlLayoutContainer
+	
+	import edu.fudan.langlab.uidl.domain.app.client.login.*
+	import edu.fudan.langlab.uidl.domain.app.shared.login.*
+	
+	presenter RouterPresenter{
+		view interface{}
+		interaction{
+			factory supplierManagementPresenter : SupplierManagementPresenter
+			factory reportManagementPresenter : ReportManagementPresenter
+			start{
+				
+			}
+			input call.route(){
+//				service.isReporter(onSuccess[isReporter|
+//					if(isReporter){
+//						reportManagementPresenter.get=>[
+//							setup[
+//								fire eventbus.ShowActivePresenter(it)
+//							]
+//						]
+//					}else{
+//						fire eventbus.ShowPresenter(supplierManagementPresenter.get)			
+//					}
+//				])
+			}
+		}
+		
+		service{
+			@Inject systemUserService : ISystemUserService
+			op isReporter() : Boolean{
+				systemUserService.currentUser instanceof RCRepairReportUser
+			}
+		}
+	}
+	
+	view RouterView for RouterPresenter{
+		asWidget():Widget{
+			DIV=>[
+				addStyleName("right_content")
+			]
+		}
+		layout{
+			
+		}
+	}
+	
+	presenter WelcomePresenter{
+		view interface{}
+		interaction{
+			
+		}
+	}
+	presenter HeaderPresenter{
+		view interface{
+			op setApplicationTitle(appTitle : String):void
+		}
+		interaction{
+			input call.setup(postInitializer : (HeaderPresenter) => void){
+				service.getAppTitle(onSuccess[
+					getView().setApplicationTitle(it)
+					this.activate[
+						postInitializer.apply(this)
+					]
+				])
+			}
+		}
+		service{
+			@Inject systemParameterService : com.fudanmed.platform.core.common.RCSystemParameterService
+			op getAppTitle():String{
+				systemParameterService.systemParameter.applicationTitle
+			}
+		}
+	}
+	
+	view HeaderView for HeaderPresenter{
+		con : Widget
+		asWidget():Widget{
+			con
+		}
+		layout{
+			
+			con = new FlowPanel()=>[
+				it.addStyleName("header")
+				it+=HTML("<h1 class='logo'><img src='images/logo.png'/></h1>")
+				it+=HTML("<div class='top_title'><img src='images/top_title.png' /></div>")
+				it+=
+					DIV=>[
+						it.addStyleName("top_right")
+						it.add(new Anchor()=>[
+							it.text = "退出"
+							it.addStyleName("bg3")
+							href="#"
+							it.addClickHandler[
+								Window$Location::reload
+							]
+						])
+						it += HTML("<span>欢迎"+LoginPresenter::user.name+"！</span>")
+					]
+			]
+		}
+		
+		appTitle : String
+		op setApplicationTitle(appTitle : String):void{
+			this.appTitle = appTitle
+		}		
+	}	
+}
+
+
+
+package edu.fudan.langlab.uidl.domain.app feature workbench{
+	
+	import com.uniquesoft.gwt.client.common.Presenter	
+	
+	signal ShowPresenter(Presenter ^presenter)
+	signal PopPresenter(Presenter ^presenter)
+	signal PopActivatedPresenter(Presenter ^presenter)
+	signal ShowActivePresenter(Presenter ^presenter)
+	
+}
+
+package edu.fudan.langlab.uidl.domain.app feature login{
+	import edu.fudan.langlab.uidl.domain.app.client.workbench.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.uidl.domain.app.client.*
+	import edu.fudan.langlab.uidl.domain.app.client.login.*
+	signal LoginSuccess
+	signal Logout
+
+	signal ApplicationInitialized(app : ApplicationWorkbenchPresenter)
+	
+}

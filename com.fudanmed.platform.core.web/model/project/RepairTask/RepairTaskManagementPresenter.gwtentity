@@ -1,0 +1,422 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import com.google.gwt.user.client.^ui.HTML
+	import com.uniquesoft.gwt.client.common.Timer
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.uniquesoft.gwt.shared.common.pager.IPagedCriteria
+	import edu.fudan.langlab.gxt.client.widget.SoundWidget
+	import com.uniquesoft.gwt.shared.datatype.*
+	import com.fudanmed.platform.core.domain.RCMaintenanceTeam
+	import com.fudanmed.platform.core.common.*
+	ui-criteria UIRepairTaskCriteria for RCRepairTaskCriteria{
+		comment : String "任务信息关键字"
+		includeFinishedTask : Boolean "含已完成任务"
+		reportOrg : proxy of RCOrganization "报修部门"
+		reportDateRange : UIDateRange "报修日期范围"
+		status : UIRepairTaskStatus "报修单状态"
+		faultReportSource : proxy of RCFaultReportSource
+		month : String
+		map RepairTaskCriteriaMapper{
+			direct{comment,includeFinishedTask,reportOrg,status,month,faultReportSource}
+			to entity{
+				WorkflowEnumWorkAround::initRepairTaskCriteria(entity)
+				if(ui.reportDateRange!=null){
+					entity.reportDateFrom = ui.reportDateRange.^from
+					entity.reportDateTo = ui.reportDateRange.^to
+				
+				}
+			}
+		}
+		
+		ui-component RepairTaskCriteriaForm as GXTForm{
+			binding{
+				comment as EscapedTextItem,includeFinishedTask,
+				reportOrg as ComboBoxItem content from AllOrganizationContentProvider,
+				status as ComboBoxItem,reportDateRange
+			}
+		}
+	}
+
+	presenter RepairTaskManagementPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UIRepairTask>)
+			signal in refresh()
+			signal in refreshNew(value : proxy of RCRepairTask)
+			signal in markAsDirty()
+			signal in resetDirty()
+
+			signal out createRequest() @repairReportManagementPresenter "新建报修"
+			signal out deleteRequest(value : proxy of RCRepairTask) @repairReportManagementPresenter "删除报修"
+			signal out cancelRequest(value : proxy of RCRepairTask) @repairReportManagementPresenter "取消报修"
+			signal out modifyRequest(value : proxy of RCRepairTask) @repairReportManagementPresenter "修改报修"
+			signal out filterRequest(c : UIRepairTaskCriteria)
+			signal out dispatchRequest(value : proxy of RCRepairTask) @repairReportManagementPresenter "派发班组"
+			signal out closeRepairTaskRequest(value : proxy of RCRepairTask) @repairReportManagementPresenter "报修结单"
+			signal out showRepairTaskDetailRequest(value : proxy of RCRepairTask) 
+		}
+
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateRepairTaskPresenter
+			factory repairDispatchPresenter : RepairDispatchPresenter
+			part repairTaskInfoPresenter : RepairTaskTreeInfoPresenter
+			
+			timer : com.uniquesoft.gwt.client.common.Timer
+			input call.postDeactivated(){
+				timer.cancel
+			}
+			
+			input prepare.setup(){
+				initPart(repairTaskInfoPresenter).setup[
+					this.activate[
+						fire view.refresh
+						installDirtyCheck()
+						done
+					]
+				]
+			}
+			
+			input call.installDirtyCheck(){
+				timer = new com.uniquesoft.gwt.client.common.Timer()
+				(timer=>[timer|
+					timer.process = [
+						service.isDirty(
+							callback[
+								onSuccessDo[isDirty|
+									if(isDirty){
+										fire view.markAsDirty
+									}
+								]
+								onFailureDo[
+									display("错误","刷新数据错误，可能网络中断")
+								]
+							]
+						)
+						if(isActivated){
+							timer.schedule(1000*10)
+						}else{
+							timer.cancel
+						}
+					]
+				]).schedule(1000*10)
+			}
+			
+			input view.createRequest(){
+					createOrUpdatePresenter.get=>[
+						setup4Create[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]
+			}
+			input view.modifyRequest(value : proxy of RCRepairTask){
+					createOrUpdatePresenter.get=>[
+						setup4Update(value)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]				
+			}
+			input view.deleteRequest(value : proxy of RCRepairTask){
+				service.delete(value,onSuccess[
+						fire eventbus.RepairTasksChanged
+				])
+			}
+			input view.cancelRequest(value : proxy of RCRepairTask){
+				service.cancel(value,callback[
+					onSuccessDo[
+						fire eventbus.RepairTasksChanged
+					]
+					onFailureDo[
+						display("错误","无法取消，请刷新确认报修状态")
+					]					
+				])
+			}
+			input view.filterRequest(c : UIRepairTaskCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+					fire view.resetDirty()
+				])
+			}
+			input view.dispatchRequest(value : proxy of RCRepairTask){
+				repairDispatchPresenter.get=>[
+					setup(value)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.closeRepairTaskRequest(value : proxy of RCRepairTask){
+				service.close(value,onSuccess[
+					fire eventbus.RepairTasksChanged
+				])
+			}
+			input view.showRepairTaskDetailRequest(value : proxy of RCRepairTask){
+				repairTaskInfoPresenter.setRepairTask(value)
+			}
+			input eventbus.RepairTasksChanged(){
+				fire view.refresh
+			}
+			input eventbus.RepairTaskCreated(value : proxy of RCRepairTask){
+				fire view.refreshNew(value)
+			}
+		}
+		
+		service{
+			@Inject criteriaMapper : RepairTaskCriteriaMapper
+			@Inject mapper : RepairTaskMapper
+			@Inject taskDirtyManager : RCTaskDirtyManager
+			
+			op isDirty():Boolean{
+				taskDirtyManager.checkDirty
+			}
+			op filter(uicriteria : UIRepairTaskCriteria) : IPagedResult<UIRepairTask>{
+				var c = uicriteria.createPagedCriteria(typeof(RCRepairTaskCriteria),criteriaMapper,entities)
+				val result = c.listAndTransform[mapper.apply(it)]
+				taskDirtyManager.refreshed
+				result
+			}
+			op delete(value : proxy of RCRepairTask) : void {
+				val v = (resolve value)
+				entities.delete(v)
+			}
+			op cancel(value : proxy of RCRepairTask) : void {
+				val v = (resolve value)
+				v.cancel
+//				entities.delete(v)
+			}
+			op close(value : proxy of RCRepairTask) : void{
+				(resolve value).close
+			}
+		}
+	}
+	
+	view RepairTaskManagementView for RepairTaskManagementPresenter{
+		@Inject listGrid : RepairTaskListGrid
+		@Inject criteriaForm : RepairTaskCriteriaForm
+		factory organizationOutlinePresenter : OrganizationOutlinePresenter		
+		pagedList : PagedList<UIRepairTask,UIRepairTaskCriteria>
+		dirtyInfoPanel : HTML
+		soundPlayer : SoundWidget
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			soundPlayer = new SoundWidget("sound/demo1.mp3")
+			
+			dirtyInfoPanel = new HTML=>[
+				addClickHandler[
+					refresh
+				]
+			]
+			timer = new com.uniquesoft.gwt.client.common.Timer
+			listGrid=>[
+				asWidget
+				keepSelection
+				addSelectEntityListener[
+					fire view.showRepairTaskDetailRequest(it.toProxy)
+				]
+				pagedList = asPagedList([criteriaForm.value],[fire view.filterRequest(it as UIRepairTaskCriteria)])
+			]
+			
+			con = widgets.FramedPanel("调度工作台")=>[
+				widget = widgets.VLayout=>[
+					add(
+						TABLE=>[
+							tr=>[
+								td=>[it += criteriaForm.comment.asWidget]
+								td=>[it += criteriaForm.includeFinishedTask.asWidget=>[
+										criteriaForm.includeFinishedTask.value = false
+									]]
+								td=>[it += criteriaForm.status.asWidget]
+							]
+							tr=>[
+								td=>[it += criteriaForm.reportDateRange.asWidget]
+							td=>[
+								it += TABLE=>[tr=>[
+									td=>[
+										it += criteriaForm.reportOrg.asWidget
+									]
+									td=>[
+										it += widgets.TextButton("选择")=>[
+											addSelectHandler[
+												organizationOutlinePresenter.get=>[
+													it.setupAsSimpleTree[
+														asSelector("选择组织机构",300,500)[
+															criteriaForm.reportOrg.value = it.toProxy
+														].show
+													]
+												]
+											]
+										]
+									]
+								]
+							]]								td=>[it+=TABLE=>[
+									tr=>[
+										td=>[it+=widgets.TextButton("查询")=>[
+											setWidth("80px")
+											addSelectHandler[
+												fire view.filterRequest(pagedList.getCriteria)
+											]
+										]]
+										td=>[it+=dirtyInfoPanel]
+										td=>[it += soundPlayer]
+									]
+								]]
+						 	]
+						]							
+					)
+					add(
+						widgets.ContentPanel=>[
+							widget = widgets.VLayout=>[
+								add(listGrid.asWidget,widgets.VLayoutData(1,1))
+								add(TABLE=>[
+									tr=>[
+										td=>[it+=pagedList.pager.asWidget]
+//										td=>[it+=dirtyInfoPanel]
+									]
+								],widgets.VLayoutData(1,-1))
+//								add(pagedList.pager.asWidget,widgets.VLayoutData(1,-1))
+							]
+							
+							val ac = listGrid.createActionContext
+							securities.check(ui-requester.createRequest)[v|
+								addButton(widgets.TextButton("新建报修")[
+										fire view.createRequest
+								])
+							]
+							
+							securities.check(ui-requester.modifyRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIRepairTask selectedValue |
+										fire view.modifyRequest(selectedValue.toProxy)
+									]
+									onCheckEnable[
+										listGrid.singleSelectedAnd[
+											StatusValidator::canExecute(status,UIRepairTaskActionType::update)
+										]
+									]
+									
+								].asButtonRequester("修改/调度"))	
+							]				
+
+							securities.check(ui-requester.dispatchRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIRepairTask selectedValue |
+										fire view.dispatchRequest(selectedValue.toProxy)
+									]
+									onCheckEnable[
+										listGrid.singleSelectedAnd[
+											(!(isFromReporter&&status==UIRepairTaskStatus::newCreated))&&
+											StatusValidator::canExecute(status,UIRepairTaskActionType::createGroupTask)
+										]
+									]
+									
+								].asButtonRequester("直接调度"))	
+							]	
+										
+							securities.check(ui-requester.deleteRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIRepairTask selectedValue |
+										widgets.ConfirmMessageBox("确认","确认删除")[
+											fire view.deleteRequest(selectedValue.toProxy)
+										].show
+									]
+									onCheckEnable[
+										listGrid.singleSelectedAnd[
+											StatusValidator::canExecute(status,UIRepairTaskActionType::delete)
+										]
+									]
+								].asButtonRequester("删除报修"))
+							]					
+							securities.check(ui-requester.cancelRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIRepairTask selectedValue |
+										widgets.ConfirmMessageBox("确认","确认取消")[
+											fire view.cancelRequest(selectedValue.toProxy)
+										].show
+									]
+									onCheckEnable[
+										listGrid.singleSelectedAnd[
+											StatusValidator::canExecute(status,UIRepairTaskActionType::cancel)
+										]
+									]
+								].asButtonRequester("取消报修"))
+							]					
+							securities.check(ui-requester.closeRepairTaskRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIRepairTask selectedValue |
+										widgets.ConfirmMessageBox("确认","确认结单")[
+											fire view.closeRepairTaskRequest(selectedValue.toProxy)
+										].show
+									]
+									onCheckEnable[
+										listGrid.singleSelectedAnd[
+											StatusValidator::canExecute(status,UIRepairTaskActionType::close)
+										]
+									]
+								].asButtonRequester("报修结单"))	
+							]			
+							
+						],widgets.VLayoutData(1,0.6)
+					)
+					add(repairTaskInfoPresenter.getView().asWidget,widgets.VLayoutData(1,0.4))
+				]
+				
+			]					
+		}
+		
+		op showResults(results : IPagedResult<UIRepairTask>) : void{
+			pagedList.results = results
+		}
+		
+		op refresh() : void{
+			pagedList.refresh
+		}
+		
+		op refreshNew(value : proxy of RCRepairTask):void{
+			pagedList.refresh()[
+				pagedList.reveal(value)
+			]
+		}
+		
+		isDirty : Boolean
+		timer : com.uniquesoft.gwt.client.common.Timer
+		
+		op buildMessage(color : String) : String{
+			"<a href='#' style='font-size:larger;color:"+color+";'>有新的待处理报修任务，请刷新!</a>"
+		}
+		op destroy():void{
+			super.destroy
+			if(isDirty){
+				timer.cancel
+				soundPlayer.stop
+			}
+		}
+		
+		op markAsDirty():void{
+			if(isDirty) return;
+			isDirty = true
+			timer.process = [
+				if(isDirty){
+					if(dirtyInfoPanel.HTML.contains('red'))
+						dirtyInfoPanel.setHTML(buildMessage("white"))
+					else
+						dirtyInfoPanel.setHTML(buildMessage("red"))
+					timer.schedule(500)
+				}else{
+					timer.cancel
+				}
+			]
+			timer.schedule(500)	
+			soundPlayer.^start
+			dirtyInfoPanel.setHTML(buildMessage('red'))
+		}
+		
+		op resetDirty():void{
+			dirtyInfoPanel.setHTML("")
+			soundPlayer.stop
+			isDirty = false
+		}
+	}		
+}

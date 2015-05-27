@@ -1,0 +1,79 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.domain.organization.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+
+	ui-command DeliverTaskFinishCommand require UICenterlizedDeliverTask[*] "完成运送" {
+		factory createOrUpdateDeliverTaskFinishDataPresenter:CreateOrUpdateDeliverTaskFinishDataPresenter
+		execute{
+			createOrUpdateDeliverTaskFinishDataPresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+		check-enable{
+			value.forall[
+				DLCenterlizedDeliverTaskManager::isActionValid(DLCenterlizedDeliverTaskAction::finish,it.status)
+			]
+		}
+	}
+	
+	ui-datatype UIDeliverTaskFinishData{
+		comment : String "备注"
+		ui-component DeliverTaskFinishDataForm as GXTForm{
+			binding{comment as TextAreaItem}
+			op createWidget():Widget{
+				widgets.VLayout=>[
+					addFill(comment.asWidget=>[height=100])
+				]
+			}
+		}
+	}
+
+	presenter CreateOrUpdateDeliverTaskFinishDataPresenter for UIDeliverTaskFinishData{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(deliverTasks:Iterable<UICenterlizedDeliverTask>){
+				commiter=[notifier|
+					service.commit(deliverTasks.^map[toProxy].toList,getView().value,onSuccess[
+						fire eventbus.CenterlizedDeliverTasksChanged
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			op commit(deliverTasks:proxy of DLCenterlizedDeliverTask[*],uivalue : UIDeliverTaskFinishData) : void{
+				deliverTasks.forEach[deliverTask|
+					(resolve deliverTask).finish(uivalue.comment)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateDeliverTaskFinishDataView<DeliverTaskFinishDataForm> for CreateOrUpdateDeliverTaskFinishDataPresenter ui-size:(300,200) ui-title:"完成运送"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}
+
+	
+}

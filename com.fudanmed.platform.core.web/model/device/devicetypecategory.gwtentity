@@ -1,0 +1,368 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.web.client.tree.DeviceTypeCategoryTreeContentProvider
+	import com.sencha.gxt.data.shared.TreeStore
+	import com.fudanmed.platform.core.web.*
+	
+	
+	
+	ui-entity UIDeviceTypeCategory for RCDeviceTypeCategory{
+		code : String "大类代码"
+		name : String "大类名称"
+		simplePy : String
+		parent : proxy of RCDeviceTypeCategory "父类型"
+		map DeviceTypeCategoryMapper validate by DeviceTypeCategoryValidator{
+			direct{name,code,parent,simplePy readonly}
+		}
+	
+		constraints DeviceTypeCategoryValidator{
+			@Inject productCategoryDAO : RCDeviceTypeCategoryDAO
+			rule Required on code
+			rule Required on name
+			constraint UniqueCode on code "物品大类代码必须唯一"{
+				entity.isUnique[newValue|
+					productCategoryDAO.findByCode(newValue.code)
+				]
+			}
+		}
+	
+		ui-component DeviceTypeCategoryForm as GXTForm{
+			binding{code,name,parent as ReadonlyItem}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(parent.asWidget)
+						addFill(code.asWidget)
+						addFill(name.asWidget)
+					]
+				]
+			}			
+		}
+	
+		ui-component DeviceTypeCategoryListGrid as GXTTreeGrid{
+			binding{name,code}
+		}
+	}
+	
+	signal DeviceTypeCategorysChanged
+	signal DeviceTypeCategoryChanged(org : proxy of RCDeviceTypeCategory)
+	signal DeviceTypeCategoryDeleted(org : proxy of RCDeviceTypeCategory)
+	signal DeviceTypeCategoryAdded(org : proxy of RCDeviceTypeCategory)
+	
+	presenter CreateOrUpdateDeviceTypeCategoryPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIDeviceTypeCategory
+			signal in setParent(parent : proxy of RCDeviceTypeCategory)
+			op setValue(value : UIDeviceTypeCategory) : void
+		}
+		
+		interaction{
+			used4Update : boolean
+			parent : proxy of RCDeviceTypeCategory
+			input prepare.setup4Create(parent : proxy of RCDeviceTypeCategory){
+				used4Update = false
+				this.parent = parent
+				this.activate[
+					fire view.setParent(parent)
+					done
+				]
+			}
+			
+			input prepare.setup4Update(
+				value : proxy of RCDeviceTypeCategory){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.DeviceTypeCategoryChanged(getView().value.toProxy)
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value=>[it.parent = this.parent],onSuccess[
+						fire eventbus.DeviceTypeCategoryAdded(it)
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			
+			@Inject mapper : DeviceTypeCategoryMapper
+			
+			op loadValue(pvalue : proxy of RCDeviceTypeCategory) : UIDeviceTypeCategory{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIDeviceTypeCategory) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIDeviceTypeCategory) : proxy of RCDeviceTypeCategory{
+				var value = entities.create(typeof(RCDeviceTypeCategory))
+				mapper.transform(uivalue,value)
+				value.toProxy
+			}
+		}
+	}
+	
+	view CreateOrUpdateDeviceTypeCategoryView for CreateOrUpdateDeviceTypeCategoryPresenter implements IHasSize, IHasTitle{
+		@Inject form : DeviceTypeCategoryForm
+		initializer{
+				this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIDeviceTypeCategory{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIDeviceTypeCategory value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(300,220)
+		}
+		op getTitle():String{
+			'设备大类维护'
+		}
+		op setParent(parent : proxy of RCDeviceTypeCategory):void{
+			form.parent.value = parent
+		}
+	}
+	
+	
+	presenter DeviceTypeCategoryManagementPresenter{
+		view interface{
+			signal in showResults(results : UIDeviceTypeCategory[*])
+			signal in updateDeviceTypeCategory(org : UIDeviceTypeCategory)
+			signal in deleteDeviceTypeCategory(org : proxy of RCDeviceTypeCategory)
+			signal in addDeviceTypeCategory(org : UIDeviceTypeCategory)
+			
+			signal in setAsReadonly(isReadonly : Boolean)
+		
+			signal out typeSelected(value : proxy of RCDeviceTypeCategory)
+			signal out createRequest(parent : proxy of RCDeviceTypeCategory) @deviceTypeCategoryManagementPresenter "新建设备大类"
+			signal out deleteRequest(value : proxy of RCDeviceTypeCategory) @deviceTypeCategoryManagementPresenter "删除设备大类"
+			signal out modifyRequest(value : proxy of RCDeviceTypeCategory) @deviceTypeCategoryManagementPresenter "修改设备大类"
+			
+			
+			op getActionContext():ActionContext<UIDeviceTypeCategory>
+			
+		}
+
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateDeviceTypeCategoryPresenter
+			factory createOrUpdateDeviceTypePresenter : CreateOrUpdateDeviceTypePresenter
+			
+			factory createOrUpdatePMDeviceTypeEntryPresenter : CreateOrUpdatePMDeviceTypeEntryPresenter
+			
+			part deviceTypeManagementPresenter : DeviceTypeManagementPresenter
+			parent : proxy of RCDeviceTypeCategory
+		
+			input call.setup(postInit : (DeviceTypeCategoryManagementPresenter)=>void){
+				fire view.setAsReadonly(false)
+				initPart(deviceTypeManagementPresenter).setup[
+					this.activate[
+						deviceTypeManagementPresenter.setTypeCategoryActionContext(getView().getActionContext())
+						service.loadAllDeviceTypeCategory(onSuccess[
+							fire view.showResults(it)
+							postInit.apply(this)
+						])
+					]
+				]
+			}
+			
+			input call.setup4Readonly(postInit : (DeviceTypeCategoryManagementPresenter)=>void){
+				fire view.setAsReadonly(true)
+				this.activate[
+					service.loadAllDeviceTypeCategory(onSuccess[
+						fire view.showResults(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			
+			input view.createRequest(parent : proxy of RCDeviceTypeCategory){
+					createOrUpdatePresenter.get=>[
+						setup4Create(parent)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]
+			}
+			input view.modifyRequest(value : proxy of RCDeviceTypeCategory){
+					createOrUpdatePresenter.get=>[
+						setup4Update(value)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]				
+			}
+			input view.deleteRequest(value : proxy of RCDeviceTypeCategory){
+				service.delete(value,onSuccess[
+					fire eventbus.DeviceTypeCategoryDeleted(value)
+				])
+			}
+			input eventbus.DeviceTypeCategoryChanged(org : proxy of RCDeviceTypeCategory){
+				service.getValue(org,onSuccess[
+					fire view.updateDeviceTypeCategory(it)
+				])
+			}
+			input eventbus.DeviceTypeCategoryDeleted(org : proxy of RCDeviceTypeCategory){
+				fire view.deleteDeviceTypeCategory(org)
+			}
+			input eventbus.DeviceTypeCategoryAdded(org : proxy of RCDeviceTypeCategory){
+				service.getValue(org,onSuccess[
+					fire view.addDeviceTypeCategory(it)
+				])
+			}
+			input view.typeSelected(value : proxy of RCDeviceTypeCategory){
+				this.parent = value
+				deviceTypeManagementPresenter.selectCategory(parent)
+			}
+
+			input eventbus.DeviceTypesChanged(){
+				deviceTypeManagementPresenter.selectCategory(parent)
+			}
+		}
+		service{
+			@Inject mapper : DeviceTypeCategoryMapper
+			@Inject DeviceTypeMapper : DeviceTypeMapper
+			op loadAllDeviceTypeCategory() : UIDeviceTypeCategory[*]{
+				entities.all(typeof(RCDeviceTypeCategory)).^map[mapper.transform(it)].unlazy
+			}
+			op delete(value : proxy of RCDeviceTypeCategory) : void {
+				entities.delete(resolve value)
+			}
+			op getValue(org : proxy of RCDeviceTypeCategory) : UIDeviceTypeCategory{
+				mapper.transform(resolve org)
+			}
+			op loadItems(value : proxy of RCDeviceTypeCategory) : UIDeviceType[*]{
+				(resolve value).deviceTypes.^map[DeviceTypeMapper.transform(it)].unlazy
+			}
+			op deleteChild(child : proxy of RCDeviceType) : void{
+				(resolve child).category.deleteDeviceType(resolve child)
+			}
+			
+		}
+	}
+	
+	view DeviceTypeCategoryManagementView for DeviceTypeCategoryManagementPresenter{
+		@Inject listGrid : DeviceTypeCategoryListGrid
+//		@Inject itemListGrid : DeviceTypeListGrid
+		con: Widget
+		isReadonly : Boolean
+		asWidget() : Widget{
+			con
+		}
+		layout{
+			listGrid.asWidget
+				val ac = listGrid.createActionContext
+				listGrid.addSelectEntityListener[
+					fire view.typeSelected(it.toProxy)
+				]
+				con = widgets.FramedPanel("设备类型管理")=>[
+					widget = widgets.HLayout=>[
+						add(
+							widgets.FieldSet("设备大类")=>[
+								widget = widgets.ContentPanel=>[
+									setBodyBorder(false)
+									setBorders(false)															
+									widget = widgets.VLayout=>[
+										add(listGrid.createFilter[item,filter|
+											item.name.satisfy[contains(filter)] || item.simplePy.satisfy[contains(filter)]
+										],widgets.VLayoutData(1,-1))
+										add(widgets.ContentPanel=>[widget =listGrid.asWidget],widgets.VLayoutData(1,1))
+									]
+									if(!isReadonly){
+										securities.check(ui-requester.createRequest)[v|
+											addButton(widgets.TextButton("新建")=>[
+												addSelectHandler[
+													val s = listGrid.onlySelected
+													fire view.createRequest(s?.toProxy)
+													]
+												]
+											)
+											
+										]
+										securities.check(ui-requester.modifyRequest)[v|
+											addButton(ac.onSingleObjectAction[
+												onExecute[UIDeviceTypeCategory selectedValue |
+													fire view.modifyRequest(selectedValue.toProxy)
+												]
+											].asButtonRequester("修改"))					
+										]					
+										securities.check(ui-requester.deleteRequest)[v|
+											addButton(ac.onSingleObjectAction[
+												onExecute[UIDeviceTypeCategory selectedValue |
+													widgets.ConfirmMessageBox("确认","确认删除选定设备大类")[
+														fire view.deleteRequest(selectedValue.toProxy)
+													].show
+												]
+											].asButtonRequester("删除"))					
+										]
+									}										
+								]
+
+							],widgets.HLayoutData(250,1,1)
+						)
+						add(
+							widgets.FieldSet("设备类型")=>[
+								widget = widgets.ContentPanel=>[
+									setBodyBorder(false)
+									setBorders(false)									
+									widget =deviceTypeManagementPresenter.getView().asWidget
+								
+								]
+							],widgets.HLayoutData(1,1,1)
+						)
+					]
+				]
+		}
+	
+		op getActionContext():ActionContext<UIDeviceTypeCategory>{
+			listGrid.createActionContext
+		}		
+		op showResults(results : UIDeviceTypeCategory[*]) : void{
+			listGrid.setContentProvider(new DeviceTypeCategoryTreeContentProvider(results))
+		}
+		
+		op updateDeviceTypeCategory(org : UIDeviceTypeCategory) : void{
+			listGrid.store.update(org)
+		}
+		
+		op deleteDeviceTypeCategory(org : proxy of RCDeviceTypeCategory) : void{
+			var store = listGrid.store
+			store.remove(store.findModelWithKey(org.hashCode.toString))
+		}
+		
+		op addDeviceTypeCategory(org : UIDeviceTypeCategory) : void{
+			var TreeStore store = listGrid.store
+			if(org.parent!=null){
+				var parentInStore = store.findModelWithKey(org.parent.hashCode.toString)				
+				store.add(parentInStore as UIDeviceTypeCategory,org as UIDeviceTypeCategory);
+			}else{
+				store.add(org as UIDeviceTypeCategory);
+			}
+		}
+				
+		op setAsReadonly(isReadonly : Boolean):void{
+			this.isReadonly = isReadonly
+		}
+	}		
+}

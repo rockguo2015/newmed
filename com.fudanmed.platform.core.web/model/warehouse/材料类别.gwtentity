@@ -1,0 +1,582 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.sencha.gxt.widget.core.client.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.sencha.gxt.data.shared.TreeStore
+	import com.sencha.gxt.widget.core.client.treegrid.TreeGrid
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.uniquesoft.gwt.client.common.selector.IHasObjectSelectionProvider
+	
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.*
+	
+	ui-entity UIProductCategory for RCProductCategory{
+		code : String "物品大类代码"
+		name : String "物品大类名称"
+		simplePy : String
+		parent : proxy of RCProductCategory "父类型"
+		map ProductCategoryMapper validate by ProductCategoryValidator{
+			direct{name,code,parent,simplePy readonly}
+		}
+	
+		constraints ProductCategoryValidator{
+			@Inject productCategoryDAO : RCProductCategoryDAO
+			rule Required on code
+			rule Required on name
+			constraint UniqueCode on code "物品大类代码必须唯一"{
+				entity.isUnique[newValue|
+					productCategoryDAO.findByCode(newValue.code)
+				]
+			}
+		}
+	
+		ui-component ProductCategoryForm as GXTForm{
+			binding{code,name,parent as ReadonlyItem}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(parent.asWidget)
+						addFill(code.asWidget)
+						addFill(name.asWidget)
+					]
+				]
+			}			
+		}
+	
+		ui-component ProductCategoryListGrid as GXTTreeGrid{
+			binding{name,code}
+		}
+	}	
+	
+	
+	ui-entity UIProductType for RCProductType{
+		code : String "物品类别代码"
+		name : String "物品类别名称"
+		category : proxy of RCProductCategory "物品大类"
+		map ProductTypeMapper validate by ProductTypeValidator{
+			direct{code,name,category readonly}
+			to entity{
+				entity.updateCategoryPath
+			}			
+		}
+	
+		constraints ProductTypeValidator{
+			@Inject productTypeDAO : RCProductTypeDAO
+			rule Required on code
+			rule Required on name
+			constraint UniqueCode on code "物品类别代码必须唯一"{
+				entity.isUnique[newValue|
+					productTypeDAO.findByCode(newValue.code)
+				]
+			}
+		}
+	
+		ui-component ProductTypeForm as GXTForm{
+			binding{
+				code,name,category as ReadonlyItem
+			}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(category.asWidget)
+						addFill(code.asWidget)
+						addFill(name.asWidget)
+					]
+				]
+			}			
+		}
+
+		ui-component ProductTypeListGrid as GXTGrid{
+			binding{code,name,category}
+		}
+		
+		ui-component ProductTypeListView as GXTListView{
+			template render(ft:UIProductType){
+				"<div style='float:left'><span style='font-size:120%;font-weight:bold;'>{ft.name}</span><BR></div>"
+			}
+		}
+	}
+	
+	
+	signal ProductCategorysChanged
+	signal ProductCategoryChanged(org : proxy of RCProductCategory)
+	signal ProductCategoryDeleted(org : proxy of RCProductCategory)
+	signal ProductCategoryAdded(org : proxy of RCProductCategory)
+	
+	presenter CreateOrUpdateProductCategoryPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIProductCategory
+			signal in setParent(parent : proxy of RCProductCategory)
+			op setValue(value : UIProductCategory) : void
+		}
+		
+		interaction{
+			used4Update : boolean
+			parent : proxy of RCProductCategory
+			input prepare.setup4Create(parent : proxy of RCProductCategory){
+				used4Update = false
+				this.parent = parent
+				this.activate[
+					fire view.setParent(parent)
+					done
+				]
+			}
+			
+			input prepare.setup4Update(
+				value : proxy of RCProductCategory){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.ProductCategoryChanged(getView().value.toProxy)
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value=>[it.parent = this.parent],onSuccess[
+						fire eventbus.ProductCategoryAdded(it)
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			
+			@Inject mapper : ProductCategoryMapper
+			
+			op loadValue(pvalue : proxy of RCProductCategory) : UIProductCategory{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIProductCategory) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIProductCategory) : proxy of RCProductCategory{
+				var value = entities.create(typeof(RCProductCategory))
+				mapper.transform(uivalue,value)
+				value.toProxy
+			}
+		}
+	}
+	
+	view CreateOrUpdateProductCategoryView for CreateOrUpdateProductCategoryPresenter implements IHasSize, IHasTitle{
+		@Inject form : ProductCategoryForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIProductCategory{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIProductCategory value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(300,200)
+		}
+		op getTitle():String{
+			'物品大类维护'
+		}
+		op setParent(parent : proxy of RCProductCategory):void{
+			form.parent.value = parent
+		}
+	}
+			
+	presenter ProductCategoryManagementPresenter implements IHasObjectSelectionProvider<UIProductType>{
+		view interface{
+			signal in showResults(results : UIProductCategory[*])
+			signal in updateProductCategory(org : UIProductCategory)
+			signal in deleteProductCategory(org : proxy of RCProductCategory)
+			signal in addProductCategory(org : UIProductCategory)
+			signal in showItems(items : UIProductType[*])
+			
+			signal in setAsReadonly(isReadonly : Boolean)
+		
+			signal out typeSelected(value : proxy of RCProductCategory)
+			signal out createRequest(parent : proxy of RCProductCategory) @productCategoryManagementPresenter "新建物品大类"
+			signal out deleteRequest(value : proxy of RCProductCategory) @productCategoryManagementPresenter "删除物品大类"
+			signal out modifyRequest(value : proxy of RCProductCategory) @productCategoryManagementPresenter "修改物品大类"
+			
+			signal out createChildRequest(parent : proxy of RCProductCategory) @productCategoryManagementPresenter "新建物品类别"
+			signal out modifyChildRequest(child : proxy of RCProductType) @productCategoryManagementPresenter "修改物品类别"
+			signal out deleteChildRequest(child : proxy of RCProductType) @productCategoryManagementPresenter "删除物品类别"
+			
+			op getActionContext() : ActionContext<UIProductType>
+			
+		}
+
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateProductCategoryPresenter
+			factory createOrUpdateProductTypePresenter : CreateOrUpdateProductTypePresenter
+			parent : proxy of RCProductCategory
+		
+			input call.setup(postInit : (ProductCategoryManagementPresenter)=>void){
+				fire view.setAsReadonly(false)
+				this.activate[
+					service.loadAllProductCategory(onSuccess[
+						fire view.showResults(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			
+			input call.setup4Readonly(postInit : (ProductCategoryManagementPresenter)=>void){
+				fire view.setAsReadonly(true)
+				this.activate[
+					service.loadAllProductCategory(onSuccess[
+						fire view.showResults(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			
+			input view.createRequest(parent : proxy of RCProductCategory){
+					createOrUpdatePresenter.get=>[
+						setup4Create(parent)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]
+			}
+			input view.modifyRequest(value : proxy of RCProductCategory){
+					createOrUpdatePresenter.get=>[
+						setup4Update(value)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]				
+			}
+			input view.deleteRequest(value : proxy of RCProductCategory){
+				service.delete(value,onSuccess[
+					fire eventbus.ProductCategoryDeleted(value)
+				])
+			}
+			input eventbus.ProductCategoryChanged(org : proxy of RCProductCategory){
+				service.getValue(org,onSuccess[
+					fire view.updateProductCategory(it)
+				])
+			}
+			input eventbus.ProductCategoryDeleted(org : proxy of RCProductCategory){
+				fire view.deleteProductCategory(org)
+			}
+			input eventbus.ProductCategoryAdded(org : proxy of RCProductCategory){
+				service.getValue(org,onSuccess[
+					fire view.addProductCategory(it)
+				])
+			}
+			input view.typeSelected(value : proxy of RCProductCategory){
+				this.parent = value
+				service.loadItems(value,onSuccess[
+					fire view.showItems(it)
+				])
+			}
+		
+			input view.createChildRequest(parent : proxy of RCProductCategory){
+				createOrUpdateProductTypePresenter.get=>[setup4Create(parent)[
+					fire eventbus.PopActivatedPresenter(it)
+				]]
+			}
+			input view.modifyChildRequest(child : proxy of RCProductType){
+				createOrUpdateProductTypePresenter.get=>[setup4Update(child)[
+					fire eventbus.PopActivatedPresenter(it)
+				]]				
+			}
+			input view.deleteChildRequest(child : proxy of RCProductType){
+				service.deleteChild(child,onSuccess[
+					fire eventbus.ProductTypesChanged()
+				])
+			}
+			input eventbus.ProductTypesChanged(){
+				service.loadItems(parent,onSuccess[
+					fire view.showItems(it)
+				])
+			}
+			input call.getSelectionProvider() :ObjectSelectionProvider<UIProductType>{
+				getView().getActionContext()
+			}
+		}
+		service{
+			@Inject mapper : ProductCategoryMapper
+			@Inject ProductTypeMapper : ProductTypeMapper
+			op loadAllProductCategory() : UIProductCategory[*]{
+				entities.all(typeof(RCProductCategory)).^map[mapper.transform(it)].unlazy
+			}
+			op delete(value : proxy of RCProductCategory) : void {
+				entities.delete(resolve value)
+			}
+			op getValue(org : proxy of RCProductCategory) : UIProductCategory{
+				mapper.transform(resolve org)
+			}
+			op loadItems(value : proxy of RCProductCategory) : UIProductType[*]{
+				(resolve value).productTypes.^map[ProductTypeMapper.transform(it)].unlazy
+			}
+			op deleteChild(child : proxy of RCProductType) : void{
+				entities.delete(resolve child)
+			}
+			
+		}
+	}
+	
+	view ProductCategoryManagementView for ProductCategoryManagementPresenter{
+		@Inject listGrid : ProductCategoryListGrid
+		@Inject itemListGrid : ProductTypeListGrid
+		con: Widget
+		isReadonly : Boolean
+		asWidget() : Widget{
+			con
+		}
+		layout{
+			listGrid.asWidget
+			con = widgets.FramedPanel("物品类别信息维护")=>[
+				val ac = listGrid.createActionContext
+				listGrid.addSelectEntityListener[
+					fire view.typeSelected(it.toProxy)
+				]
+				setWidget(
+					
+					widgets.HLayout=>[
+						add(widgets.FieldSet("物品大类")=>[
+							widget = widgets.ContentPanel=>[
+								setBorders(false)
+								setBodyBorder(false)															
+								widget = widgets.VLayout=>[
+									add(listGrid.createFilter[item,filter|
+										item.name.satisfy[contains(filter)] || item.simplePy.satisfy[contains(filter)]
+									],widgets.VLayoutData(1,-1))
+									add(widgets.ContentPanel=>[widget=listGrid.asWidget],widgets.VLayoutData(1,1))
+								]
+								
+								if(!isReadonly){
+									securities.check(ui-requester.createRequest)[v|
+										addButton(widgets.TextButton("新建")=>[
+											addSelectHandler[
+												val s = listGrid.onlySelected
+												fire view.createRequest(s?.toProxy)
+												]
+											]
+										)
+										
+									]
+									securities.check(ui-requester.modifyRequest)[v|
+										addButton(ac.onSingleObjectAction[
+											onExecute[UIProductCategory selectedValue |
+												fire view.modifyRequest(selectedValue.toProxy)
+											]
+										].asButtonRequester("修改"))					
+									]					
+									securities.check(ui-requester.deleteRequest)[v|
+										addButton(ac.onSingleObjectAction[
+											onExecute[UIProductCategory selectedValue |
+												widgets.ConfirmMessageBox("确认","确认删除选定物品大类")[
+													fire view.deleteRequest(selectedValue.toProxy)
+												].show
+											]
+										].asButtonRequester("删除"))					
+									]
+								}
+							]],widgets.HLayoutData(300,1,1))
+						add(
+							widgets.FieldSet("物品类别")=>[
+								widget = widgets.ContentPanel=>[
+								widget =itemListGrid.asWidget
+								if(!isReadonly){
+									val itemAc = itemListGrid.createActionContext
+									securities.check(ui-requester.createChildRequest)[v|
+										addButton(
+											ac.onSingleObjectAction[
+												onExecute[UIProductCategory item|
+													fire view.createChildRequest(item.toProxy)
+												]
+											].asButtonRequester("新建")				
+										)
+									]
+									securities.check(ui-requester.modifyChildRequest)[v|
+										addButton(
+											itemAc.onSingleObjectAction[
+												onExecute[UIProductType item|
+													fire view.modifyChildRequest(item.toProxy)
+												]
+											].asButtonRequester("修改")				
+										)
+									]
+									securities.check(ui-requester.deleteChildRequest)[v|
+										addButton(
+											itemAc.onSingleObjectAction[
+												onExecute[UIProductType item|
+													widgets.ConfirmMessageBox("确认","确认删除选定物品类别")[
+														fire view.deleteChildRequest(item.toProxy)
+													].show
+												]
+											].asButtonRequester("删除")				
+										)
+									]
+								}
+							]],widgets.HLayoutData(1,1,1))
+				])
+			]					
+		}
+	
+		op showItems(items : UIProductType[*]) : void{
+			itemListGrid.objects = items
+		}
+		
+		op showResults(results : UIProductCategory[*]) : void{
+			listGrid.setContentProvider(new ProductCategoryTreeContentProvider(results))
+		}
+		
+		op updateProductCategory(org : UIProductCategory) : void{
+			listGrid.store.update(org)
+		}
+		
+		op deleteProductCategory(org : proxy of RCProductCategory) : void{
+			var store = listGrid.store
+			store.remove(store.findModelWithKey(org.hashCode.toString))
+		}
+		
+		op addProductCategory(org : UIProductCategory) : void{
+			var TreeStore store = listGrid.store
+			if(org.parent!=null){
+				var parentInStore = store.findModelWithKey(org.parent.hashCode.toString)				
+				store.add(parentInStore as UIProductCategory,org as UIProductCategory);
+			}else{
+				store.add(org as UIProductCategory);
+			}
+		}
+		
+		ac : ActionContext<UIProductType>
+		op getActionContext() : ActionContext<UIProductType>{
+			if(ac==null) ac = itemListGrid.createActionContext
+			return ac
+		}
+		
+		op setAsReadonly(isReadonly : Boolean):void{
+			this.isReadonly = isReadonly
+		}
+	}	
+	
+	signal ProductTypesChanged
+	
+	presenter CreateOrUpdateProductTypePresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIProductType
+			signal in setParent(parent : proxy of RCProductCategory)
+			op setValue(value : UIProductType) : void
+		}
+		
+		interaction{
+			used4Update : boolean
+			parent : proxy of RCProductCategory
+			input call.setup4Create(
+				parent : proxy of RCProductCategory,
+				(CreateOrUpdateProductTypePresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.parent = parent
+				this.activate[
+					fire view.setParent(parent)
+					postInitializer.apply(this)
+				]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCProductType,
+				(CreateOrUpdateProductTypePresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						postInitializer.apply(this)
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update){
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.ProductTypesChanged()
+						notifier.success
+					])
+				}else{
+					service.createValue(parent,getView().value,onSuccess[
+						fire eventbus.ProductTypesChanged()
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : ProductTypeMapper
+			op loadValue(pvalue : proxy of RCProductType) : UIProductType{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIProductType) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(parent : proxy of RCProductCategory,uivalue : UIProductType) : void{
+				var value = (resolve parent).createAndAddtoProductTypes
+				mapper.transform(uivalue,value)
+			}
+		}
+	}
+	
+	view CreateOrUpdateProductTypeView for CreateOrUpdateProductTypePresenter implements IHasSize, IHasTitle{
+		@Inject form : ProductTypeForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIProductType{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIProductType value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(350,200)
+		}
+		op getTitle():String{
+			'物品类别维护'
+		}
+		op setParent(parent : proxy of RCProductCategory):void{
+			form.category.value = parent
+		}
+	}
+	
+}

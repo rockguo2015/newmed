@@ -1,0 +1,51 @@
+package com.fudanmed.platform.core.web feature organization{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import edu.fudan.langlab.uidl.domain.app.client.security.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.fudanmed.platform.core.web.*
+	import edu.fudan.langlab.uidl.domain.app.shared.security.*
+
+	import com.uniquesoft.gwt.shared.datatype.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.uniquesoft.uidl.validation.*
+	import com.fudanmed.platform.core.domain.^proxy.*
+	import com.fudanmed.platform.core.web.client.*
+
+	ui-command ImportEmployeeCommand "导入"{
+		factory employeeUploaderPresenter : EmployeeUploaderPresenter
+		execute{
+			employeeUploaderPresenter.get.asDialog("员工信息导入")
+		}
+	}
+
+	ui-command CreateEmployeeCommand for proxy of RCOrganization"新建"{
+		factory updatePresenter : CreateOrUpdateEmployeePresenter
+		execute{
+			updatePresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+	
+	ui-command UpdateEmployeeCommand for proxy of RCEmployee "修改"{
+		factory updatePresenter : CreateOrUpdateEmployeePresenter
+		execute{
+			updatePresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+				
+	}
+
+}

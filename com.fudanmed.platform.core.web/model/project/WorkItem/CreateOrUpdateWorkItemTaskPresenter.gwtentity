@@ -1,0 +1,177 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.uniquesoft.gwt.client.common.print.Print
+	import com.fudanmed.platform.core.web.server.^service.^template.*
+	import com.fudanmed.platform.core.web.client.common.*
+	presenter CreateOrUpdateWorkItemTaskPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIWorkItemTask
+			op setValue(value : UIWorkItemTask) : void
+			signal in setDefaultValues(
+				operator : proxy of RCEmployee,
+				faultType : proxy of RCFaultType,
+				faultDescription : String,
+				team : proxy of RCOrganization,p :org.eclipse.xtext.xbase.lib.Procedures$Procedure1<? super Void>
+			)
+		}
+		
+		interaction{
+			used4Update : boolean
+			groupTask : proxy of RCGroupTask
+			input call.setup4Create(groupTask : proxy of RCGroupTask,
+				(CreateOrUpdateWorkItemTaskPresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.groupTask = groupTask
+				this.activate[
+					service.loadRepairTask(groupTask,onSuccess[repairTask|
+						if(repairTask==null){
+							display("错误","无法派工，请刷新确认报修状态")
+						}else
+							service.loadTeam(groupTask,onSuccess[teams|
+								service.loadSystemUser(onSuccess[user|
+									fire view.setDefaultValues(user,repairTask.faultType.toProxy,repairTask.comment,teams,[Void m|
+									postInitializer.apply(this)
+								])
+							])
+						])
+					])
+				]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCWorkItemTask,
+				(CreateOrUpdateWorkItemTaskPresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadTeam(groupTask,onSuccess[team|
+						fire view.setDefaultValues(null,null,null,team,[Void m|
+					
+							service.loadValue(value,onSuccess[
+								getView().setValue(it)
+								postInitializer.apply(this)
+							])
+						])
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.GroupTasksChanged()
+						fire eventbus.WorkItemTasksChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(groupTask,getView().value,callback[
+						onSuccessDo[workItemTask|
+							if(getView().value.print.isLogicTrue)
+								service.generatePrintContents(workItemTask,onSuccess[html|
+									Print::it(html)
+								])
+							fire eventbus.GroupTasksChanged()
+							fire eventbus.WorkItemTasksChanged()
+							notifier.success]
+						onFailureDo[
+							display("错误","无法派工，请刷新确认报修状态")
+						]
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : WorkItemTaskMapper
+			@Inject repairTaskMapper : RepairTaskMapper
+			@Inject systemUserService : ISystemUserService
+			@Inject systemParameter : RCSystemParameterService
+			
+			op loadValue(pvalue : proxy of RCWorkItemTask) : UIWorkItemTask{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIWorkItemTask) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+				(resolve uivalue).operator = (systemUserService.currentUser as RCEmployeeUser).employee
+			}
+			op createValue(groupTask : proxy of RCGroupTask, uivalue : UIWorkItemTask) : proxy of RCWorkItemTask{
+				var value = (resolve groupTask).createWorkItemTask
+				mapper.transform(uivalue,value)
+				value.operator = (systemUserService.currentUser as RCEmployeeUser).employee
+				value.toProxy
+			}
+			op loadTeam(groupTask : proxy of RCGroupTask) : proxy of RCOrganization{
+				(resolve groupTask).team.organization.toProxy
+			}
+			op loadSystemUser() : proxy of RCEmployee{
+				(systemUserService.currentUser as RCEmployeeUser).employee.toProxy
+			}
+			op loadRepairTask(groupTask : proxy of RCGroupTask) : UIRepairTask{
+				repairTaskMapper.transform((resolve groupTask)?.repairTask)
+			}
+			op generatePrintContents(workItemTask : proxy of RCWorkItemTask) : String{
+				Template::workItem(resolve workItemTask,systemParameter.systemParameter)
+			}
+		}
+	}
+
+	view CreateOrUpdateWorkItemTaskView for CreateOrUpdateWorkItemTaskPresenter implements IHasSize, IHasTitle{
+		@Inject form : WorkItemTaskForm
+		required timeService : ServerSideTimeServiceAsync
+		initializer{
+			this += widgets.VLayout=>[
+				add(
+					form.asWidget=>[
+					timeService.getTime(onSuccess[
+						form.date.value = it.trimDate
+						form.time.value = it
+					])
+				],widgets.VLayoutData(1,-1,10))
+			]
+		}
+		op getValue() : UIWorkItemTask{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{   
+			form.clearErrors
+		}
+		
+		op setValue(UIWorkItemTask value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(540,400)
+		}
+		op getTitle():String{
+			'工单派工'
+		}
+		op setDefaultValues(
+			operator : proxy of RCEmployee,
+			faultType : proxy of RCFaultType,
+			faultDescription : String,
+			team : proxy of RCOrganization,p :org.eclipse.xtext.xbase.lib.Procedures$Procedure1<? super Void>
+		):void{
+			form.workersContentProvider.load(team)[
+				if(operator!=null)form.operator.value = operator
+				if(faultType!=null)form.faultType.value = faultType
+				if(faultDescription!=null)form.faultDescription.value = faultDescription
+				p.apply(null)
+			]
+		}			
+	}	
+}

@@ -1,0 +1,609 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.warehouse.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.client.common.print.*
+	import com.fudanmed.platform.core.web.server.^service.^template.*
+	import com.sencha.gxt.widget.core.client.Component
+	
+	ui-entity UITransferRecordItem for RCTransferRecordItem{
+		sid : String "入库批号"
+		storage : UIProductWarehouseStorage "物品名称"
+		productEntry : proxy of RCProductEntry "物品名称"
+		quantity : Integer "数量"
+		materialId : String "物品编号"
+		sourceQuantity : Integer "库存"
+		productSid : String "条码"
+		typeDesc : String  "规格型号"
+		price : Double "单价"
+		brand : proxy of RCMaterialBrand "品牌"
+		unit : proxy of RCProduceSpecificationUnit "计量单位"
+		
+		map TransferRecordItemMapper validate by TransferRecordItemValidator{
+			direct{
+				{quantity,entity.recordItem.quantity}, {productEntry,entity.recordItem.productEntry} readonly, 
+				{sid, entity.recordItem.productEntry.sid} readonly
+			}
+			to entity{
+				entity.recordItem.productEntry = entities.get(typeof(RCProductEntry),ui.storage.productEntry.id)
+			}
+			from entity{
+				ui.productSid = entity.recordItem.productEntry.productSpec.sid
+				ui.typeDesc = entity.recordItem.productEntry.productSpec.typeDesc
+				ui.unit = entity.recordItem.productEntry.productSpec.unit.toProxy
+				ui.materialId = entity.recordItem.productEntry.productSpec.materialId
+				ui.price = entity.recordItem.productEntry.price
+				ui.brand = entity.recordItem.productEntry.productSpec.brandType.toProxy
+			}
+			op create(UITransferRecordItem gwtEntity, Object context) :RCTransferRecordItem{
+				(context as RCTransferRecord).createAndAddtoItems
+			}
+		}
+	
+		constraints TransferRecordItemValidator{
+			rule Required on storage
+			rule Required on quantity
+		}
+	
+		ui-component TransferRecordItemForm as GXTForm{
+			@Inject productWarehouseStorageList : ProductWarehouseStorageList
+			binding{
+				storage as RequiredSuggestionItem(productWarehouseStorageList) content from AllProductWarehouseStorageContentProvider,
+				quantity as RequiredIntegerItem,sourceQuantity as ReadonlyItem
+			}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(storage.asWidget=>[
+							storage.addSelectionChangedListener[
+								sourceQuantity.value = it.head.quantity
+							]
+						])
+						addFill(sourceQuantity.asWidget)
+						addFill(quantity.asWidget)
+					]
+				]
+			}			
+		}
+	
+		ui-component TransferRecordItemListGrid as GXTGrid{
+			binding{sid,productSid,materialId,productEntry,typeDesc,brand,price,quantity,unit}
+		}
+	}
+	
+
+	ui-entity UITransferRecord for RCTransferRecord{
+		sid : String "调拨单号"
+		sourceStore : proxy of RCWarehouse "调出仓库"
+		targetStore : proxy of RCWarehouse "调入仓库"
+		date : Date "调拨日期"
+		operator : proxy of RCEmployee "操作员"
+		itemSummarys : UIWarehouseProductSpecSummary[*] "调拨明细"
+		comment : String "备注"
+		print : Boolean "打印"
+	
+		map TransferRecordMapper validate by TransferRecordValidator{
+			direct{ sid readonly,sourceStore, date, targetStore,comment, operator readonly}
+			to entity{
+				entity.initItemsFromSummary(
+					ui.itemSummarys.^map[itemSummary|
+						new RCProductSpecificationSummary=>[
+							it.productSpec = entities.get(typeof(RCProductWarehouseStorageSummary),itemSummary.storageSummary.id).productSpec
+							it.quantity = itemSummary.quantity
+						]
+					].toList
+				)
+			}
+		}
+	
+		constraints TransferRecordValidator{
+			
+			rule Required on targetStore
+			rule Required on sourceStore
+			rule Required on itemSummarys
+			constraint C1 on targetStore, sourceStore "调入调出仓库不能相同"{
+				entity.targetStore != entity.sourceStore
+			}
+		}
+	
+		ui-component TransferRecordForm as GXTForm{
+			@Inject transferRecordItemListGrid : WarehouseProductSpecSummaryListGrid
+			@Inject transferRecordItemForm : WarehouseProductSpecSummaryForm
+			required timeService : client.common.ServerSideTimeServiceAsync
+			binding{
+				sourceStore as RequiredComboBoxItem content from AllWarehouseByManagerContentProvider,
+				targetStore as RequiredComboBoxItem content from AllWarehouseContentProvider,
+				itemSummarys as ListGridBasedItem(transferRecordItemListGrid),
+				comment,
+				date as ReadonlyItem, print
+			}
+			con : Widget
+			
+			op setSourceWarehouse(store : proxy of RCWarehouse) : void{
+				transferRecordItemForm.setSourceWarehouse(store)
+			}
+			
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+				this.sourceStoreContentProvider.load(employee)[
+					notifier.apply(null)
+				]
+			}
+			
+			op setProductSummary(productSummary : UIProductWarehouseStorageSummary):void{
+				transferRecordItemForm.storageSummary.value = productSummary
+				transferRecordItemForm.sourceQuantity.value = productSummary?.quantity.nullsafe
+			}
+			
+			productSidSelectedHandler:(String, RCWarehouseProxy)=>void
+			op setProductSidSelectedHandler(callback:(String,RCWarehouseProxy)=>void):void{
+				this.productSidSelectedHandler = callback
+			}
+			
+			lastInputComponent : Component			
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						add(TABLE=>[
+							tr=>[
+								td=>[it += date.asWidget=>[
+									timeService.getTime(onSuccess[
+										date.value=it
+									])
+								]]
+								td=>[it += sourceStore.asWidget=>[
+									sourceStore.addValueChangedListener[
+										transferRecordItemForm.setSourceWarehouse(it)
+										transferRecordItemForm.storageSummary.clear	
+										itemSummarys.value = newArrayList								
+									]
+								]]
+								td=>[it += targetStore.asWidget]								
+							]
+						],widgets.VLayoutData(1,-1))
+						add(widgets.FieldSet("调拨明细")=>[
+							widget = widgets.VLayout=>[
+								it += TABLE=>[
+									lastInputComponent = transferRecordItemForm.storageSummary.field
+									tr=>[
+										td=>[it += transferRecordItemForm.storageSummary.asWidget=>[
+											width = 485
+											transferRecordItemForm.storageSummary.addSelectionChangedListener[
+												transferRecordItemForm.sourceQuantity.value = it.head.quantity
+											]
+											transferRecordItemForm.storageSummary.field.addBlurHandler[
+												transferRecordItemForm.productSid.value = transferRecordItemForm.storageSummary.value?.productSpecsSid
+											]
+											OnEnter[
+												lastInputComponent = transferRecordItemForm.storageSummary.field
+												transferRecordItemForm.quantity.focus
+											]											
+										]]
+										td=>[
+											it += transferRecordItemForm.productSid.asWidget=>[
+												transferRecordItemForm.productSid.field.addBlurHandler[
+													productSidSelectedHandler?.apply(transferRecordItemForm.productSid.value,sourceStore.value)
+												]
+												OnEnter[
+													lastInputComponent = transferRecordItemForm.productSid.field
+													transferRecordItemForm.quantity.focus
+												]
+											]
+										]										
+									]
+								]
+								it += TABLE=>[
+									tr=>[
+										td=>[ width="330" it += transferRecordItemForm.sourceQuantity.asWidget]
+										td=>[
+											it += transferRecordItemForm.quantity.asWidget
+											OnEnter[
+												createItem()=>[
+													if(it!=null){
+														transferRecordItemListGrid.addElement(it)
+														lastInputComponent.focus
+														
+													}
+												]
+											]											
+										]
+									]
+								]
+								addFill(itemSummarys.asWidget=>[height=250])
+								itemSummarys.objectCreater=[createItem]
+							]
+						],widgets.VLayoutData(1,-1))
+						add(print.asWidget,widgets.VLayoutData(130,-1,2))
+						
+						transferRecordItemListGrid.addEditCompleteListener[
+							transferRecordItemListGrid.updateElement(it=>[
+								sourceQuantity = storageSummary.quantity
+							])
+						]
+					]
+				]
+			}
+			op createItem():UIWarehouseProductSpecSummary{
+				if(transferRecordItemForm.quantity.value == null ||
+					transferRecordItemForm.storageSummary.value == null
+				)
+					null
+				else if(transferRecordItemForm.quantity.value>transferRecordItemForm.storageSummary.value.quantity){
+					widgets.MessageBox("无效输入","库存数量不足").show
+					null
+				}else if (
+					transferRecordItemListGrid.objects.exists[
+						it.id == -transferRecordItemForm.storageSummary.value.id
+					] 
+				){
+					display("警告","同种物品不能分开调拨")
+					null
+					
+				}else	 
+					transferRecordItemForm.valueAsNew=>[
+						val v = transferRecordItemForm.storageSummary.value
+						it.productName = v.name
+						it.sourceQuantity = v.quantity
+						it.productSid = v.productSpecsSid
+						it.typeDesc = v.typeDesc
+						it.unit = v.unit
+						it.brand = v.brand
+						it.id = -v.id
+						
+						transferRecordItemForm.quantity.value = null
+						transferRecordItemForm.sourceQuantity.value = null
+						transferRecordItemForm.productSid.value = null
+						transferRecordItemForm.storageSummary.value = null
+					]				
+			}		
+		}
+
+		ui-component TransferRecordListGrid as GXTGrid{
+			binding{sid,sourceStore,targetStore,operator,date,comment}
+		}
+	}
+	
+	signal TransferRecordsChanged
+	
+	presenter CreateOrUpdateTransferRecordPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UITransferRecord
+			op setValue(value : UITransferRecord) : void
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void	
+			signal out productSidEntered(productSid : String, store : proxy of RCWarehouse)
+			op setProductSummary(productSummary : UIProductWarehouseStorageSummary):void
+		}
+		
+		interaction{
+			used4Update : boolean
+			input call.setup4Create(
+				(CreateOrUpdateTransferRecordPresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.activate[
+					service.getCurrentUser(onSuccess[
+						getView().setSourceWarehouseContext(it)[
+							postInitializer.apply(this)
+						
+						]
+					])
+				]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCTransferRecord,
+				(CreateOrUpdateTransferRecordPresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						postInitializer.apply(this)
+					])
+				]
+			}
+			input view.productSidEntered(sid : String, store : proxy of RCWarehouse){
+				service.getProductSummaryByProductSid(sid,store,onSuccess[
+					getView().setProductSummary(it)
+				])
+			}			
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.ProductStoreTransactionsChanged()
+						fire eventbus.TransferRecordsChanged()
+						fire eventbus.ProductWarehouseStorageSummarysChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value,onSuccess[record|
+						fire eventbus.ProductStoreTransactionsChanged()
+						fire eventbus.TransferRecordsChanged()
+						fire eventbus.ProductWarehouseStorageSummarysChanged()
+						if(getView().value.print){
+							service.generatePrintContents(record,onSuccess[html|
+								Print::it(html)
+							])
+						}
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : TransferRecordMapper
+			@Inject systemUserService : ISystemUserService
+			@Inject warehouseService : RCWarehouseService
+			@Inject systemParameter : RCSystemParameterService
+			@Inject itemMapper : TransferRecordItemMapper
+			@Inject productSpecificationDAO : RCProductSpecificationDAO
+			@Inject productWarehouseStorageSummaryMapper : ProductWarehouseStorageSummaryMapper
+			
+			op getProductSummaryByProductSid(sid : String, store : proxy of RCWarehouse):UIProductWarehouseStorageSummary{
+				val productSpec = productSpecificationDAO.findBySid(sid)
+				if(productSpec!=null){
+					productWarehouseStorageSummaryMapper.transform(
+						(entities.createQueryCriteria(typeof(RCProductWarehouseStorageSummaryCriteria))=>[
+							it.productSpec = productSpec
+							it.store = resolve store
+						]).list.head
+					)
+				}
+			}			
+			op loadValue(pvalue : proxy of RCTransferRecord) : UITransferRecord{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UITransferRecord) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UITransferRecord) : proxy of RCTransferRecord{
+				val result =warehouseService.createTransferRecord[
+					mapper.transform(uivalue,it)
+				]
+				result.commit((systemUserService.currentUser as RCEmployeeUser).employee)
+				result.toProxy
+			}
+			op getCurrentUser():proxy of RCEmployee{
+				(systemUserService.currentUserAsParty as RCEmployee).toProxy
+			}
+			op generatePrintContents(record : proxy of RCTransferRecord) : String{
+				TransferTemplate::^template(resolve record,systemParameter.systemParameter,itemMapper)
+			}
+			
+		}
+	}
+	
+	view CreateOrUpdateTransferRecordView for CreateOrUpdateTransferRecordPresenter implements IHasSize, IHasTitle{
+		@Inject form : TransferRecordForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+			form.setProductSidSelectedHandler[sid,store|
+				fire view.productSidEntered(sid,store)
+			]			
+		}
+		op getValue() : UITransferRecord{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UITransferRecord value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(810,510)
+		}
+		op getTitle():String{
+			'调拨'
+		}
+		op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+			form.setSourceWarehouseContext(employee)[
+				form.sourceStore.selectFirst
+				form.setSourceWarehouse(form.sourceStore.value)
+				notifier.apply(null)
+			]
+		}
+		op setProductSummary(productSummary : UIProductWarehouseStorageSummary):void{
+			form.setProductSummary(productSummary)
+		}		
+	}		
+	
+	
+	ui-criteria UITransferRecordCriteria for RCTransferRecordCriteria{
+		targetStore : proxy of RCWarehouse "入库仓库"
+		dateFrom : Date "起始日期"		
+		dateTo : Date "结束日期"		
+		
+		map TransferRecordCriteriaMapper{
+			@Inject warehouseDAO : RCWarehouseDAO
+			direct{targetStore,dateFrom,dateTo}
+			to entity{
+				entity.stores = warehouseDAO.findManagedWarehouse.^map[^id].unlazy
+			}
+			
+		}
+		
+		ui-component TransferRecordCriteriaForm as GXTForm{
+			binding{targetStore as ComboBoxItem content from AllWarehouseContentProvider,dateFrom,dateTo}
+		}
+	}
+	
+	presenter TransferRecordListPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UITransferRecord>)
+			signal in showDetails(details : UITransferRecordItem[*])
+			signal in refresh()
+			signal out transferRequest() @transferRecordListPresenter "调拨"
+	
+			signal out filterRequest(c : UITransferRecordCriteria)
+			signal out showDetailRequest(value : proxy of RCTransferRecord)
+			signal out print(value : proxy of RCTransferRecord)
+			
+		}
+	
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateTransferRecordPresenter
+			input call.setup(postInit : (TransferRecordListPresenter)=>void ){
+				this.activate[
+					fire view.refresh
+					postInit.apply(this)
+				]
+			}
+			
+			input view.filterRequest(c : UITransferRecordCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input view.showDetailRequest(value : proxy of RCTransferRecord){
+				service.loadDetails(value,onSuccess[
+					fire view.showDetails(it)
+				])
+			}
+			input eventbus.TransferRecordsChanged(){
+				fire view.refresh
+			}
+			input view.transferRequest(){
+				createOrUpdatePresenter.get=>[
+					setup4Create[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.print(value : proxy of RCTransferRecord){
+				service.generatePrintContents(value,onSuccess[html|
+					Print::it(html)
+				])
+				
+			}
+			
+			
+		}
+		service{
+			@Inject criteriaMapper : TransferRecordCriteriaMapper
+			@Inject mapper : TransferRecordMapper
+			@Inject itemMapper : TransferRecordItemMapper
+			@Inject systemParameter : RCSystemParameterService
+			
+			op generatePrintContents(record : proxy of RCTransferRecord) : String{
+				TransferTemplate::^template(resolve record,systemParameter.systemParameter,itemMapper)
+			}			
+	
+			op filter(uicriteria : UITransferRecordCriteria) : IPagedResult<UITransferRecord>{
+				var c = uicriteria.createPagedCriteria(typeof(RCTransferRecordCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op delete(value : proxy of RCTransferRecord) : void {
+				entities.delete(resolve value)
+			}
+			op loadDetails(parent : proxy of RCTransferRecord) : UITransferRecordItem[*]{
+				(resolve parent).items.^map[itemMapper.transform(it)].unlazy
+			}
+		}
+	}
+	
+	view TransferRecordListView for TransferRecordListPresenter{
+		@Inject listGrid : TransferRecordListGrid
+		@Inject criteriaForm : TransferRecordCriteriaForm
+		@Inject detailsListGrid : TransferRecordItemListGrid
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.FramedPanel("调拨管理")=>[
+				setWidget(widgets.VLayout=>[
+					add(
+						widgets.HTableLayout()=>[
+							add(<Widget>newArrayList(
+								criteriaForm.targetStore.asWidget,
+								criteriaForm.dateFrom.asWidget,
+								criteriaForm.dateTo.asWidget,
+								widgets.TextButton("查询")=>[
+									setWidth("80px")
+									addSelectHandler[
+										fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+											page = 1
+										])
+									]
+								]
+							)	
+						)]
+					)
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]	
+					add( widgets.ContentPanel()=>[
+							widget = widgets.VLayout=>[
+								add(listGrid.asWidget,widgets.VLayoutData(1,1))
+								add(pager.asWidget,widgets.VLayoutData(1,-1))
+							]
+							securities.check(ui-requester.transferRequest)[v|
+								addButton(widgets.TextButton("调拨")=>[
+									addSelectHandler[
+										fire view.transferRequest()
+									]
+								])
+							]	
+							addButton(listGrid.createActionContext.onSingleObjectAction[
+								onExecute[UITransferRecord record|
+									fire view.print(record.toProxy)
+								]
+							].asButtonRequester("打印调拨单"))
+																				
+						],widgets.VLayoutData(1,0.45))					
+					add(
+						widgets.ContentPanel("调拨明细")=>[
+							widget = detailsListGrid.asWidget
+						]
+						,widgets.VLayoutData(1,0.55)
+					)
+					listGrid.addSelectEntityListener[
+						fire view.showDetailRequest(it.toProxy)
+					]
+					listGrid.addSelectionChangedListener[
+						if(it.isNullOrEmpty)
+							detailsListGrid.objects = newArrayList
+					]
+				])
+
+			]			
+					
+		}
+		
+		op showResults(results : IPagedResult<UITransferRecord>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op showDetails(details : UITransferRecordItem[*]):void{
+			detailsListGrid.objects = details
+		}
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+	}	
+	
+}

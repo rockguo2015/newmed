@@ -1,0 +1,97 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.uniquesoft.gwt.shared.GWTNamedEntity
+	
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.server.^service.organization.*
+	
+	ui-datatype UIRepairDispatchData{
+		team : proxy of RCMaintenanceTeam "选择班组"
+		ui-component RepairDispatchDataForm as GXTForm{
+			binding{team as ComboBoxItem content from AllMaintenanceTeamContentProvider}
+		}
+		constraints RepairDispatchDataValidator{
+			rule Required on team
+		}
+	}
+	
+	presenter RepairDispatchPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getRepairDispatchData()  :  UIRepairDispatchData
+		}
+		
+		interaction{
+			RepairTask : proxy of RCRepairTask
+			input call.setup(RepairTask : proxy of RCRepairTask, postInit : (RepairDispatchPresenter)=>void){
+				this.RepairTask = RepairTask
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.dispatch(RepairTask,getView().repairDispatchData,onSuccess[
+					fire eventbus.RepairTasksChanged
+					notifier.success
+				])
+			}
+		}
+		
+		service{
+			@Inject systemUserService : ISystemUserService
+			@Inject ^validator : RepairDispatchDataValidator
+			op dispatch(report : proxy of RCRepairTask, data : UIRepairDispatchData) : void{
+				data.validateWith(^validator)
+				(resolve report).createGroupTask(resolve data.team)
+			}
+			op getSystemUser() : proxy of RCEmployee{
+				(systemUserService.currentUser as RCEmployeeUser).employee.toProxy
+			}
+			
+		}
+	}
+	
+	view RepairDispatchView for RepairDispatchPresenter implements IHasSize, IHasTitle{
+		@Inject form : RepairDispatchDataForm
+
+		initializer{
+			this += widgets.VLayout=>[
+				add(form.team.asWidget,widgets.VLayoutData(1,-1,10))
+			]
+		}
+		
+		op getRepairDispatchData()  :  UIRepairDispatchData{
+			form.value
+		}
+		
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		op getSize():Size{
+			new Size(300,200)
+		}
+		op getTitle():String{
+			'下发班组'
+		}
+	}
+}

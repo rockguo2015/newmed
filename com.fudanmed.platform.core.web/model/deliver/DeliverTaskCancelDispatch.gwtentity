@@ -1,0 +1,79 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.domain.organization.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+
+	ui-command DeliverTaskCancelDispatchCommand require UICenterlizedDeliverTask[*] "取消派发" {
+		factory createOrUpdateDeliverTaskCancelDispatchDataPresenter:CreateOrUpdateDeliverTaskCancelDispatchDataPresenter
+		execute{
+			createOrUpdateDeliverTaskCancelDispatchDataPresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+		check-enable{
+			value.forall[
+				DLCenterlizedDeliverTaskManager::isActionValid(DLCenterlizedDeliverTaskAction::cancelDispatch,it.status)
+			]
+		}
+	}
+	
+	ui-datatype UIDeliverTaskCancelDispatchData{
+		comment : String "备注"
+		ui-component DeliverTaskCancelDispatchDataForm as GXTForm{
+			binding{comment as TextAreaItem}
+			op createWidget():Widget{
+				widgets.VLayout=>[
+					addFill(comment.asWidget=>[height=100])
+				]
+			}
+		}
+	}
+
+	presenter CreateOrUpdateDeliverTaskCancelDispatchDataPresenter for UIDeliverTaskCancelDispatchData{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(deliverTasks:Iterable<UICenterlizedDeliverTask>){
+				commiter=[notifier|
+					service.commit(deliverTasks.^map[toProxy].toList,getView().value,onSuccess[
+						fire eventbus.CenterlizedDeliverTasksChanged
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			op commit(deliverTasks:proxy of DLCenterlizedDeliverTask[*],uivalue : UIDeliverTaskCancelDispatchData) : void{
+				deliverTasks.forEach[deliverTask|
+					(resolve deliverTask).cancelDispatch(uivalue.comment)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateDeliverTaskCancelDispatchDataView<DeliverTaskCancelDispatchDataForm> for CreateOrUpdateDeliverTaskCancelDispatchDataPresenter ui-size:(300,200) ui-title:"取消派发"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}
+
+	
+}

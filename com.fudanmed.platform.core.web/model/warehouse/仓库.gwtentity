@@ -1,0 +1,280 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.*
+	import com.sencha.gxt.widget.core.client.form.*
+	ui-entity UIWarehouse for RCWarehouse{
+		name : String "名称"
+		location : String "位置"
+		isMajor : Boolean "主仓库"
+		storeManager : proxy of RCEmployee[*] "仓库管理员"
+		relatedTeams : proxy of RCMaintenanceTeam[*] "关联班组"
+		map WarehouseMapper validate by WarehouseValidator{
+			direct{name,location,isMajor,storeManager,relatedTeams}
+		}
+	
+		constraints WarehouseValidator{
+			@Inject sarehouseService : RCWarehouseService
+			
+			rule Required on name
+			rule Required on storeManager
+			
+			constraint hasOnMajor on name "主仓库只能有一个"{
+				if(entity.isMajor.isLogicTrue)
+					sarehouseService.majorWarehouse == null || sarehouseService.majorWarehouse.id == entity.id
+				else true
+			}
+		}
+
+		ui-component WarehouseForm as GXTForm{
+			binding{name,location,storeManager as DualListItem content from AllEmployeesContentProvider,isMajor,
+				relatedTeams as DualListItem content from AllMaintenanceTeamContentProvider
+			}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					TABLE=>[
+						tr=>[
+							td=>[it += name.asWidget]
+							td=>[it += location.asWidget=>[width=350]]
+						]
+						tr=>[
+							td=>[it += isMajor.asWidget]
+							td=>[]
+						]
+						tr=>[
+							td=>[it += storeManager.asWidget=>[
+								height=150
+								width=250
+								it.labelAlign = FormPanel$LabelAlign::TOP
+							]]
+							td=>[it += relatedTeams.asWidget=>[
+								height=150
+								width=350
+								it.labelAlign = FormPanel$LabelAlign::TOP
+							]]
+						]
+					]
+				]
+			}			
+		}
+	
+		ui-component WarehouseListGrid as GXTGrid{
+			binding{name,location,isMajor,storeManager,relatedTeams}
+		}
+	}
+	
+	signal WarehousesChanged
+	
+	presenter CreateOrUpdateWarehousePresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIWarehouse
+			op setValue(value : UIWarehouse) : void
+		}
+		
+		interaction{
+			used4Update : boolean
+			input call.setup4Create(
+				(CreateOrUpdateWarehousePresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.activate[postInitializer.apply(this)]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCWarehouse,
+				(CreateOrUpdateWarehousePresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						postInitializer.apply(this)
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.WarehousesChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.WarehousesChanged()
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : WarehouseMapper
+			op loadValue(pvalue : proxy of RCWarehouse) : UIWarehouse{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIWarehouse) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIWarehouse) : void{
+				var value = entities.create(typeof(RCWarehouse))
+				mapper.transform(uivalue,value)
+			}
+		}
+	}
+	
+	view CreateOrUpdateWarehouseView for CreateOrUpdateWarehousePresenter implements IHasSize, IHasTitle{
+		@Inject form : WarehouseForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIWarehouse{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIWarehouse value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(680,360)
+		}
+		op getTitle():String{
+			'仓库信息维护'
+		}
+	}
+	
+	
+	presenter WarehouseManagementPresenter{
+		view interface{
+			signal in setResults(results : UIWarehouse[*])
+			signal out createWarehouseRequest() @warehouseManagementPresenter "新建"
+			signal out updateWarehouseRequest(value : proxy of RCWarehouse) @warehouseManagementPresenter "修改"
+			signal out deleteWarehouseRequest(value : proxy of RCWarehouse) @warehouseManagementPresenter "删除"
+			
+		}
+		
+		interaction{
+			
+			factory createOrUpdateWarehousePresenter : CreateOrUpdateWarehousePresenter
+			input call.setup(postInit : (WarehouseManagementPresenter)=>void){
+				this.activate[
+					refresh
+					postInit.apply(this)
+				]
+			}
+			
+			input call.refresh(){
+					service.loadWarehouseList(onSuccess[items|
+						fire view.setResults(items)
+					])
+			}
+			
+			input eventbus.WarehousesChanged(){
+				refresh
+			}
+			
+			input view.createWarehouseRequest(){
+				createOrUpdateWarehousePresenter.get()=>[
+					setup4Create()[
+						fire eventbus.PopActivatedPresenter(it)
+						fire eventbus.WarehousesChanged
+					]
+				]
+			}
+			
+			input view.updateWarehouseRequest(value : proxy of RCWarehouse){
+				createOrUpdateWarehousePresenter.get()=>[
+					setup4Update(value)[
+						fire eventbus.PopActivatedPresenter(it)
+						fire eventbus.WarehousesChanged
+					]
+				]
+			}
+			
+			input view.deleteWarehouseRequest(value : proxy of RCWarehouse){
+				service.deleteWarehouse(value,onSuccess[
+					fire eventbus.WarehousesChanged
+				])				
+			}
+		}
+		
+		service{
+			@Inject mapper : WarehouseMapper
+			
+			op loadWarehouseList() : UIWarehouse[*]{
+				entities.all(typeof(RCWarehouse)).^map[mapper.transform(it)].unlazy
+			}
+			
+			op deleteWarehouse(value : proxy of RCWarehouse):void{
+				entities.delete(resolve value)
+			}
+			
+		}
+	}
+	
+	view WarehouseManagementView for WarehouseManagementPresenter{
+		con : Widget
+		@Inject listGrid : WarehouseListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+			
+			con = widgets.FramedPanel("仓库信息维护")=>[
+				widget = widgets.ContentPanel()=>[widget = listGrid.asWidget]
+				val ac = listGrid.createActionContext
+				securities.check(ui-requester.createWarehouseRequest)[v|
+					addButton(widgets.TextButton("新建")=>[
+						addSelectHandler[
+							fire view.createWarehouseRequest()
+						]
+					])
+				]
+				securities.check(ui-requester.updateWarehouseRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIWarehouse wh |
+							fire view.updateWarehouseRequest(wh.toProxy)
+						]
+					].asButtonRequester("修改"))
+				]
+				securities.check(ui-requester.deleteWarehouseRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIWarehouse wh |
+							widgets.ConfirmMessageBox("确认","确认删除")[
+								fire view.deleteWarehouseRequest(wh.toProxy)
+							].show
+						]
+					].asButtonRequester("删除"))
+				]
+			]
+		}
+		
+		interaction{
+			input view.setResults(results : UIWarehouse[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+}

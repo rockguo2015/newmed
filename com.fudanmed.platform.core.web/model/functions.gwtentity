@@ -1,0 +1,69 @@
+package com.fudanmed.platform.core.web feature functions{
+	
+	
+	ui-function basic "基础数据维护"
+//		ui-function codeManagerPresenter@basic "基础代码维护"
+		ui-function onsitePositionManagementPresenter@basic "区域位置维护"
+		ui-function organizationManagementPresenter@basic "组织机构维护"
+		ui-function employeeManagementPresenter@basic "员工维护"
+		ui-function supplierManagementPresenter@basic "供应商维护"
+		ui-function systemParameterPresenter@basic "系统参数维护"
+		ui-function changePasswdPresenter@basic "修改密码"
+//		ui-function roleManagementPresenter@basic "系统角色维护"
+//		ui-function roleFunctionAssignmentPresenter@basic "系统功能分配"
+		
+	
+	ui-function project "设备工程数据维护"
+		ui-function maintenanceTypeManagerPresenter@project "维修类别维护"
+		ui-function maintenanceTeamManagementPresenter@project "维修班组设置"
+
+	ui-function department "科室日常业务"
+		ui-function reportManagementPresenter@department "科室报修工作台"
+
+	
+	ui-function process "工程日常业务"
+		ui-function repairReportManagementPresenter@process "调度工作台"
+		ui-function groupTaskManagementPresenter@process "班组工作台"
+		ui-function pmTeamWorkItemManagementPresenter@process "班组PM工作台"
+	
+	
+	ui-function warehousecore "工程仓库数据维护"
+		ui-function productCategoryManagementPresenter@warehousecore "物品类型信息维护"
+		ui-function warehouseManagementPresenter@warehousecore "仓库信息维护"
+		ui-function productSpecificationManagementPresenter@warehousecore "物品信息维护"
+	
+	
+	ui-function warehouse "工程仓库管理"
+		ui-function productWarehouseStorageSummaryManagementPresenter@warehouse "库存台帐"
+		ui-function inStockRecordListPresenter@warehouse "入库管理"
+		ui-function outStockRecordListPresenter@warehouse "出库管理"
+		ui-function workItemTaskManagementPresenter@warehouse "工单领/退料管理"
+		ui-function transferRecordListPresenter@warehouse "调拨管理"
+		ui-function workItemStockRecordManagementPresenter@warehouse "领料/退料单查询"
+		ui-function settlementListPresenter@warehouse "结算管理"
+		ui-function stockTakingListListPresenter@warehouse "盘点管理"
+//		ui-function stockTakingRecordListPresenter@warehouse "盘点管理"
+	
+	ui-function device "设备台账"
+		ui-function deviceManagementPresenter@device "设备管理"
+		ui-function modifyDeviceParameter@deviceManagementPresenter "设备参数管理"
+		ui-function deviceTypeCategoryManagementPresenter@device "设备类型管理"
+		ui-function numberWithUnitTypeManagementPresenter@device "参数类型管理"
+		
+	ui-function pm "PM管理"
+		ui-function devicePMSpecificationManagementPresenter@pm "设备PM计划管理"
+		ui-function pmWorkItemManagementPresenter@pm "PM调度工作台"
+		ui-function pmShowDevicePMPlan@pm "PM计划查询"
+		
+	ui-function statistics "统计查询"
+		ui-function repairTaskStatisticListPresenter@statistics "报修单统计表"
+		ui-function workItemStockStatisticListPresenter@statistics "报修用料统计表"
+	
+	ui-function measure "抄表管理"
+		ui-function measureDeviceManagementPresenter@measure "抄表设备管理"
+		ui-function measureDeviceValueManagementPresenter@measure "抄表管理"
+		
+	ui-function deliver "运送管理"
+		ui-function dlTaskManagementPresenter@deliver "运送任务清单"
+		ui-function dlCenterlizedDeliverTaskManagementPresenter@deliver "中央运送管理"
+}

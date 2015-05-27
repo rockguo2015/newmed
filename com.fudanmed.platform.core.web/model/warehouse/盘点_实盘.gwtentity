@@ -1,0 +1,619 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.GWTEntity
+	import com.uniquesoft.gwt.client.common.print.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.fudanmed.platform.core.web.server.^service.^template.*
+	
+	ui-entity UIStockTakingList for RCStockTakingList{
+
+		date : Date "实盘日期"
+		warehouse : proxy of RCWarehouse "盘点仓库"
+		comment : String "备注"
+		operator : proxy of RCEmployee "操作员"
+		isCommited : Boolean "已提交"
+	
+		map StockTakingListMapper validate by StockTakingListValidator{
+			@Inject systemUserService : ISystemUserService
+			direct{warehouse,comment, operator readonly, date readonly, isCommited readonly}
+			to entity{
+				entity.operator = systemUserService.currentUserAsParty as RCEmployee
+				entity.date = today
+			}
+		}
+	
+		constraints StockTakingListValidator{
+			@Inject stockTakingService : RCStockTakingService
+			rule Required on warehouse
+			constraint InProgressCheck on warehouse "选择仓库正在盘点中"{
+				!stockTakingService.getStockTakingStatus(resolve entity.warehouse).isInStockTaking.isLogicTrue
+			}
+		}
+	
+		ui-component StockTakingListForm as GXTForm{
+			binding{warehouse as ComboBoxItem content from AllWarehouseByManagerContentProvider, comment as TextAreaItem}
+			con : Widget
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+				this.warehouseContentProvider.load(employee)[
+					notifier.apply(null)
+				]
+			}
+			
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						add(warehouse.asWidget,widgets.VLayoutData(1,-1))
+						add(comment.asWidget,widgets.VLayoutData(525,60))
+					]
+				]
+			}			
+		}
+	
+		ui-component StockTakingListListGrid as GXTGrid{
+			binding{warehouse,date,operator,isCommited,comment}
+		}
+	}
+	
+	signal StockTakingListsChanged
+	
+	presenter CreateOrUpdateStockTakingListPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIStockTakingList
+			op setValue(value : UIStockTakingList) : void
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void			
+			
+		}
+		
+		interaction{
+			used4Update : boolean
+			input call.setup4Create(
+				(CreateOrUpdateStockTakingListPresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.activate[
+					service.loadCurrentUser(onSuccess[
+						getView().setSourceWarehouseContext(it)[
+							postInitializer.apply(this)
+						]
+					])
+				]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCStockTakingList,
+				(CreateOrUpdateStockTakingListPresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadCurrentUser(onSuccess[
+						getView().setSourceWarehouseContext(it)[
+					
+							service.loadValue(value,onSuccess[
+								getView().setValue(it)
+								postInitializer.apply(this)
+							])
+						]
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.StockTakingListsChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.StockTakingListsChanged()
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : StockTakingListMapper
+			@Inject systemUserService : ISystemUserService
+			@Inject stockTakingService : RCStockTakingService
+			@Inject stockTakingListValidator : StockTakingListValidator
+			op loadValue(pvalue : proxy of RCStockTakingList) : UIStockTakingList{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIStockTakingList) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIStockTakingList) : void{
+				uivalue.validateWith(stockTakingListValidator)
+				stockTakingService.startStockTaking[mapper.transform(uivalue,it)]
+			}
+			op loadCurrentUser() : proxy of RCEmployee{
+				(systemUserService.currentUserAsParty as RCEmployee).toProxy
+			}
+			
+		}
+	}
+	
+	view CreateOrUpdateStockTakingListView for CreateOrUpdateStockTakingListPresenter implements IHasSize, IHasTitle{
+		@Inject form : StockTakingListForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIStockTakingList{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIStockTakingList value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(560,200)
+		}
+		op getTitle():String{
+			'盘点信息'
+		}
+		op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+			form.setSourceWarehouseContext(employee)[
+				form.warehouse.selectFirst
+				notifier.apply(null)
+			]
+		}
+		
+					
+	}		
+	
+	ui-entity UIStockTakingItem for RCStockTakingItem{
+		productSpec : proxy of RCProductSpecification "产品"
+		quantity : Integer "实盘数量"
+
+		productSpecsSid : String "条码"
+		materialId : String "物品编号"
+		brand : proxy of RCMaterialBrand "品牌"
+		name : String "物品名称"
+		typeDesc : String "规格型号"
+		unit : proxy of RCProduceSpecificationUnit "计量单位"
+		
+		realQuantity : Integer "库存数量"
+		balance : Integer "盈亏差异"
+		
+		comment : String "异动原因"
+	
+		map StockTakingItemMapper validate by StockTakingItemValidator{
+			direct{
+				productSpec,quantity,realQuantity,comment,
+				{productSpecsSid,entity.productSpec.sid} readonly,
+				{materialId,entity.productSpec.materialId} readonly,
+				{brand,entity.productSpec.brandType} readonly,
+				{name,entity.productSpec.name} readonly,
+				{typeDesc,entity.productSpec.typeDesc} readonly,
+				{unit,entity.productSpec.unit} readonly
+				
+			}
+		}
+		
+		csv-map StockTakingItemCSVMapper{
+			binding{productSpecsSid,materialId,brand,name,typeDesc,realQuantity,unit,quantity,comment}
+			item-mapper for unit{
+				to-csv{
+					value.name
+				}
+				from-csv{
+				}
+			}
+			item-mapper for brand{
+				to-csv{
+					value.name
+				}
+				from-csv{
+				}
+			}
+		}
+		
+	
+		constraints StockTakingItemValidator{
+		}
+		
+		ui-component StockTakingItemListGrid as GXTGrid{
+			binding{productSpecsSid,materialId,name,typeDesc,brand,realQuantity,unit,quantity,balance,comment}
+			op initializeComponent() : void{
+				quantity.render=[context,value,sb|
+					if(value==null){
+						sb.appendHtmlConstant("未盘点")
+					}else{
+						sb.append(value)
+					}
+				]
+				balance.render=[context,value,sb|
+					val m = this.grid.store.get(context.index)
+					val b = if(m.quantity==null) null else m.quantity - m.realQuantity
+					if(b==null || b==0)
+						sb.appendHtmlConstant("--") 
+					else if(b<0){
+						sb.appendHtmlConstant("<font color='red'>"+b.toString+"</font>")
+					}else{
+						sb.appendHtmlConstant("<font color='green'>"+b.toString+"</font>")
+					}
+				]
+			}
+			
+		}
+		ui-component StockTakingItem4InputListGrid as GXTGrid{
+			binding{productSpecsSid,materialId,name,typeDesc,brand,realQuantity,unit,quantity as EditableIntegerColumn,comment as EditableStringColumn}
+		}
+			
+	}
+	
+	ui-criteria UIStockTakingListCriteria for RCStockTakingListCriteria{
+		warehouse : proxy of RCWarehouse "仓库"
+		dateFrom : Date "起始时间"
+		dateTo : Date "结束时间"
+		map StockTakingListCriteriaMapper{
+			direct{warehouse,dateFrom,dateTo}
+			@Inject warehouseDAO : RCWarehouseDAO			
+			to entity{
+				entity.stores = warehouseDAO.findManagedWarehouse.^map[^id].unlazy
+			}
+			
+		}
+		ui-component StockTakingListCriteriaForm as GXTForm{
+			binding{warehouse as ComboBoxItem content from AllWarehouseByManagerContentProvider, dateFrom,dateTo}
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+				this.warehouseContentProvider.load(employee)[
+					notifier.apply(null)
+				]
+			}
+			
+		}
+	}
+	
+	presenter StockTakingListListPresenter{
+		view interface{
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void
+			
+			signal in showResults(results : IPagedResult<UIStockTakingList>)
+			signal in showDetails(details : UIStockTakingItem[*])
+			signal in refresh()
+	
+			signal out filterRequest(c : UIStockTakingListCriteria)
+			signal out createStockTakingListRequest() @stockTakingListListPresenter "新建实盘清单"
+			signal out cancelStockTakingListRequest(value : proxy of RCStockTakingList) @stockTakingListListPresenter "取消实盘"
+			signal out inputQuantity(value : proxy of RCStockTakingList) @stockTakingListListPresenter "实盘信息录入"
+			signal out commit(value : proxy of RCStockTakingList) @stockTakingListListPresenter"提交"
+			signal out export(value : proxy of RCStockTakingList) @stockTakingListListPresenter "导出"
+			signal out showDetailRequest(value : proxy of RCStockTakingList)
+			signal out printListlRequest(value : proxy of RCStockTakingList) @stockTakingListListPresenter "打印盘点单"
+		}
+	
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateStockTakingListPresenter
+			factory stockTakingInputQuantityPresenter : StockTakingInputQuantityPresenter
+			input call.setup(postInit : (StockTakingListListPresenter)=>void ){
+				this.activate[
+					service.loadCurrentUser(onSuccess[
+						getView().setSourceWarehouseContext(it)[
+							fire view.refresh
+							postInit.apply(this)
+						]
+					])
+				]
+			}
+			
+			input view.filterRequest(c : UIStockTakingListCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input view.showDetailRequest(value : proxy of RCStockTakingList){
+				service.loadDetails(value,onSuccess[
+					fire view.showDetails(it)
+				])
+			}
+			input view.createStockTakingListRequest(){
+				createOrUpdatePresenter.get.setup4Create[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			input view.inputQuantity(value : proxy of RCStockTakingList){
+				stockTakingInputQuantityPresenter.get.setup(value)[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			input view.cancelStockTakingListRequest(value : proxy of RCStockTakingList){
+				service.cancel(value,onSuccess[
+					fire eventbus.StockTakingListsChanged()
+				])
+			}
+			input view.commit(value : proxy of RCStockTakingList){
+				service.isAllDataCollected(value,onSuccess[allDataCollected|
+					if(allDataCollected){
+						service.commit(value,onSuccess[
+							fire eventbus.StockTakingListsChanged()
+						])
+					}else{
+						display("错误","有未盘点的库存")
+					}
+				])
+			}
+			input eventbus.StockTakingListsChanged(){
+				fire view.refresh
+			}
+		
+			input view.printListlRequest(value : proxy of RCStockTakingList){
+				service.generatePrintContents(value,onSuccess[html|
+					Print::it(html)
+				])
+				
+			}
+			input view.export(value : proxy of RCStockTakingList){
+				service.prepareExport(value,onSuccess[
+					doDownload(it)
+				])
+				
+			}
+		}
+		
+		//bridge service
+		service{
+			@Inject criteriaMapper : StockTakingListCriteriaMapper
+			@Inject mapper : StockTakingListMapper
+			@Inject itemMapper : StockTakingItemMapper
+			@Inject stockTakingService : RCStockTakingService
+			@Inject systemUserService : ISystemUserService
+			@Inject stockTakingItemCSVMapper : StockTakingItemCSVMapper
+			@Inject systemParameter : RCSystemParameterService
+			
+			op filter(uicriteria : UIStockTakingListCriteria) : IPagedResult<UIStockTakingList>{
+				var c = uicriteria.createPagedCriteria(typeof(RCStockTakingListCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op cancel(value : proxy of RCStockTakingList) : void {
+				stockTakingService.cancelStockTaking(resolve value)
+			}
+			op commit(value : proxy of RCStockTakingList) : void {
+				stockTakingService.commitStockTaking(resolve value,systemUserService.currentUserAsParty as RCEmployee)
+			}
+			op loadDetails(parent : proxy of RCStockTakingList) : UIStockTakingItem[*]{
+				(resolve parent).items.^map[itemMapper.transform(it)].unlazy
+			}
+			op prepareExport(parent : proxy of RCStockTakingList) : String{
+				csvPrepare("stocklist",typeof(StockTakingItemCSVMapper),(resolve parent).items.^map[itemMapper.transform(it)].unlazy)
+			}
+			op generatePrintContents(value : proxy of RCStockTakingList):String{
+				StockTakingTemplate::^template(resolve value,systemParameter.systemParameter)
+			}
+			
+			op isAllDataCollected(value : proxy of RCStockTakingList) : Boolean{
+				(resolve value).allDataCollected
+			}
+			
+			op loadCurrentUser():proxy of RCEmployee{
+				(systemUserService.currentUserAsParty as RCEmployee).toProxy
+			}
+			
+		}
+	}
+	
+	view StockTakingListListView for StockTakingListListPresenter{
+		@Inject listGrid : StockTakingListListGrid
+		@Inject criteriaForm : StockTakingListCriteriaForm
+		@Inject detailsListGrid : StockTakingItemListGrid
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			listGrid.keepSelection
+			con = widgets.FramedPanel("盘点管理")=>[
+				setWidget(widgets.VLayout=>[
+					add(
+						widgets.HTableLayout()=>[
+							add(<Widget>newArrayList(
+								criteriaForm.warehouse.asWidget,
+								criteriaForm.dateFrom.asWidget,
+								criteriaForm.dateTo.asWidget,
+								widgets.TextButton("筛选")=>[
+									setWidth("80px")
+									addSelectHandler[
+										fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+											page = 1
+										])
+									]
+								]
+							)	
+						)]
+					)
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]	
+					add( widgets.ContentPanel()=>[
+							widget = widgets.VLayout=>[
+								add(listGrid.asWidget,widgets.VLayoutData(1,1))
+								add(pager.asWidget,widgets.VLayoutData(1,-1))
+							]							
+							securities.check(ui-requester.createStockTakingListRequest)[v|
+								addButton(widgets.TextButton("新建盘点")[
+									fire view.createStockTakingListRequest()
+								])
+							]
+							val ac = listGrid.createActionContext
+							securities.check(ui-requester.inputQuantity)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIStockTakingList item|
+										fire view.inputQuantity(item.toProxy)
+									]
+									onCheckEnable[
+										listGrid.singleSelectedAnd[
+											!isCommited.isLogicTrue
+										]
+									]
+								].asButtonRequester("实盘录入"))
+							]
+							securities.check(ui-requester.commit)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIStockTakingList item|
+										widgets.ConfirmMessageBox("确认","确认提交")[
+											fire view.commit(item.toProxy)
+										].show
+									]
+									onCheckEnable[
+										listGrid.singleSelectedAnd[
+											!isCommited.isLogicTrue
+										]
+									]
+								].asButtonRequester("提交"))
+							]
+							securities.check(ui-requester.export)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIStockTakingList item|
+										fire view.export(item.toProxy)
+									]
+								].asButtonRequester("导出"))
+							]
+							securities.check(ui-requester.printListlRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIStockTakingList item|
+										fire view.printListlRequest(item.toProxy)
+									]
+								].asButtonRequester("盘点单打印"))
+							]
+							securities.check(ui-requester.cancelStockTakingListRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIStockTakingList item|
+										widgets.ConfirmMessageBox("确认","确认取消")[
+											fire view.cancelStockTakingListRequest(item.toProxy)
+										].show
+									]
+									onCheckEnable[
+										listGrid.singleSelectedAnd[
+											!isCommited.isLogicTrue
+										]
+									]
+								].asButtonRequester("取消"))
+							]							
+						],widgets.VLayoutData(1,0.45))
+
+					add(widgets.TabPanel=>[
+						add(detailsListGrid.asWidget,"盘点单明细")
+					],widgets.VLayoutData(1,0.55))
+					
+					listGrid.addSelectEntityListener[
+						fire view.showDetailRequest(it.toProxy)
+					]
+					listGrid.addSelectionChangedListener[
+						if(it.isNullOrEmpty)
+							detailsListGrid.objects = newArrayList
+					]
+				])
+
+			]					
+		}
+		op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+			criteriaForm.setSourceWarehouseContext(employee)[
+				notifier.apply(null)
+			]
+		}
+		op showResults(results : IPagedResult<UIStockTakingList>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op showDetails(details : UIStockTakingItem[*]):void{
+			detailsListGrid.objects = details
+		}
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+	}	
+	
+	presenter StockTakingInputQuantityPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getItems() : Collection<UIStockTakingItem>
+			signal in setItems(items : Collection<UIStockTakingItem>)
+		}
+		
+		interaction{
+			input call.setup(takingList : proxy of RCStockTakingList, postInit : (StockTakingInputQuantityPresenter)=>void){
+				this.activate[
+					service.loadItems(takingList,onSuccess[
+						fire view.setItems(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.updateItems(getView().items,onSuccess[
+					fire eventbus.StockTakingListsChanged()
+					notifier.success()					
+				])
+			}
+			
+		}
+		
+		service{
+			@Inject mapper : StockTakingItemMapper
+			op loadItems(takingList : proxy of RCStockTakingList) : Collection<UIStockTakingItem>{
+				(resolve takingList).items.^map[mapper.transform(it)].unlazy
+			}
+			op updateItems(items : Collection<UIStockTakingItem>):void{
+				items.forEach[item|
+					mapper.transform(item,(resolve item))
+				]
+			}
+		}
+	}
+	
+	view StockTakingInputQuantityView for StockTakingInputQuantityPresenter implements IHasTitle, IHasSize{
+		@Inject listGrid : StockTakingItem4InputListGrid
+		initializer{
+			this += widgets.VLayout=>[add( widgets.ContentPanel=>[widget = listGrid.asWidget], widgets.VLayoutData(1,420,10))]			
+		}
+		op getItems() : Collection<UIStockTakingItem>{
+			listGrid.objects.unlazy
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+		}
+		op clearErrors():void{
+		}
+		
+		op setItems(Collection<UIStockTakingItem> items) : void{
+			listGrid.objects = items
+		}
+		op getSize():Size{
+			new Size(810,500)
+		}
+		op getTitle():String{
+			'实盘信息录入'
+		}
+		
+	}
+}

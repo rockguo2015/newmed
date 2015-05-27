@@ -1,0 +1,61 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.Date
+	import java.util.Collection
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	
+	ui-command PMEngineerReportCommand for UIPMWorkItemWorkerAssignment "执行记录" @pmTeamWorkItemManagementPresenter{
+		factory engineerReportPresenter : PMEngineerReportPresenter
+		execute{
+			engineerReportPresenter.get.setup(value.toProxy)[
+				fire eventbus.PopActivatedPresenter(it)
+			]
+		}
+		check-enable{
+			(value.status == UIPMWorkItemWorkerAssignmentStatus::pending || value.status == UIPMWorkItemWorkerAssignmentStatus::planed) && !value.allTaskFinished 
+			
+		}
+	}
+	presenter PMEngineerReportPresenter{
+		view interface{
+			
+		}
+		interaction{
+			part workItemPlanAssignmentListPresenter : WorkItemPlanAssignmentListPresenter
+			
+			input prepare.setup(workerAssignment : proxy of pm.RCPMWorkItemWorkerAssignment){
+				initPart(workItemPlanAssignmentListPresenter).setup4WorkerReport(true,workerAssignment)[
+					this.activate[
+						done
+					]
+				]
+			}
+		}
+	}
+	
+	view PMEngineerReportView for PMEngineerReportPresenter ui-size:(800,450) ui-title:'PM计划执行记录'{
+		con: Widget
+		@Inject showWorkItemPlanAssignmentPropertyPresenterPropertyCommand : ShowWorkItemPlanAssignmentPropertyPresenterPropertyCommand
+		@Inject finishWorkItemPlanAssignmentCommand : FinishWorkItemPlanAssignmentCommand
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			val wiac = workItemPlanAssignmentListPresenter.getView().getActionContext().adapt[toProxy]
+			
+			con = widgets.ContentPanel()=>[
+				widget = workItemPlanAssignmentListPresenter.getView().asWidget
+				addCommand(wiac,showWorkItemPlanAssignmentPropertyPresenterPropertyCommand)
+				addCommand(wiac,finishWorkItemPlanAssignmentCommand)
+				
+			]
+		}		
+	}
+	
+}

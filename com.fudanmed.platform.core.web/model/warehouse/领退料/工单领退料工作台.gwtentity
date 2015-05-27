@@ -1,0 +1,275 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.Date
+	import edu.fudan.langlab.uidl.domain.app.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.warehouse.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	
+	import com.fudanmed.platform.core.web.shared.project.*
+	import com.fudanmed.platform.core.web.client.project.*
+	import com.fudanmed.platform.core.web.server.^service.project.*
+	import com.uniquesoft.gwt.client.common.print.*
+	import com.fudanmed.platform.core.web.server.^service.^template.*
+
+	ui-criteria UIWorkItemTaskCriteria for RCWorkItemTaskCriteria{
+		sid : String "工单编号"
+		showAll : Boolean "含已完工工单"
+		team : proxy of RCMaintenanceTeam "班组"
+		map WorkItemTaskCriteriaMapper{
+			direct{sid,showAll,team}
+			to entity{
+				WorkflowEnumWorkAround::initWorkItemTaskCriteria(entity)
+			}
+		}
+		ui-component WorkItemTaskCriteriaForm as GXTForm{
+			binding{sid as EscapedTextItem, showAll, team as ComboBoxItem content from CurrentUserStockTeamProvider}
+		}
+	}
+
+	presenter WorkItemTaskManagementPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UIWorkItemTask>)
+			signal in refresh()
+			signal in refreshChild()
+			signal out showWorkItemOutStockRecordDetail(context : proxy of RCWorkItemStockRecord) @workItemTaskManagementPresenter "查看领/退料信息"
+			signal out print(context : proxy of RCWorkItemStockRecord) 
+			signal out printFit(context : proxy of RCWorkItemStockRecord) 
+			
+			signal out createWorkItemOutStoreRequest(workItem : proxy of RCWorkItemTask) @workItemTaskManagementPresenter "领料"
+			signal out createWorkItemReturnStoreRequest(workItem : proxy of RCWorkItemTask)  @workItemTaskManagementPresenter "退料"
+			signal out filterRequest(c : UIWorkItemTaskCriteria)
+			signal out showWorkItemDetailRequest(workItem : proxy of RCWorkItemTask) 
+		}
+	
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateWorkItemOutStockRecordPresenter
+			factory workItemOutStockRecordItemDetailPresenter : WorkItemOutStockRecordItemDetailPresenter
+			factory workItemReturnStockRecordItemDetailPresenter : WorkItemReturnStockRecordItemDetailPresenter
+			factory createOrUpdateWorkItemReturnStockRecordPresenter : CreateOrUpdateWorkItemReturnStockRecordPresenter
+			part workItemOutStockRecordListPresenter : WorkItemOutStockRecordListPresenter	
+			part workItemStorageListPresenter : WorkItemStorageListPresenter		
+			input call.setup(postInit : (WorkItemTaskManagementPresenter)=>void ){
+				initPart(workItemOutStockRecordListPresenter).setup[
+					initPart(workItemStorageListPresenter).setup[
+						this.activate[
+							fire view.refresh
+							postInit.apply(this)
+						]
+					]
+				]
+			}
+			input view.showWorkItemDetailRequest(workItem : proxy of RCWorkItemTask){
+				workItemOutStockRecordListPresenter.setWorkItemTask(workItem)
+				workItemStorageListPresenter.setWorkItemTask(workItem)
+			}
+			input view.filterRequest(c : UIWorkItemTaskCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			
+			input view.createWorkItemOutStoreRequest(workItem : proxy of RCWorkItemTask){
+				createOrUpdatePresenter.get=>[
+					it.setup4Create(workItem)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.createWorkItemReturnStoreRequest(workItem : proxy of RCWorkItemTask){
+				createOrUpdateWorkItemReturnStockRecordPresenter.get=>[
+					it.setup4Create(workItem)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+	
+			input view.showWorkItemOutStockRecordDetail(context : proxy of RCWorkItemStockRecord){
+				service.isOutStock(context,onSuccess[isOut|
+					if(isOut){
+						workItemOutStockRecordItemDetailPresenter.get=>[
+							setup(context as RCWorkItemOutStockRecordProxy)[
+								fire eventbus.PopActivatedPresenter(it)
+							]
+						]
+					}else{
+						workItemReturnStockRecordItemDetailPresenter.get=>[
+							setup(context as RCWorkItemReturnStockRecordProxy)[
+								fire eventbus.PopActivatedPresenter(it)
+							]
+						]
+					}
+				])
+			}
+			input eventbus.WorkItemTasksChanged(){
+				fire view.refresh
+			}
+			input eventbus.WorkItemStockRecordsChanged(){
+				fire view.refresh
+			}
+			input view.print(context : proxy of RCWorkItemStockRecord) {
+				service.generatePrintContents(context,onSuccess[html|
+					Print::it(html)
+				])
+			}
+			input view.printFit(context : proxy of RCWorkItemStockRecord){
+				service.generateOutFitPrintContents(context as RCWorkItemOutStockRecordProxy,onSuccess[html|
+					Print::it(html)
+				])
+			}
+		}
+		service{
+			@Inject criteriaMapper : WorkItemTaskCriteriaMapper
+			@Inject mapper : WorkItemTaskMapper
+			@Inject systemParameter : RCSystemParameterService
+			
+			op generatePrintContents(record : proxy of RCWorkItemStockRecord):String{
+				val r = resolve record
+				switch(r){
+					RCWorkItemOutStockRecord:{
+						Template::workItemOutStock(r,systemParameter.systemParameter)
+					}
+					RCWorkItemReturnStockRecord:{
+						WorkOrderReturnTemplate::^template(r,systemParameter.systemParameter)
+					}
+				}
+			}
+
+			op generateOutFitPrintContents(record : proxy of RCWorkItemOutStockRecord) : String{
+				Template::workItemOutStockFit(resolve record)
+			}
+//			op generateOutPrintContents(record : proxy of RCWorkItemOutStockRecord) : String{
+//				Template::workItemOutStock(resolve record,systemParameter.systemParameter)
+//			}
+//			op generateReturnPrintContents(record : proxy of RCWorkItemReturnStockRecord) : String{
+//				WorkOrderReturnTemplate::^template(resolve record,systemParameter.systemParameter)
+//			}
+
+			op filter(uicriteria : UIWorkItemTaskCriteria) : IPagedResult<UIWorkItemTask>{
+				var c = uicriteria.createPagedCriteria(typeof(RCWorkItemTaskCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op delete(value : proxy of RCWorkItemTask) : void {
+				entities.delete(resolve value)
+			}
+			op isOutStock(context : proxy of RCWorkItemStockRecord) : Boolean{
+				(resolve context) instanceof RCWorkItemOutStockRecord
+			}
+		}
+	}
+	
+	view WorkItemTaskManagementView for WorkItemTaskManagementPresenter{
+		@Inject listGrid : WorkItemTaskListGrid
+		@Inject criteriaForm : WorkItemTaskCriteriaForm
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.FramedPanel("工单领/退料")=>[
+				setWidget(widgets.VLayout=>[
+					add(
+						widgets.HTableLayout()=>[
+							add(<Widget>newArrayList(
+								criteriaForm.sid.asWidget,
+								criteriaForm.team.asWidget,
+								criteriaForm.showAll.asWidget,
+								widgets.TextButton("查询")=>[
+									setWidth("80px")
+									addSelectHandler[
+										fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+											page = 1
+										])
+									]
+								]
+							)	
+						)]
+	
+					)
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]
+					add( widgets.ContentPanel()=>[
+							widget = widgets.VLayout=>[
+								add(listGrid.asWidget,widgets.VLayoutData(1,1))
+								listGrid.addSelectEntityListener[
+									fire view.showWorkItemDetailRequest(it.toProxy)
+								]								
+								add(pager.asWidget,widgets.VLayoutData(1,-1))
+							]
+							val ac = listGrid.createActionContext
+							securities.check(ui-requester.createWorkItemOutStoreRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIWorkItemTask workItemTask|
+										fire view.createWorkItemOutStoreRequest(workItemTask.toProxy)
+									]
+								].asButtonRequester("工单领料"))
+							]
+							securities.check(ui-requester.createWorkItemReturnStoreRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIWorkItemTask workItemTask|
+										fire view.createWorkItemReturnStoreRequest(workItemTask.toProxy)
+									]
+									
+								].asButtonRequester("工单退料"))
+							]
+						],widgets.VLayoutData(1,0.55))					
+						
+					add(widgets.TabPanel=>[
+						add(widgets.ContentPanel()=>[widget = workItemOutStockRecordListPresenter.getView().asWidget
+							val recordListAc = workItemOutStockRecordListPresenter.getView().getActionContext
+							securities.check(ui-requester.showWorkItemOutStockRecordDetail)[v|
+								addButton(recordListAc.onSingleObjectAction[
+									onExecute[UIWorkItemStockRecord context|
+										fire view.showWorkItemOutStockRecordDetail(context.toProxy)
+									]
+								].asButtonRequester("领/退料信息"))
+							]
+							addButton(recordListAc.onSingleObjectAction[
+								onExecute[UIWorkItemStockRecord context|
+									fire view.print(context.toProxy)
+								]
+							].asButtonRequester("领退料单打印"))																															
+							addButton(recordListAc.onSingleObjectAction[
+								onExecute[UIWorkItemStockRecord context|
+									fire view.printFit(context.toProxy)
+								]
+								onCheckEnable[
+									recordListAc.singleSelectedAnd[
+										it.typeName == "领料"
+									]
+								]
+							].asButtonRequester("领料单套打"))																															
+						],"领料/退料")
+						add(workItemStorageListPresenter.getView().asWidget,"用料信息")
+					],widgets.VLayoutData(1,0.45))
+				])
+			]					
+		}
+		
+		op showResults(results : IPagedResult<UIWorkItemTask>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		
+		op refreshChild():void{
+			if(listGrid.selectedObjects.size!=0)
+				fire view.showWorkItemDetailRequest(listGrid.selectedObjects.head.toProxy)
+		}
+	}	
+	
+}

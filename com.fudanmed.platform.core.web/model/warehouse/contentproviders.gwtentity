@@ -1,0 +1,112 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.domain.organization.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.uniquesoft.gwt.client.common.widgets.contentprovider.*
+	import edu.fudan.mylang.pf.IObjectFactory
+	
+	content-provider AllProduceSpecificationUnitContentProvider for proxy of RCProduceSpecificationUnit{
+		contents{
+			entities.all(typeof(RCProduceSpecificationUnit))
+		}
+	}
+
+	content-provider AllWarehouseContentProvider for proxy of RCWarehouse{
+		contents{
+			entities.all(typeof(RCWarehouse))
+		}
+	}
+	
+	content-provider AllWarehouseByManagerContentProvider for proxy of RCWarehouse{
+		@Inject dao : RCWarehouseDAO
+		criteria{
+			employee : proxy of RCEmployee
+		}
+		contents{
+			val employee = resolve filter.employee
+			dao.findManagedWarehouse(employee)
+		}
+	}
+	
+	content-provider AllInStoreTypeContentProvider for proxy of RCInStoreType{
+		contents{
+			entities.all(typeof(RCInStoreType)).sortBy[codeid]
+		}
+	}
+	
+
+	content-provider AllProductSpecificationContentProvider for UIProductSpecification{
+		@Inject mapper : ProductSpecificationMapper
+		criteria extends PagedObjectNameFilter{}
+		contents{
+			(filter.createPagedCriteria(typeof(RCProductSpecificationCriteria),entities)=>[
+				info = filter.name
+			]).listAndTransform[mapper.transform(it)]
+		}
+	}
+	
+	content-provider AllProductWarehouseStorageSummaryContentProvider for UIProductWarehouseStorageSummary{
+		@Inject warehouseService : RCWarehouseService
+		@Inject mapper : ProductWarehouseStorageSummaryMapper
+		criteria extends PagedObjectNameFilter{
+			store : proxy of RCWarehouse
+		}
+		contents{
+			(filter.createPagedCriteria(typeof(RCProductWarehouseStorageSummaryCriteria),entities)=>[
+				it.productInfo = filter.name
+				if(filter.store!=null) it.store = entities.get(typeof(RCWarehouse),filter.store.id)
+			]).listAndTransform[mapper.transform(it)]
+		}
+		
+	}
+
+	content-provider AllProductWarehouseStorageContentProvider for UIProductWarehouseStorage{
+		@Inject warehouseService : RCWarehouseService
+		@Inject mapper : ProductWarehouseStorageMapper
+		criteria extends PagedObjectNameFilter{
+		}
+		contents{
+			(filter.createPagedCriteria(typeof(RCProductWarehouseStorageCriteria),entities)=>[
+				it.productInfo = filter.name
+			]).listAndTransform[mapper.transform(it)]
+		}
+	}
+
+	content-provider AllProductTypeContentProvider for proxy of RCProductType{
+		criteria extends ObjectNameFilter{
+		}
+		contents{
+			val result = (entities.createQueryCriteria(typeof(RCProductTypeCriteria))=>[
+				it.info = filter.name
+			]).list
+			result
+		}
+	}
+	
+	content-provider AllWorkItemTaskContentProvider for proxy of RCWorkItemTask{
+		contents{
+			entities.all(typeof(RCWorkItemTask))
+		}
+	}
+	
+	content-provider AllWorkItemProductSpecSummaryContentProvider for UIProductSpecificationSummary{
+		criteria extends ObjectNameFilter{
+			workItem : proxy of RCWorkItemTask
+		}
+		@Inject warehouseService : RCWarehouseService
+		@Inject mapper : ProductSpecificationSummaryMapper
+		contents{
+			warehouseService.getProductSpecificationSummary(
+			entities.get(typeof(RCWorkItemTask),filter.workItem.id).storage).^map[
+				mapper.transform(it)
+			].unlazy
+		}
+		
+	}
+	
+}

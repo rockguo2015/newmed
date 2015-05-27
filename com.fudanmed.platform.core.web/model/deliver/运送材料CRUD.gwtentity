@@ -1,0 +1,277 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.client.tree.*
+ 
+	ui-entity UIDeliverMaterialType for DLDeliverMaterialType{
+		category : proxy of DLDeliverMaterialCategory "类别"
+		code : String "代码"
+		name : String "名称"
+		unit : String  "单位"
+		comment : String "特殊要求"
+		
+		map DeliverMaterialTypeMapper validate by DeliverMaterialTypeValidator{
+			direct{category readonly, code, name, unit, comment}
+		}
+	
+		constraints DeliverMaterialTypeValidator{
+			rule Required on code
+			rule Required on name
+		}
+	
+		ui-component DeliverMaterialTypeForm as GXTForm{
+			binding{category as ReadonlyItem, code, name, unit, comment as TextAreaItem }
+			op createWidget() : Widget{
+				widgets.VLayout=>[
+					addFill(category.asWidget)
+					addFill(code.asWidget)
+					addFill(name.asWidget)
+					addFill(unit.asWidget)
+					addFill(comment.asWidget=>[height = 80])
+				]
+			}	
+		}
+	
+		ui-component DeliverMaterialTypeListGrid as GXTGrid{
+			binding{category, code, name, unit, comment }
+		}
+	}
+	
+
+	
+	signal DeliverMaterialTypesChanged
+	
+	ui-command CreateDeliverMaterialTypeCommand require proxy of DLDeliverMaterialCategory "新建" {
+		factory createOrUpdateDeliverMaterialTypePresenter : CreateOrUpdateDeliverMaterialTypePresenter
+		execute{
+			createOrUpdateDeliverMaterialTypePresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command UpdateDeliverMaterialTypeCommand require proxy of DLDeliverMaterialType "修改"{
+		factory createOrUpdateDeliverMaterialTypePresenter : CreateOrUpdateDeliverMaterialTypePresenter
+		execute{
+			createOrUpdateDeliverMaterialTypePresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	
+	ui-command DeleteDeliverMaterialTypeCommand require proxy of DLDeliverMaterialType "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.DeliverMaterialTypesChanged
+				])
+			].show
+		}
+		service{
+			op delete(value : proxy of DLDeliverMaterialType):void{
+				val delTarget = resolve value
+				delTarget.category.deleteMaterialType(delTarget)
+			}			
+		}
+	}
+
+	presenter CreateOrUpdateDeliverMaterialTypePresenter for UIDeliverMaterialType{
+		view interface{
+			/*用于新建类别时初始化界面的显示 */
+			op setCategory(category: proxy of DLDeliverMaterialCategory):void
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent: proxy of DLDeliverMaterialCategory){
+				commiter=[notifier|
+					service.createValue(getView().value, parent, onSuccess[
+						fire eventbus.DeliverMaterialTypesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					getView().setCategory(parent)
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of DLDeliverMaterialType){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.DeliverMaterialTypesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : DeliverMaterialTypeMapper
+			op loadValue(pvalue : proxy of DLDeliverMaterialType) : UIDeliverMaterialType{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIDeliverMaterialType) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIDeliverMaterialType, parent : proxy of DLDeliverMaterialCategory) : void{
+				(resolve parent).createMaterialType[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateDeliverMaterialTypeView<DeliverMaterialTypeForm> for CreateOrUpdateDeliverMaterialTypePresenter ui-size:(300,300) ui-title:"运送材料类型维护"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+		op setCategory(category: proxy of DLDeliverMaterialCategory):void{
+			form.category.value = category
+		}
+	}
+
+	ui-criteria UIDeliverMaterialTypeCriteria for DLDeliverMaterialTypeCriteria{
+		
+		info : String "运送材料信息"		
+		category : proxy of DLDeliverMaterialCategory "运送材料大类" 
+		
+		map DeliverMaterialTypeCriteriaMapper{
+			direct{info, category}
+		}
+		
+		ui-component DeliverMaterialTypeCriteriaForm as GXTForm{
+			binding{info as EscapedTextItem, category as ReadonlyItem}
+		}
+	}
+	
+	presenter DeliverMaterialTypeQueryListPresenter provide UIDeliverMaterialType{
+		view interface{
+			signal in showResults(results : IPagedResult<UIDeliverMaterialType>)
+			signal in refresh()
+
+			signal out filterRequest(c : UIDeliverMaterialTypeCriteria)
+			op getActionContext():ActionContext<UIDeliverMaterialType>
+			op setCategoryAC(categoryAC : ActionContext<DLDeliverMaterialCategoryProxy>):void
+		}
+
+		interaction{
+			
+			input prepare.setup(categoryAC : ActionContext<DLDeliverMaterialCategoryProxy>){
+				getView().setCategoryAC(categoryAC)
+				this.activate[
+					fire view.refresh
+					done
+				]
+			}
+			input view.filterRequest(c : UIDeliverMaterialTypeCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.DeliverMaterialTypesChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : DeliverMaterialTypeCriteriaMapper
+			@Inject mapper : DeliverMaterialTypeMapper
+			op filter(uicriteria : UIDeliverMaterialTypeCriteria) : IPagedResult<UIDeliverMaterialType>{
+				var c = uicriteria.createPagedCriteria(typeof(DLDeliverMaterialTypeCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+		}
+	}
+	
+	view DeliverMaterialTypeQueryListView for DeliverMaterialTypeQueryListPresenter{
+		@Inject listGrid : DeliverMaterialTypeListGrid
+		@Inject criteriaForm : DeliverMaterialTypeCriteriaForm
+		
+		pager : IPager 
+		categoryAC : ActionContext<DLDeliverMaterialCategoryProxy>
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			categoryAC.addSelectionChangedListener[
+				criteriaForm.category.value = categoryAC.onlySelected
+				refresh
+			]			
+			con = widgets.VLayout=>[
+				add(
+					TABLE=>[
+						tr=>[
+							td=>[it += criteriaForm.info.asWidget]
+							td=>[it += widgets.TextButton("查找")=>[
+								setWidth("80px")
+								addSelectHandler[
+									fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+										page = 1
+									])
+								]
+							]]
+						]
+					]
+				)
+
+				pager = listGrid.createPager=>[
+					pagerHandler = [int pageNum, int recordsPerPage|
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = pageNum
+							pageSize = recordsPerPage
+						])							
+					]
+				]
+				
+				add(listGrid.asWidget,widgets.VLayoutData(1,1))
+				add(pager.asWidget)
+			]
+		}
+		
+		op showResults(results : IPagedResult<UIDeliverMaterialType>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		
+		op getActionContext():ActionContext<UIDeliverMaterialType>{
+			listGrid.createActionContext
+		}
+		op setCategoryAC(categoryAC : ActionContext<DLDeliverMaterialCategoryProxy>):void{
+			this.categoryAC = categoryAC
+		}		
+	}	
+	
+}

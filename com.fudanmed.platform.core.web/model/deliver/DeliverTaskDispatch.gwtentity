@@ -1,0 +1,142 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.domain.organization.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+
+	ui-command DeliverTaskDispatchCommand require UICenterlizedDeliverTask[*] "派发" {
+		factory deliverTaskDispatchPresenter : DeliverTaskDispatchPresenter
+		execute{
+			deliverTaskDispatchPresenter.get.setup4create(value)[
+				popup(it)
+			]
+		}
+		check-enable{
+			value.forall[status==UICenterlizedDeliverTaskStatus::scheduled]
+		}
+	}
+	ui-datatype DeliverTaskDispatchData{
+
+		deliverOrg: proxy of DLDeliverOrganization "运送部门"		
+		haulier: proxy of RCEmployee [*]"派送人员"
+		
+		constraints DeliverTaskDispatchDataValidator{
+			rule Required on deliverOrg
+		}
+		
+		ui-component DeliverTaskDispatchDataForm as GXTForm{
+			binding{deliverOrg as ComboBoxItem content from AllDeliverOrganizationContentProvider,  haulier as RequiredDualListItem content from AllDeliverEmployeeContentProvider}
+			op createWidget() : Widget{
+				widgets.VLayout=>[
+					add(deliverOrg.asWidget)
+					addFill(TABLE=>[
+						tr=>[td=>[colSpan=2 it += haulier.asWidget=>[width=500]]]
+					])
+					deliverOrg.addValueChangedListener[
+						haulierContentProvider.load(it)[]
+					]
+				]
+			}			
+		}
+	}
+		
+	presenter DeliverTaskDispatchPresenter  with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : DeliverTaskDispatchData
+			op setTasks(tasks:Iterable<UICenterlizedDeliverTask>):void
+			op getTasks():Iterable<UICenterlizedDeliverTask>	
+		}
+		
+		interaction{
+			input prepare.setup4create(	tasks : Iterable<UICenterlizedDeliverTask>)
+			{
+				this.activate[
+						getView().setTasks(tasks)
+						done
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.commit(getView().getTasks.^map[toProxy].toList, getView().value, callback[
+					onSuccessDo[workItemTask|
+						fire eventbus.CenterlizedDeliverTasksChanged
+						notifier.success
+					]
+					onFailureDo[
+						display("错误","无法派工，请刷新确认报修状态")
+					]
+				])
+			}
+		}
+		service{
+			@Inject ^validator : DeliverTaskDispatchDataValidator
+			@Inject mapper : CenterlizedDeliverTaskMapper
+			op commit(context : proxy of DLCenterlizedDeliverTask[*],data : DeliverTaskDispatchData) : void{
+				data.validateWith(^validator)
+				context.forEach[
+					(resolve it).dispatch(data.haulier.^map[resolve(it)].toList)
+				]
+			}
+			op resolveTasks(tasks:proxy of DLCenterlizedDeliverTask[*]):Collection<UICenterlizedDeliverTask>{
+				tasks.^map[mapper.transform(resolve it)].toList
+			}
+		}
+	}
+	
+	view DeliverTaskDispatchView for DeliverTaskDispatchPresenter  implements IHasSize, IHasTitle{
+		required form : DeliverTaskDispatchDataForm
+		required taskList : CenterlizedDeliverTaskSimpleListGrid
+		factory centerlizedDeliverTaskQueryListPresenter : CenterlizedDeliverTaskQueryListPresenter
+		initializer{
+			this += widgets.DialogContent(
+				widgets.VLayout=>[
+					add(widgets.FieldSet("任务清单")=>[
+						widget=widgets.ContentPanel=>[
+							widget=taskList.asMultiSelectGrid
+							addButton(widgets.TextButton("追加")[
+								centerlizedDeliverTaskQueryListPresenter.get.setup[
+									it.asMultiSelector("选择",800,500)[
+										forEach[taskList.addElement(it)]
+									].show
+								]
+							])
+							val taskListAc = taskList.createActionContext
+							addButton(taskListAc.onMultiObjectAction[
+								onExecute[Iterable<UICenterlizedDeliverTask> selectedTasks|
+									selectedTasks.forEach[taskList.removeElement(it)]
+								]
+							].asButtonRequester("移除"))
+						]
+					],widgets.VLayoutData(1,200))
+					add(widgets.FieldSet("调度信息")=>[
+							widget = form.asWidget]
+						,widgets.VLayoutData(1,-1)
+					)
+				]
+			)
+		}
+		
+		op getValue() : DeliverTaskDispatchData{
+			form.value
+		}
+		op getSize():Size{
+			new Size(600,550)
+		}
+		op getTitle():String{
+			"调度"
+		}
+		op setTasks(tasks:Iterable<UICenterlizedDeliverTask>):void{
+			taskList.setObjects(tasks)
+		}
+		op getTasks():Iterable<UICenterlizedDeliverTask>{
+			taskList.objects
+		}
+	}	
+}

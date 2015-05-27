@@ -1,0 +1,219 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.Timer
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.uidl.transform.IConvertService
+	import  com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import edu.fudan.langlab.domain.security.*
+	
+	ui-criteria UIReportCriteria for RCRepairTaskCriteria{
+		comment : String "报修信息关键字"
+		includeFinishedTask4Reporter : Boolean "含已完工任务"
+		reportOrg : proxy of RCOrganization
+		
+		map ReportCriteriaMapper{
+			direct{comment,includeFinishedTask4Reporter,reportOrg}
+			to entity{
+				WorkflowEnumWorkAround::initRepairTaskCriteria(entity)
+			}
+		}
+		ui-component ReportCriteriaForm as GXTForm{
+			binding{comment,includeFinishedTask4Reporter,reportOrg as ComboBoxItem content from AllOrganizationContentProvider}
+		}
+	}
+	
+	presenter ReportManagementPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UIRepairTask>)
+			signal in refresh()
+			signal in markAsDirty()
+			
+			signal out createRequest() @reportManagementPresenter "新建报修"
+			signal out complaintRequest(value : proxy of RCRepairTask) @reportManagementPresenter "投诉"
+			signal out doEvaluate(value : proxy of RCRepairTask) @reportManagementPresenter "评价"
+			signal out filterRequest(c : UIReportCriteria)
+			signal out showRepairTaskDetailRequest(value : proxy of RCRepairTask) 
+		}
+
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateReportPresenter
+			factory createOrUpdateComplaintPresenter :CreateOrUpdateComplaintPresenter
+			factory createOrUpdateRepairEvaluatePresenter : CreateOrUpdateRepairEvaluatePresenter
+			part repairTaskInfoPresenter : RepairTaskTreeInfoPresenter
+			input call.setup(postInit : (ReportManagementPresenter)=>void){
+				initPart(repairTaskInfoPresenter).setup[
+					this.activate[
+						fire view.refresh
+						postInit.apply(this)
+					]
+				]
+			}
+			
+			input view.createRequest(){
+					createOrUpdatePresenter.get=>[
+						setup4Create[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]
+			}
+			input view.complaintRequest(value : proxy of RCRepairTask){
+					createOrUpdateComplaintPresenter.get=>[
+						setup4Create(value)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]				
+			}
+			input view.filterRequest(c : UIReportCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input view.showRepairTaskDetailRequest(value : proxy of RCRepairTask){
+				repairTaskInfoPresenter.setRepairTask(value)
+			}
+			input eventbus.RepairTasksChanged(){
+				fire view.refresh
+			}
+			input eventbus.RepairEvaluatesChanged(){
+				fire view.refresh
+			}
+			input view.doEvaluate(value : proxy of RCRepairTask){
+				service.loadRepairEvaluate(value,onSuccess[
+					createOrUpdateRepairEvaluatePresenter.get.setup4Update(it)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				])
+			}
+		}
+		
+		service{
+			@Inject criteriaMapper : ReportCriteriaMapper
+			@Inject mapper : RepairTaskMapper
+			@Inject systemUserService : ISystemUserService
+			op filter(uicriteria : UIReportCriteria) : IPagedResult<UIRepairTask>{
+				var c = uicriteria.createPagedCriteria(typeof(RCRepairTaskCriteria),criteriaMapper,entities)
+				c.setReportOrg((systemUserService.currentUser as RCEmployeeUser).employee.organization)
+				val result = c.listAndTransform[mapper.apply(it)]
+				result
+			}
+			op delete(value : proxy of RCRepairTask) : void {
+				entities.delete(resolve value)
+			}
+			op close(value : proxy of RCRepairTask) : void{
+				(resolve value).close
+			}
+			op loadRepairEvaluate(value : proxy of RCRepairTask): proxy of RCRepairEvaluate{
+				(resolve value).repairEvaluate.toProxy
+			}
+		}
+	}
+	
+	view ReportManagementView for ReportManagementPresenter{
+		@Inject listGrid : ReportListGrid
+		@Inject criteriaForm : ReportCriteriaForm
+		pager : IPager 
+		refreshButton : TextButton
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.FramedPanel("科室报修工作台")=>[
+				setWidget(widgets.VLayout=>[
+					add(
+						widgets.HTableLayout()=>[
+							add(<Widget>newArrayList(
+								criteriaForm.comment.asWidget,
+								criteriaForm.includeFinishedTask4Reporter.asWidget=>[
+									criteriaForm.includeFinishedTask4Reporter.value = false
+								],
+								refreshButton = widgets.TextButton("查询")=>[
+									setWidth("80px")
+									addSelectHandler[
+										fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+											page = 1
+										])
+									]
+								]
+							)	
+						)]
+
+					)
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]	
+					add(
+						widgets.ContentPanel=>[
+							listGrid.keepSelection
+							widget = widgets.VLayout=>[
+								add(listGrid.asWidget,widgets.VLayoutData(1,1))
+								add(pager.asWidget,widgets.VLayoutData(1,-1))
+							]
+							listGrid.addSelectEntityListener[
+								fire view.showRepairTaskDetailRequest(it.toProxy)
+							]
+							
+							val ac = listGrid.createActionContext
+							addButton(new TextButton("故障报修")=>[
+								addSelectHandler[
+									fire view.createRequest
+								]
+							])
+						
+							addButton(ac.onSingleObjectAction[
+								onExecute[UIRepairTask selectedValue |
+									fire view.complaintRequest(selectedValue.toProxy)
+								]
+								
+							].asButtonRequester("投诉"))	
+							
+							addButton(ac.onSingleObjectAction[
+								onExecute[UIRepairTask selectedValue |
+									fire view.doEvaluate(selectedValue.toProxy)
+								]
+								onCheckEnable[
+									listGrid.singleSelectedAnd[
+										evaluateState==UIEvaluateState::waiting
+									]
+								]
+							].asButtonRequester("维修评价"))	
+
+						],widgets.VLayoutData(1,0.6)
+					)
+
+					add(repairTaskInfoPresenter.getView().asWidget,widgets.VLayoutData(1,0.4))
+				])
+				
+			]					
+		}
+		
+		op showResults(results : IPagedResult<UIRepairTask>) : void{
+			pager.pageLoaded(results)
+			refreshButton.setHTML("查询")
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		
+		op markAsDirty():void{
+			refreshButton.setHTML("<font color='red'>请刷新</font>")
+		}
+	}		
+}

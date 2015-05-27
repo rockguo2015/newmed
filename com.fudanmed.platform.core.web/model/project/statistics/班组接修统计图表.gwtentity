@@ -1,0 +1,345 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.Collection
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.domain.organization.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.server.^service.organization.*
+	import com.fudanmed.platform.core.web.shared.project.*
+	import com.fudanmed.platform.core.web.client.project.*
+	import com.fudanmed.platform.core.web.server.^service.project.*
+	import com.fudanmed.platform.core.web.client.chart.*
+	import edu.fudan.langlab.gxt.client.component.grid.ValueProviderAdaptor
+	import edu.fudan.langlab.uidl.domain.app.client.workbench.*
+	import edu.fudan.mylang.utils.*
+	
+	ui-criteria UIWorkItemTask4WorkersCriteria for RCWorkItemTask4WorkersCriteria{
+		dateFrom : Date
+		dateTo : Date
+		department : proxy of RCMaintenanceTeam
+		map WorkItemTask4WorkersCriteriaMapper{
+			direct{dateFrom,dateTo,department}
+		}
+	}
+	
+	ui-datatype UIWorkItemTask4WorkersStatCriteriaData for RCWorkItemTask4WorkersStatCriteriaData{	
+		cnt:Long "数量"
+		worker : proxy of RCEmployee "工程师"	
+		map WorkItemTask4WorkersStatCriteriaDataMapper{
+			direct{cnt readonly,worker readonly}
+		}
+		ui-component WorkItemTask4WorkersStatCriteriaDataListGrid as GXTGrid{
+			binding{worker,cnt}
+		}
+	}
+	
+	presenter WorkItemTask4WorkersStatListPresenter{
+		view interface{
+			op showResult(results:Collection<UIWorkItemTask4WorkersStatCriteriaData>):void
+			
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input call.setCriteria(team : proxy of RCMaintenanceTeam, dateFrom : Date, dateTo : Date){
+				val uicriteria = new UIWorkItemTask4WorkersCriteria=>[
+					it.department = team
+					it.dateFrom = dateFrom
+					it.dateTo = dateTo
+				]
+				this.setCriteria(uicriteria)
+			}
+			input call.setCriteria(uicriteria : UIWorkItemTask4WorkersCriteria){
+				service.load(uicriteria,onSuccess[
+					getView().showResult(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject criteriaMapper : WorkItemTask4WorkersCriteriaMapper
+			@Inject mapper : WorkItemTask4WorkersStatCriteriaDataMapper
+			
+			op load(uicriteria : UIWorkItemTask4WorkersCriteria): Collection<UIWorkItemTask4WorkersStatCriteriaData>{
+				val c = uicriteria.createPagedCriteria(typeof(RCWorkItemTask4WorkersCriteria),criteriaMapper,entities)
+				c.createStatCriteria(typeof(RCWorkItemTask4WorkersStatCriteria)).list.^map[mapper.transform(it)].toList.sortBy[cnt].reverse
+				
+			}
+		}
+	}
+	
+	view WorkItemTask4WorkersStatListView for WorkItemTask4WorkersStatListPresenter{
+		required listGrid : WorkItemTask4WorkersStatCriteriaDataListGrid
+		con: Widget
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = listGrid.asWidget
+		}
+		
+		op showResult(results:Collection<UIWorkItemTask4WorkersStatCriteriaData>):void{
+			listGrid.objects = results
+		}
+	}
+	
+	ui-criteria UIWorkItemStockRecordItemStatCriteria for RCWorkItemStockRecordItemStatCriteria{
+		dateFrom : Date
+		dateTo : Date
+		team : proxy of RCMaintenanceTeam
+		map WorkItemStockRecordItemStatCriteriaMapper{
+			direct{dateFrom,dateTo,team}
+		}
+	}
+	
+	ui-datatype UIWorkItemStockRecordItemStat4ProductEntryCriteriaData for RCWorkItemStockRecordItemStat4ProductEntryCriteriaData{
+		productEntry : proxy of RCProductSpecification "物品名称"	
+		typeDesc : String "规格型号"
+		cnt : Long	"数量"
+		unit : String "单位"
+		map WorkItemStockRecordItemStat4ProductEntryCriteriaDataMapper{
+			direct{productEntry readonly,cnt readonly}
+			from entity{
+				ui.typeDesc = entity.productEntry.typeDesc
+				ui.unit = entity.productEntry.unit.name
+			}
+		}
+		ui-component WorkItemStockRecordItemStat4ProductEntryCriteriaDataListGrid as GXTGrid{
+			binding{productEntry,typeDesc,cnt,unit}
+		}
+		
+		csv-map WorkItemStockRecordItemStat4ProductEntryCriteriaDataCSVMapper{
+			field-list{productEntry readonly,typeDesc readonly,cnt readonly,unit readonly}
+		}
+	}
+	
+	ui-command ExportWorkItemStockRecordItemStat4ProductEntryCriteriaDataCommand for UIWorkItemStockRecordItemStatCriteria "材料清单导出"{
+		execute{
+			service.prepareExport(value,onSuccess[
+				doDownload(it)
+			])
+		}
+		service{
+			@Inject mapper : WorkItemStockRecordItemStat4ProductEntryCriteriaDataMapper
+			@Inject criteriaMapper : WorkItemStockRecordItemStatCriteriaMapper
+			op prepareExport(uicriteria : UIWorkItemStockRecordItemStatCriteria):String{
+				
+				val c = uicriteria.createPagedCriteria(typeof(RCWorkItemStockRecordItemStatCriteria),criteriaMapper,entities)
+				val data = c.createStatCriteria(typeof(RCWorkItemStockRecordItemStat4ProductEntryCriteria)).list.^map[mapper.transform(it)].toList.sortBy[cnt].reverse
+				csvPrepare("StockRecordStatistic",typeof(WorkItemStockRecordItemStat4ProductEntryCriteriaDataCSVMapper),data)
+			}
+		}
+	}
+	
+	//	addCommand([|criteriaForm.value],exportWorkItemStockRecordItemStat4ProductEntryCriteriaDataCommand)
+	
+	
+	presenter WorkItemStockRecordItemStat4ProductEntryListPresenter{
+		view interface{
+			op showResult(results:Collection<UIWorkItemStockRecordItemStat4ProductEntryCriteriaData>):void
+			
+		}
+		
+		interaction{
+			required exportCommand : ExportWorkItemStockRecordItemStat4ProductEntryCriteriaDataCommand
+			uicriteria :UIWorkItemStockRecordItemStatCriteria
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input call.setCriteria(team : proxy of RCMaintenanceTeam, dateFrom : Date, dateTo : Date){
+				uicriteria = new UIWorkItemStockRecordItemStatCriteria=>[
+					it.team = team
+					it.dateFrom = dateFrom
+					it.dateTo = dateTo
+				]
+				this.setCriteria(uicriteria)
+			}
+			
+			input call.setCriteria(uicriteria : UIWorkItemStockRecordItemStatCriteria){
+				this.uicriteria = uicriteria
+				service.load(uicriteria,onSuccess[
+					getView().showResult(it)
+				])
+			}
+			input call.export(){
+				exportCommand.^execute(uicriteria)
+			}
+		}
+
+		service{
+			@Inject criteriaMapper : WorkItemStockRecordItemStatCriteriaMapper
+			@Inject mapper : WorkItemStockRecordItemStat4ProductEntryCriteriaDataMapper
+			
+			op load(uicriteria : UIWorkItemStockRecordItemStatCriteria): Collection<UIWorkItemStockRecordItemStat4ProductEntryCriteriaData>{
+				val c = uicriteria.createPagedCriteria(typeof(RCWorkItemStockRecordItemStatCriteria),criteriaMapper,entities)
+				c.createStatCriteria(typeof(RCWorkItemStockRecordItemStat4ProductEntryCriteria)).list.^map[mapper.transform(it)].toList.sortBy[cnt].reverse
+				
+			}
+			
+			
+		}
+	}
+	
+	view WorkItemStockRecordItemStat4ProductEntryListView for WorkItemStockRecordItemStat4ProductEntryListPresenter{
+		required listGrid : WorkItemStockRecordItemStat4ProductEntryCriteriaDataListGrid
+		con: Widget
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = listGrid.asWidget
+		}
+		
+		op showResult(results:Collection<UIWorkItemStockRecordItemStat4ProductEntryCriteriaData>):void{
+			listGrid.objects = results
+		}
+	}	
+	
+	ui-datatype UIGroupTaskStatByTeamCriteriaData for RCGroupTaskStatByTeamCriteriaData{
+		cnt : Long "数量"
+		team : proxy of RCMaintenanceTeam "班组"
+		
+		map GroupTaskStatByTeamCriteriaDataMapper{
+			direct{cnt readonly, team readonly}
+		}
+		
+	ui-component GroupTaskStatByTeamCriteriaDataListGrid as GXTGrid{
+			binding{team, cnt}
+		}
+			
+	}
+	
+	ui-command GroupTaskStatByTeamCommand "班组接修统计" @statistics{
+		factory groupTaskStatByTeamPresenter : GroupTaskStatByTeamPresenter
+		factory framedPresenter : FramedPresenter
+		execute{
+			groupTaskStatByTeamPresenter.get.setup[
+				framedPresenter.get.setup("班组接修统计",it)[
+					fire eventbus.ShowActivePresenter(it)
+				]
+			]
+		}
+	}
+	
+	presenter GroupTaskStatByTeamPresenter{
+		view interface{
+			op showResult(results:Collection<UIGroupTaskStatByTeamCriteriaData>):void
+			op refresh():void
+			signal out filterRequest(c : UIGroupTaskCriteria)
+		}
+		
+		interaction{
+			part workItemTask4WorkersStatListPresenter : WorkItemTask4WorkersStatListPresenter
+			part workItemStockRecordItemStat4ProductEntryListPresenter : WorkItemStockRecordItemStat4ProductEntryListPresenter
+			input prepare.setup(){
+				initPart(workItemTask4WorkersStatListPresenter).setup[
+				initPart(workItemStockRecordItemStat4ProductEntryListPresenter).setup[
+				this.activate[
+					getView().refresh
+					done
+				]]]
+			}
+			
+			input view.filterRequest(c : UIGroupTaskCriteria){
+				service.loadResult(c,onSuccess[
+					getView().showResult(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject criteriaMapper : GroupTaskCriteriaMapper
+			@Inject mapper : GroupTaskStatByTeamCriteriaDataMapper
+			op loadResult(uicriteria : UIGroupTaskCriteria):Collection<UIGroupTaskStatByTeamCriteriaData>{
+				val c = uicriteria.createPagedCriteria(typeof(RCGroupTaskCriteria),criteriaMapper,entities)
+				c.includeFinishedTask = true
+				c.createStatCriteria(typeof(RCGroupTaskStatByTeamCriteria)).list.^map[mapper.transform(it)].unlazy
+			}
+		}
+	}
+	
+	view GroupTaskStatByTeamView for GroupTaskStatByTeamPresenter{
+		con: Widget
+		asWidget():Widget{
+			con
+		}
+		chart : BarChart<UIGroupTaskStatByTeamCriteriaData>
+		@Inject criteriaForm : GroupTaskCriteriaForm
+
+		layout{
+			con = 
+				widgets.VLayout=>[
+					add(TABLE=>[
+						tr=>[
+							td=>[it+=criteriaForm.dateFrom.asWidget=>[
+								criteriaForm.dateFrom.value = today.addMonths(-12)
+								criteriaForm.dateFrom.addValueChangedListener[
+									refresh
+								]
+							]]
+							td=>[it+=criteriaForm.dateTo.asWidget=>[
+								criteriaForm.dateTo.value = today
+								criteriaForm.dateTo.addValueChangedListener[
+									refresh
+								]
+							]]
+							td=>[
+								it+=widgets.TextButton("刷新")[
+									refresh
+								]
+								it+=widgets.TextButton("用料导出")[
+									workItemStockRecordItemStat4ProductEntryListPresenter.export
+								]
+							]
+						]
+					],widgets.VLayoutData(1,-1))
+					
+					chart = new BarChart('接修数量','班组')=>[
+						categoryProvider = [team.name]
+						numberProvider = [cnt]
+					]
+					add(chart.asWidget,widgets.VLayoutData(1,0.6))
+					chart.addValueSelectedListener[
+						workItemTask4WorkersStatListPresenter.setCriteria(it.team,criteriaForm.dateFrom.value,criteriaForm.dateTo.value)
+						workItemStockRecordItemStat4ProductEntryListPresenter.setCriteria(it.team,criteriaForm.dateFrom.value,criteriaForm.dateTo.value)
+						chart.highlight(it)
+					]
+					
+					add(widgets.HLayout=>[
+						add(widgets.FieldSet("工程师统计")=>[
+							widget = workItemTask4WorkersStatListPresenter.getView().asWidget
+							],widgets.HLayoutData(0.5,1)
+						)
+						add(widgets.FieldSet("用料统计")=>[
+							widget = workItemStockRecordItemStat4ProductEntryListPresenter.getView().asWidget
+							],widgets.HLayoutData(0.5,1)
+						)
+					],widgets.VLayoutData(1,0.4))
+					
+				]
+		}
+
+		op refresh():void{
+			workItemTask4WorkersStatListPresenter.setCriteria(null,criteriaForm.dateFrom.value,criteriaForm.dateTo.value)
+			workItemStockRecordItemStat4ProductEntryListPresenter.setCriteria(null,criteriaForm.dateFrom.value,criteriaForm.dateTo.value)
+			fire view.filterRequest(criteriaForm.value)
+		}
+
+		op showResult(results:Collection<UIGroupTaskStatByTeamCriteriaData>):void{
+			chart.objects = results
+		}
+
+	}
+}

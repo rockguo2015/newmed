@@ -1,0 +1,477 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.Date
+	import java.util.Collection
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.device.pm.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.client.organization.*
+
+	ui-enum UIPMWorkItemWorkerAssignmentStatus for RCPMWorkItemWorkerAssignmentStatus{
+		title{
+			finished = "完工"
+			pending = "挂起"
+			planed = "执行中"
+		}
+	}	
+	
+	ui-entity UIPMWorkItemWorkerAssignment for RCPMWorkItemWorkerAssignment{
+		workers : proxy of RCEmployee[*] "工程师"
+		assignDate : Date "派工日期"
+		comment : String "派工说明"
+		finishDate : Date "完工日期"
+		finalComment : String "完工说明"
+		status : UIPMWorkItemWorkerAssignmentStatus "状态"
+		reportWorkItemFinish : Boolean "完工上报"
+		workItemFinishComment : String "上报信息"
+		evaluate : UIPMWorkItemEvaluate "服务评价"
+		allTaskFinished : Boolean "所有维保已完成"
+		print : Boolean "打印PM工单"
+	
+		map PMWorkItemWorkerAssignmentMapper validate by PMWorkItemWorkerAssignmentValidator{
+			direct{workers,assignDate,finishDate,comment,finalComment,status readonly,allTaskFinished readonly}
+		}
+	
+		constraints PMWorkItemWorkerAssignmentValidator{
+			rule Required on workers
+			rule Required on assignDate
+		}
+	
+		ui-component PMWorkItemWorkerAssignmentForm as GXTForm{
+			@Inject evaluateForm : PMWorkItemEvaluateForm
+			binding{
+				workers as DualListItem content from AllOrgEmployeeContentProvider,assignDate, comment as TextAreaItem,print
+			}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(assignDate.asWidget=>[assignDate.value = today])
+						addFill(workers.asWidget=>[height=100])
+						addFill(comment.asWidget=>[height=80])
+						it += print.asWidget=>[width=80]
+					]
+				]
+			}			
+		}
+		ui-component PMWorkItemWorkerAssignmentReportForm as GXTForm{
+			@Inject evaluateForm : PMWorkItemEvaluateForm
+			
+			binding{
+				finishDate, finalComment as TextAreaItem,
+				reportWorkItemFinish, workItemFinishComment as TextAreaItem,
+				evaluate as DelegateItem(evaluateForm)
+			}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(finishDate.asWidget)
+						addFill(finalComment.asWidget=>[height=80])
+						addFill(reportWorkItemFinish.asWidget=>[
+							reportWorkItemFinish.addValueChangedListener[
+								refreshWorkItemFinishStatus()
+							]
+						])
+						addFill(workItemFinishComment.asWidget=>[height=80])
+						addFill(widgets.FieldSet("服务评价")=>[
+							widget = evaluateForm.asWidget
+						])
+					]
+				]
+			}
+			op refreshWorkItemFinishStatus() : void{
+				if(reportWorkItemFinish.value==false){
+					workItemFinishComment.value = ""
+					workItemFinishComment.asWidget.disable
+					evaluateForm.disableAll
+				}else{
+					workItemFinishComment.asWidget.enable
+					evaluateForm.enableAll
+				}
+			}		
+		}
+		
+		ui-component PMWorkItemWorkerAssignmentPendForm as GXTForm{
+			binding{
+				finalComment as TextAreaItem
+			}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(finalComment.asWidget=>[height=100])
+					]
+				]
+			}
+		}		
+	
+		ui-component PMWorkItemWorkerAssignmentListGrid as GXTGrid{
+			binding{assignDate,workers,comment,finishDate,finalComment,status}
+		}
+	}
+	
+	signal PMWorkItemWorkerAssignmentsChanged
+	
+	presenter PMWorkItemWorkerAssignmentListPresenter{
+		view interface{
+			signal in setResults(results : UIPMWorkItemWorkerAssignment[*])
+			op getActionContext() : ActionContext<UIPMWorkItemWorkerAssignment>
+		}
+		
+		interaction{
+			context : proxy of RCPMWorkItem
+			input call.setup(postInit : (PMWorkItemWorkerAssignmentListPresenter)=>void){
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			input call.setup(context : proxy of RCPMWorkItem,postInit : (PMWorkItemWorkerAssignmentListPresenter)=>void){
+				this.context = context
+				this.activate[
+					refresh
+					postInit.apply(this)
+				]
+			}
+			
+			input call.setPMWorkItem(context : proxy of RCPMWorkItem){
+				this.context = context
+				refresh
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadPMWorkItemWorkerAssignmentList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input eventbus.PMWorkItemWorkerAssignmentsChanged(){
+				refresh
+			}
+			input eventbus.WorkItemPlanAssignmentsChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : PMWorkItemWorkerAssignmentMapper
+			
+			op loadPMWorkItemWorkerAssignmentList(context : proxy of RCPMWorkItem) : UIPMWorkItemWorkerAssignment[*]{
+				(resolve context).workerAssignment.^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view PMWorkItemWorkerAssignmentListView for PMWorkItemWorkerAssignmentListPresenter{
+		con : Widget
+		@Inject listGrid : PMWorkItemWorkerAssignmentListGrid
+		asWidget():Widget{
+			con
+		}
+		
+		layout{
+			con =listGrid.asWidget
+		}
+		op getActionContext() : ActionContext<UIPMWorkItemWorkerAssignment>{
+			listGrid.createActionContext
+		}
+		
+		interaction{
+			input view.setResults(results : UIPMWorkItemWorkerAssignment[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+	
+	signal PMWorkItemWorkerAssignmentsChanged
+	
+	presenter CreateOrUpdatePMWorkItemWorkerAssignmentPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIPMWorkItemWorkerAssignment
+			op setValue(value : UIPMWorkItemWorkerAssignment) : void
+			op setTeam(team : proxy of RCOrganization, postInit : (Void)=>void) : void
+		}
+		
+		interaction{
+			part workItemPlanAssignmentListPresenter : WorkItemPlanAssignmentListPresenter
+			required printPMWorkItemAssignmentCommand : PrintPMWorkItemAssignmentCommand
+			used4Update : boolean
+			parent : proxy of RCPMWorkItem
+			input call.setup4Create(
+				parent : proxy of RCPMWorkItem,
+				(CreateOrUpdatePMWorkItemWorkerAssignmentPresenter)=>void postInitializer
+			){
+				initPart(workItemPlanAssignmentListPresenter).setup4UnassignedItems(true,parent)[
+				used4Update = false
+				this.parent = parent
+				this.activate[
+					service.loadTeamOrg4WorkItem(parent,onSuccess[
+						getView().setTeam(it)[
+							postInitializer.apply(this)
+						]
+					])
+				]]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCPMWorkItemWorkerAssignment,
+				(CreateOrUpdatePMWorkItemWorkerAssignmentPresenter)=>void postInitializer
+			){
+				initPart(workItemPlanAssignmentListPresenter).setup4UnassignedItems(true,parent)[
+				used4Update = true
+				this.activate[
+					service.loadTeamOrg4WorkItem(parent,onSuccess[
+						getView().setTeam(it)[
+							service.loadValue(value,onSuccess[
+								getView().setValue(it)
+								postInitializer.apply(this)
+							])
+						]
+					])
+				]]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update){
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.PMWorkItemWorkerAssignmentsChanged()
+						notifier.success
+					])
+					if(getView().value.print)
+						printPMWorkItemAssignmentCommand.^execute(getView().value.toProxy)
+				}else{
+					service.createValue(workItemPlanAssignmentListPresenter.getView().selectedValues,parent,getView().value,onSuccess[it|
+						if(getView().value.print)
+							printPMWorkItemAssignmentCommand.^execute(it)
+						fire eventbus.PMWorkItemsChanged()
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : PMWorkItemWorkerAssignmentMapper
+			op loadValue(pvalue : proxy of RCPMWorkItemWorkerAssignment) : UIPMWorkItemWorkerAssignment{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIPMWorkItemWorkerAssignment) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(planAssignments:Collection<UIWorkItemPlanAssignment>,parent : proxy of RCPMWorkItem, uivalue : UIPMWorkItemWorkerAssignment) : RCPMWorkItemWorkerAssignmentProxy{
+				val Collection<RCPMWorkItemWorkerAssignment> results = newArrayList()
+				(resolve parent).assignWorker(planAssignments.^map[resolve it].toList)[
+					mapper.transform(uivalue,it)
+					results.add(it)
+				]
+				results.head.toProxy
+			}
+			op loadTeamOrg4WorkItem(value : proxy of RCPMWorkItem) : proxy of RCOrganization{
+				(resolve value).team.organization.toProxy
+			} 
+			
+			op loadTeamOrg4Assignment(value : proxy of pm.RCPMWorkItemWorkerAssignment) : proxy of RCOrganization{
+				(resolve value).workitem.team.organization.toProxy
+			}
+		}
+	}
+	
+	view CreateOrUpdatePMWorkItemWorkerAssignmentView for CreateOrUpdatePMWorkItemWorkerAssignmentPresenter implements IHasSize, IHasTitle{
+		@Inject form : PMWorkItemWorkerAssignmentForm
+		initializer{
+			this += widgets.VLayout=>[
+				add(form.asWidget, widgets.VLayoutData(1,-1,10))
+				add(workItemPlanAssignmentListPresenter.getView.asWidget=>[it.height='300'], widgets.VLayoutData(1,1,10))
+			]
+		}
+		op getValue() : UIPMWorkItemWorkerAssignment{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIPMWorkItemWorkerAssignment value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(800,550)
+		}
+		op getTitle():String{
+			'派工'
+		}
+		op setTeam(team : proxy of RCOrganization, postInit : (Void)=>void) : void{
+			form.workersContentProvider.load(team)[
+				postInit.apply(null)
+			]
+		}
+					
+	}		
+	
+	presenter CreateOrUpdatePMWorkItemWorkerAssignmentReportPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIPMWorkItemWorkerAssignment
+			op setValue(value : UIPMWorkItemWorkerAssignment) : void
+			op setCanFinish(v : Boolean):void
+		}
+	
+		interaction{
+			input prepare.setup4Update(value : proxy of RCPMWorkItemWorkerAssignment){
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						service.allWorkFinishedExceptThis(value,onSuccess[allFinished|
+							getView().setCanFinish(allFinished)
+							done
+						])
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.updateValue(getView().value,onSuccess[
+					fire eventbus.PMWorkItemsChanged
+					fire eventbus.PMWorkItemWorkerAssignmentsChanged()
+					notifier.success
+				])
+			}	
+		}
+		
+		service{
+			@Inject mapper : PMWorkItemWorkerAssignmentMapper
+			@Inject evaluateMapper : server.^service.device.PMWorkItemEvaluateMapper
+			op loadValue(pvalue : proxy of RCPMWorkItemWorkerAssignment) : UIPMWorkItemWorkerAssignment{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIPMWorkItemWorkerAssignment) : void{
+				(resolve uivalue).finish
+				mapper.transform(uivalue,(resolve uivalue))
+				if(uivalue.reportWorkItemFinish){
+					(resolve uivalue).workitem.teamFinish(uivalue.finishDate,uivalue.workItemFinishComment)
+					evaluateMapper.transform(uivalue.evaluate,(resolve uivalue).workitem.evaluate)
+				}
+			}
+			op allWorkFinishedExceptThis(uivalue : proxy of RCPMWorkItemWorkerAssignment) : Boolean{
+				val workerAssignment = resolve uivalue
+				workerAssignment.workitem.status == RCPMWorkItemStatue::executing &&
+				workerAssignment.workitem.workerAssignment.filter[it!=workerAssignment].forall[it.status == RCPMWorkItemWorkerAssignmentStatus::finished]
+			}
+		}
+	}
+	
+	view CreateOrUpdatePMWorkItemWorkerAssignmentReportView for CreateOrUpdatePMWorkItemWorkerAssignmentReportPresenter implements IHasSize, IHasTitle{
+		@Inject form : PMWorkItemWorkerAssignmentReportForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIPMWorkItemWorkerAssignment{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIPMWorkItemWorkerAssignment value) : void{
+			form.value = value
+			form.finishDate.value = today
+		}
+		op getSize():Size{
+			new Size(600,660)
+		}
+		op getTitle():String{
+			'工单完工'
+		}
+		op setCanFinish(v : Boolean):void{
+			if(v){
+				form.reportWorkItemFinish.value = true
+			}else{
+				form.reportWorkItemFinish.value = false
+				form.reportWorkItemFinish.asWidget.disable
+			}
+//			else{
+//				form.reportWorkItemFinish.asWidget.disable
+//				form.workItemFinishComment.asWidget.disable
+//			}
+			form.refreshWorkItemFinishStatus
+		}			
+	}		
+	
+	
+	presenter CreateOrUpdatePMWorkItemWorkerAssignmentPendPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIPMWorkItemWorkerAssignment
+			op setValue(value : UIPMWorkItemWorkerAssignment) : void
+		}
+	
+		interaction{
+			input prepare.setup4Update(value : proxy of RCPMWorkItemWorkerAssignment){
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.updateValue(getView().value,onSuccess[
+					fire eventbus.PMWorkItemWorkerAssignmentsChanged()
+					notifier.success
+				])
+			}	
+		}
+		
+		service{
+			@Inject mapper : PMWorkItemWorkerAssignmentMapper
+			op loadValue(pvalue : proxy of RCPMWorkItemWorkerAssignment) : UIPMWorkItemWorkerAssignment{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIPMWorkItemWorkerAssignment) : void{
+				(resolve uivalue).pend
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op allWorkFinishedExceptThis(uivalue : proxy of RCPMWorkItemWorkerAssignment) : Boolean{
+				val workerAssignment = resolve uivalue
+				workerAssignment.workitem.workerAssignment.filter[it!=workerAssignment].forall[it.status == RCPMWorkItemWorkerAssignmentStatus::finished]
+			}
+		}
+	}
+	
+	view CreateOrUpdatePMWorkItemWorkerAssignmentPendView for CreateOrUpdatePMWorkItemWorkerAssignmentPendPresenter implements IHasSize, IHasTitle{
+		@Inject form : PMWorkItemWorkerAssignmentPendForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIPMWorkItemWorkerAssignment{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIPMWorkItemWorkerAssignment value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(350,200)
+		}
+		op getTitle():String{
+			'工单延迟'
+		}
+	}		
+		
+	
+}

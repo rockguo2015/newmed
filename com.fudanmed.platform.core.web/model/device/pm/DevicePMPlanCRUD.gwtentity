@@ -1,0 +1,95 @@
+
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.uniquesoft.gwt.client.common.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.device.pm.^proxy.*
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.client.device.*
+
+//	ui-command CreateDevicePMPlanCommand require proxy of RCDevicePMSpecification "新建PM计划" @devicePMSpecificationManagementPresenter{
+//		factory createOrUpdateDevicePMPlanPresenter : CreateOrUpdateDevicePMPlanPresenter
+//		execute{
+//			createOrUpdateDevicePMPlanPresenter.get.setup4Create(value)[
+//				popup(it)
+//			]
+//		}
+//	}
+	ui-command UpdateDevicePMPlanCommand require proxy of RCDevicePMPlan "修改PM计划" @devicePMSpecificationManagementPresenter{
+		factory createOrUpdateDevicePMPlanPresenter : CreateOrUpdateDevicePMPlanPresenter
+		execute{
+			createOrUpdateDevicePMPlanPresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	
+	presenter CreateOrUpdateDevicePMPlanPresenter for UIDevicePMPlan{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : proxy of RCDevicePMSpecification){
+				commiter=[notifier|
+					service.createValue(getView().value,parent,onSuccess[
+						fire eventbus.DevicePMPlansChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of RCDevicePMPlan){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.DevicePMPlansChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : DevicePMPlanMapper
+			op loadValue(pvalue : proxy of RCDevicePMPlan) : UIDevicePMPlan{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIDevicePMPlan) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIDevicePMPlan,parent : proxy of RCDevicePMSpecification) : void{
+				(resolve parent).createPlan()[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateDevicePMPlanView<DeivcePMPlanForm> for CreateOrUpdateDevicePMPlanPresenter ui-size:(300,200) ui-title:"PM计划维护"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}
+
+ 
+ }

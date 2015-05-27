@@ -1,0 +1,730 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.web.*
+	import com.sencha.gxt.widget.core.client.form.ValueBaseField
+	import com.google.gwt.event.dom.client.KeyCodes
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.sencha.gxt.widget.core.client.Window
+	import com.uniquesoft.gwt.client.common.print.Print
+	import com.fudanmed.platform.core.web.server.^service.^template.*
+	import com.sencha.gxt.widget.core.client.Component
+	
+	ui-entity UIInStockRecordItem for RCInStockRecordItem{
+		sid : String "入库批号"
+		productSpec : proxy of RCProductSpecification
+		uiProductSpec : UIProductSpecification "物品名称"
+		productSpecName : String "物品名称"
+		price : Double	"单价"
+		quantity : Integer	"数量"
+		
+		productSid : String "条码"
+		materialId : String "物品编号"
+		brand : proxy of RCMaterialBrand "品牌"
+		typeDesc : String  "规格型号"
+		unit : proxy of RCProduceSpecificationUnit "单位"
+		
+		map InStockRecordItemMapper validate by InStockRecordItemValidator{
+			direct{
+				sid,price,quantity, {uiProductSpec,entity.productSpec} readonly,
+				{productSid,entity.productSpec.sid} readonly,
+				{materialId,entity.productSpec.materialId} readonly,
+				{brand,entity.productSpec.brandType} readonly,
+				{typeDesc,entity.productSpec.typeDesc} readonly,
+				{unit,entity.productSpec.unit} readonly,
+				{productSpecName,entity.productSpec.name} readonly
+			}
+		
+			to entity{
+				entity.productSpec = entities.get(typeof(RCProductSpecification),ui.uiProductSpec.id)
+			}
+			op create(UIInStockRecordItem gwtEntity, Object context) :RCInStockRecordItem{
+				(context as RCInStockRecord).createAndAddtoItems
+			}
+		}
+	
+		constraints InStockRecordItemValidator{
+//			rule Required on sid
+			rule Required on uiProductSpec
+			rule Required on price
+			rule Required on quantity
+		}
+	
+		ui-component InStockRecordItemForm as GXTForm{
+			@Inject productSpecificationListView : ProductSpecificationListView
+			
+			binding{
+				sid,
+				uiProductSpec as RequiredSuggestionItem(productSpecificationListView) content from AllProductSpecificationContentProvider,
+				productSid,
+				price as RequiredDoubleItem,
+				quantity as RequiredIntegerItem
+			}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(sid.asWidget)
+						addFill(uiProductSpec.asWidget)
+						addFill(productSid.asWidget)
+						addFill(price.asWidget)
+						addFill(quantity.asWidget)
+					]
+				]
+			}			
+		}
+	
+		ui-component InStockRecordItemListGrid as GXTGrid{
+			@Inject productSpecificationListView : ProductSpecificationListView
+			binding{sid as StringColumn(70),
+				productSid as StringColumn(70),
+				materialId as StringColumn(70),
+				productSpecName,
+				typeDesc,
+				brand,
+				price as EditableDoubleColumn,
+				quantity as EditableIntegerColumn,unit as DefaultColumn(50)
+			}
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+			}
+			
+		}
+		ui-component InStockRecordItemReadonlyListGrid as GXTGrid{
+			@Inject productSpecificationListView : ProductSpecificationListView
+			binding{sid as StringColumn(70),
+				productSid as StringColumn(70),
+				materialId as StringColumn(70),
+				productSpecName as StringColumn(80) ,
+				typeDesc as StringColumn(80),
+				brand,
+				price,
+				quantity,unit as DefaultColumn(50)
+			}
+		}
+	}
+	
+	
+	ui-entity UIInStockRecord for RCInStockRecord{
+		store : proxy of RCWarehouse	"入库仓库"
+		sid : String "入库单号"
+		date : Date "入库日期"
+		operator : proxy of RCEmployee "操作员"
+		
+		inStoreType : proxy of RCInStoreType "入库类型"
+		deliverNumber : String "送货单号"
+		invoiceNumber : String "发票号码"
+		comment : String "备注"
+		supplier : proxy of RCSupplier "供应商"
+		committed : Boolean "已入库"
+		saveOnly : Boolean "仅保存"
+		print : Boolean "打印入库单"
+		
+		
+	
+		part items : UIInStockRecordItem[*] "入库明细"
+		map InStockRecordMapper validate by InStockRecordValidator{
+			@Inject warehouseSequenceService : RCSequenceService
+			direct{
+				sid readonly,date,operator readonly,items,
+				store,inStoreType,invoiceNumber,deliverNumber,comment,
+				supplier,committed readonly
+			}
+			to entity{
+				entity.sid = warehouseSequenceService.nextInStockSequence
+				entity.items.forEach[
+					if(it.sid.nullOrEmpty)
+						it.sid = entity.sid
+				]
+			}
+		}
+	
+		constraints InStockRecordValidator{
+			rule Required on store
+		}
+	
+		ui-component InStockRecordDetail as GXTPropertyView{
+			binding{
+				date as DateItem(3),
+				store,
+				inStoreType,
+				deliverNumber,
+				invoiceNumber,
+				supplier,
+				comment as PropertyItem(3)
+			}
+			op getCols() : Integer{
+				3
+			} 		
+		}
+		
+		ui-component InStockRecordForm as GXTForm{
+			required detailsListGrid : InStockRecordItemListGrid
+			required inStockRecordItemForm : InStockRecordItemForm
+			required timeService : client.common.ServerSideTimeServiceAsync
+			binding{
+				date as ReadonlyItem, items as ListGridBasedItem(detailsListGrid),
+				store as ComboBoxItem content from client.warehouse.AllWarehouseByManagerContentProvider,
+				inStoreType as ComboBoxItem content from client.warehouse.AllInStoreTypeContentProvider,
+				invoiceNumber,deliverNumber,comment as TextAreaItem,
+				supplier as SuggestionItem content from AllSupplierContentProvider,
+				saveOnly,print
+				
+				
+			}
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+				this.storeContentProvider.load(employee)[
+					notifier.apply(null)
+				]
+			}
+			
+			con : Widget
+			
+			op setSelectedProductSpec(productSpec : UIProductSpecification):void{
+				inStockRecordItemForm.uiProductSpec.value = productSpec
+				inStockRecordItemForm.price.value = productSpec?.referencePrice.nullsafe
+			}
+			
+			productSidSelectedHandler:(String)=>void
+			op setProductSidSelectedHandler(callback:(String)=>void):void{
+				this.productSidSelectedHandler = callback
+			}
+			lastInputComponent : Component
+			
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						add(TABLE=>[
+							tr=>[
+								td=>[it += date.asWidget=>[
+									timeService.getTime(onSuccess[
+										date.value=it
+									])
+								]]
+							]
+							tr=>[
+								td=>[it += store.asWidget]
+								td=>[it += supplier.asWidget]
+								td=>[it += inStoreType.asWidget]
+							]
+							tr=>[
+								td=>[it += deliverNumber.asWidget]
+								td=>[it += invoiceNumber.asWidget]
+							]
+						],widgets.VLayoutData(1,-1))
+						add(comment.asWidget,widgets.VLayoutData(882,60))
+						add(widgets.FieldSet("入库项目")=>[
+							widget = widgets.VLayout=>[
+								add(TABLE=>[
+									lastInputComponent = inStockRecordItemForm.uiProductSpec.field
+									tr=>[
+										td=>[it += inStockRecordItemForm.sid.asWidget]
+										td=>[
+											it += inStockRecordItemForm.uiProductSpec.asWidget
+											inStockRecordItemForm.uiProductSpec.addSelectionChangedListener[
+												inStockRecordItemForm.price.value = it.head.referencePrice.nullsafe
+											]
+											inStockRecordItemForm.uiProductSpec.field.addBlurHandler[
+												val selectedSid = inStockRecordItemForm.uiProductSpec.value?.sid
+												inStockRecordItemForm.productSid.value = selectedSid
+											]
+											OnEnter[
+												lastInputComponent = inStockRecordItemForm.uiProductSpec.field
+												inStockRecordItemForm.quantity.focus
+											]
+										]
+										td=>[
+											it += inStockRecordItemForm.productSid.asWidget=>[
+												OnEnter[
+													lastInputComponent = inStockRecordItemForm.productSid.field
+													inStockRecordItemForm.quantity.focus
+												]
+												inStockRecordItemForm.productSid.field.addBlurHandler[
+													productSidSelectedHandler?.apply(inStockRecordItemForm.productSid.value)
+												]
+											]
+										]
+									]
+									tr=>[
+										td=>[it += inStockRecordItemForm.quantity.asWidget=>[
+											it.OnEnter[
+												inStockRecordItemForm.price.focus
+											]
+										]]
+										td=>[it += inStockRecordItemForm.price.asWidget=>[
+											it.OnEnter[
+												val newItem = createItem
+												if(newItem!=null){
+													lastInputComponent.focus
+													detailsListGrid.addElement(newItem)
+												}
+											]
+											
+										]]
+										
+									]
+								])
+								add( items.asWidget,widgets.VLayoutData(1,225))
+								add(TABLE=>[
+									tr=>[
+										td=>[it+=saveOnly.asWidget=>[saveOnly.value = false]]
+										td=>[it+=print.asWidget=>[saveOnly.value = false]]
+									]
+								])
+//								add(saveOnly.asWidget=>[saveOnly.value = false],widgets.VLayoutData(120,-1))
+							]
+						],widgets.VLayoutData(1,-1))
+						items.objectCreater=[
+							createItem()
+						]
+					]
+				]
+			}	
+			
+			op createItem() :UIInStockRecordItem{
+				if(
+					//必须全部输入
+					inStockRecordItemForm.uiProductSpec.value == null ||
+					inStockRecordItemForm.price.value == null ||
+					inStockRecordItemForm.quantity.value == null
+				){
+					null
+				}else if (
+					detailsListGrid.objects.exists[
+						it.uiProductSpec.id==inStockRecordItemForm.uiProductSpec.value.id
+					] 
+				){
+					display("警告","同种物品不能分别入库")
+					null
+				}else{
+					inStockRecordItemForm.valueAsNew=>[
+							val v = inStockRecordItemForm.uiProductSpec.value
+							if(v!=null){
+								it.productSid = v.sid
+								it.typeDesc = v.typeDesc
+								it.unit = v.unit
+								it.brand = v.brandType
+								it.materialId = v.materialId
+								it.productSpecName = v.name
+								it.id = -now.time
+							}
+							
+							inStockRecordItemForm.sid.value = null
+							inStockRecordItemForm.uiProductSpec.value = null
+							inStockRecordItemForm.price.value = null
+							inStockRecordItemForm.productSid.value = null
+							inStockRecordItemForm.quantity.value = null
+					]
+				}			
+			}
+		}
+	
+		ui-component InStockRecordListGrid as GXTGrid{
+			binding{sid,store,inStoreType,date,operator,supplier,committed}
+		}
+	}
+	
+	signal InStockRecordsChanged
+	
+	ui-datatype CreateOrUpdateInStockRecordInitData{
+		store : proxy of RCWarehouse
+		storeManager : proxy of RCEmployee
+		currentUser : proxy of RCEmployee
+	}
+
+	presenter CreateOrUpdateInStockRecordPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIInStockRecord
+			op setValue(value : UIInStockRecord) : void
+			op setDefaultValues(initData : CreateOrUpdateInStockRecordInitData) : void
+			op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void			
+			signal out productSidEntered(productSid : String)
+			op setProductSpecification(productSpec : UIProductSpecification):void
+		}
+		
+		interaction{
+			used4Update : boolean
+			input call.setup4Create(
+				(CreateOrUpdateInStockRecordPresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.activate[
+					service.loadCreateOrUpdateInStockRecordInitData(onSuccess[
+						getView().setDefaultValues(it)
+						getView().setSourceWarehouseContext(it.currentUser)[
+							postInitializer.apply(this)
+						]
+					])
+				]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCInStockRecord,
+				(CreateOrUpdateInStockRecordPresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadCreateOrUpdateInStockRecordInitData(onSuccess[
+						getView().setSourceWarehouseContext(it.currentUser)[
+							service.loadValue(value,onSuccess[
+								getView().setValue(it)
+								postInitializer.apply(this)
+							])
+						]
+					])
+				]
+			}
+			input view.productSidEntered(sid : String){
+				service.getProductSpecByProductSid(sid,onSuccess[
+					getView().setProductSpecification(it)
+				])
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[value|
+						fire eventbus.InStockRecordsChanged()
+						fire eventbus.ProductStoreTransactionsChanged()
+						fire eventbus.ProductWarehouseStoragesChanged()
+						fire eventbus.ProductWarehouseStorageSummarysChanged()
+						if(getView().value.print){
+							service.generatePrintContent(value,onSuccess[
+								Print::it(it)
+							])
+						}
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value,onSuccess[value|
+						fire eventbus.InStockRecordsChanged()
+						fire eventbus.ProductStoreTransactionsChanged()
+						fire eventbus.ProductWarehouseStoragesChanged()
+						fire eventbus.ProductWarehouseStorageSummarysChanged()
+						if(getView().value.print){
+							service.generatePrintContent(value,onSuccess[
+								Print::it(it)
+							])
+						}
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : InStockRecordMapper
+			@Inject systemUserService : ISystemUserService
+			@Inject warehouseService : RCWarehouseService
+			@Inject systemParameter : RCSystemParameterService
+			@Inject itemMapper : InStockRecordItemMapper
+			@Inject productSpecificationDAO : RCProductSpecificationDAO
+			@Inject productSpecificationMapper : ProductSpecificationMapper
+			op loadValue(pvalue : proxy of RCInStockRecord) : UIInStockRecord{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIInStockRecord) : proxy of RCInStockRecord{
+				val value = (resolve uivalue)
+				mapper.transform(uivalue,value)
+				if(!uivalue.saveOnly){
+					value.commit((systemUserService.currentUser as RCEmployeeUser).employee)
+				}
+				value.toProxy
+			}
+			op getProductSpecByProductSid(productSid : String):UIProductSpecification{
+				productSpecificationMapper.transform(productSpecificationDAO.findBySid(productSid))
+			}
+			op createValue(uivalue : UIInStockRecord) :  proxy of RCInStockRecord{
+				var value = entities.create(typeof(RCInStockRecord))
+				mapper.transform(uivalue,value)
+				if(!uivalue.saveOnly){
+					value.commit((systemUserService.currentUser as RCEmployeeUser).employee)
+				}
+				value.toProxy
+			}
+			op loadCreateOrUpdateInStockRecordInitData() : CreateOrUpdateInStockRecordInitData{
+				new CreateOrUpdateInStockRecordInitData()=>[
+					var majorWarehouse =warehouseService.majorWarehouse
+					it.store = majorWarehouse.toProxy
+					it.currentUser = (systemUserService.currentUserAsParty as RCEmployee).toProxy
+				]
+			}
+	
+			op loadStoreManager(store : proxy of RCWarehouse) : proxy of RCEmployee{
+				(systemUserService.currentUserAsParty as RCEmployee).toProxy
+			}
+			
+			op generatePrintContent(inStockRecord : proxy of RCInStockRecord):String{
+				InStockTemplate::^template(resolve inStockRecord,systemParameter.systemParameter,itemMapper)				
+			}
+		}
+	}
+	
+	view CreateOrUpdateInStockRecordView for CreateOrUpdateInStockRecordPresenter implements IHasSize, IHasTitle{
+		@Inject form : InStockRecordForm
+		initializer{
+			this += widgets.VLayout=>[
+				add(form.asWidget, widgets.VLayoutData(1,-1,10))
+				form.productSidSelectedHandler = [
+					fire view.productSidEntered(it)
+				]
+			]
+			
+		}
+		op getValue() : UIInStockRecord{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIInStockRecord value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(970,600)
+		}
+		op getTitle():String{
+			'物品入库'
+		}
+		op setDefaultValues(initData : CreateOrUpdateInStockRecordInitData) : void{
+			form.store.value = initData.store
+			form.inStoreType.selectFirst
+		}
+		op setSourceWarehouseContext(employee : proxy of RCEmployee, notifier : (Void)=>void):void{
+			form.setSourceWarehouseContext(employee)[
+				form.store.selectFirst
+				notifier.apply(null)
+			]
+		}
+		op setProductSpecification(productSpec : UIProductSpecification):void{
+			form.setSelectedProductSpec(productSpec)
+		}
+	}		
+	
+	ui-criteria UIInStockRecordCriteria for RCInStockRecordCriteria{
+		sid : String "入库单号"
+		dateFrom : Date "起始日期"		
+		dateTo : Date "结束日期"		
+		map InStockRecordCriteriaMapper{
+			@Inject warehouseDAO : RCWarehouseDAO
+			direct{sid,dateFrom,dateTo}
+			to entity{
+				entity.stores = warehouseDAO.findManagedWarehouse.^map[^id].unlazy
+				
+			}
+		}
+		ui-component InStockRecordCriteriaForm as GXTForm{
+			binding{sid,dateFrom,dateTo}
+		}
+	}
+	
+	presenter InStockRecordListPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UIInStockRecord>)
+			signal in showDetails(detail:UIInStockRecord ,details : UIInStockRecordItem[*])
+			signal in refresh()
+			signal out inStockRequest() @inStockRecordListPresenter "物品入库"
+			signal out modifyInStockRequest(record : proxy of RCInStockRecord) @inStockRecordListPresenter "修改入库单"
+			signal out filterRequest(c : UIInStockRecordCriteria)
+			signal out showDetailRequest(value : proxy of RCInStockRecord)
+			signal out print(value : proxy of RCInStockRecord)
+		}
+	
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateInStockRecordPresenter
+			input call.setup(postInit : (InStockRecordListPresenter)=>void ){
+				this.activate[
+					fire view.refresh
+					postInit.apply(this)
+				]
+			}
+			
+			input view.filterRequest(c : UIInStockRecordCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input view.showDetailRequest(value : proxy of RCInStockRecord){
+				service.loadDetails(value,onSuccess[details|
+					service.loadInStockRecordInfo(value,onSuccess[detail|
+						fire view.showDetails(detail,details)
+					])
+				])
+			}
+			input eventbus.InStockRecordsChanged(){
+				fire view.refresh
+			}
+			
+			input view.modifyInStockRequest(value : proxy of RCInStockRecord){
+				createOrUpdatePresenter.get=>[
+					setup4Update(value)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+
+			input view.inStockRequest(){
+				createOrUpdatePresenter.get=>[
+					setup4Create[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.print(value : proxy of RCInStockRecord){
+				service.generatePrintContent(value,onSuccess[
+					Print::it(it)
+				])
+			}
+			
+		}
+		service{
+			@Inject criteriaMapper : InStockRecordCriteriaMapper
+			@Inject mapper : InStockRecordMapper
+			@Inject itemMapper : InStockRecordItemMapper
+			@Inject systemParameter : RCSystemParameterService
+			
+			
+			op generatePrintContent(inStockRecord : proxy of RCInStockRecord):String{
+				InStockTemplate::^template(resolve inStockRecord,systemParameter.systemParameter,itemMapper)
+			}
+
+	
+			op filter(uicriteria : UIInStockRecordCriteria) : IPagedResult<UIInStockRecord>{
+				var c = uicriteria.createPagedCriteria(typeof(RCInStockRecordCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op delete(value : proxy of RCInStockRecord) : void {
+				entities.delete(resolve value)
+			}
+			op loadDetails(parent : proxy of RCInStockRecord) : UIInStockRecordItem[*]{
+				(resolve parent).items.^map[itemMapper.transform(it)].unlazy
+			}
+			op loadInStockRecordInfo(record : proxy of RCInStockRecord) : UIInStockRecord{
+				mapper.transform(resolve record)
+			}
+		}
+	}
+	
+	view InStockRecordListView for InStockRecordListPresenter{
+		@Inject listGrid : InStockRecordListGrid
+		@Inject criteriaForm : InStockRecordCriteriaForm
+		@Inject detailsListGrid : InStockRecordItemReadonlyListGrid
+		@Inject inStockRecordDetail : InStockRecordDetail
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.FramedPanel("入库管理")=>[
+				setWidget(widgets.VLayout=>[
+					add(
+						widgets.HTableLayout()=>[
+							add(<Widget>newArrayList(
+								criteriaForm.sid.asWidget,
+								criteriaForm.dateFrom.asWidget,
+								criteriaForm.dateTo.asWidget,
+								widgets.TextButton("查询")=>[
+									setWidth("80px")
+									addSelectHandler[
+										fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+											page = 1
+										])
+									]
+								]
+							)	
+						)]
+					)
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]	
+					add( widgets.ContentPanel()=>[
+							widget = widgets.VLayout=>[
+								add(listGrid.asWidget,widgets.VLayoutData(1,1))
+								add(pager.asWidget,widgets.VLayoutData(1,-1))
+							]
+							val ac = listGrid.createActionContext
+							securities.check(ui-requester.inStockRequest)[v|
+								addButton(widgets.TextButton("物品入库")=>[
+									addSelectHandler[
+										fire view.inStockRequest()
+									]
+								])
+							]
+							securities.check(ui-requester.modifyInStockRequest)[v|
+								addButton(ac.createActionContext.onSingleObjectAction[
+									onExecute[UIInStockRecord inStockRecord|
+										fire view.modifyInStockRequest(inStockRecord.toProxy)
+									]
+									onCheckEnable[
+										listGrid.isOnlySelectedAnd[
+											!it.committed.isLogicTrue
+										]
+									]
+								].asButtonRequester("修改入库单"))
+							]								
+							addButton(ac.createActionContext.onSingleObjectAction[
+								onExecute[UIInStockRecord inStockRecord|
+									fire view.print(inStockRecord.toProxy)
+								]
+							].asButtonRequester("打印入库单"))
+						],widgets.VLayoutData(1,0.55))					
+
+					add(widgets.TabPanel=>[
+						add(detailsListGrid.asWidget,"入库明细")
+						add(inStockRecordDetail.asWidget,"入库详情")
+					],widgets.VLayoutData(1,0.45))
+					
+					listGrid.addSelectEntityListener[
+						fire view.showDetailRequest(it.toProxy)
+					]
+					listGrid.addSelectionChangedListener[
+						if(it.isNullOrEmpty)
+							detailsListGrid.objects = newArrayList
+					]
+				])
+			
+			]					
+		}
+	
+		op showResults(results : IPagedResult<UIInStockRecord>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op showDetails(detail:UIInStockRecord ,details : UIInStockRecordItem[*]):void{
+			inStockRecordDetail.value = detail
+			detailsListGrid.objects = details
+		}
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+	}	
+	
+
+	
+}

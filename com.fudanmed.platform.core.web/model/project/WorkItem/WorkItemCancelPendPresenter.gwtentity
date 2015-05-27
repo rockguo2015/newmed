@@ -1,0 +1,157 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import com.fudanmed.platform.core.web.*
+	 
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.web.client.common.*	
+	ui-datatype WorkItemCancelPendData{
+		
+		finishDate : Date "完工日期"
+		finishTime : Date "完工时间"
+		comment : String "维修说明"
+		deviceSid : String "设备编号"
+		price : Double "工时费"
+		
+	
+		alsoReport : Boolean "完工上报"
+		reportComment : String "上报信息"
+		
+		constraints WorkItemCancelPendDataValidator{
+			rule Required on finishDate
+			rule Required on finishTime
+		}
+		
+		ui-component WorkItemCancelPendDataForm as GXTForm{
+			binding{
+				finishDate, finishTime as TimeItem, comment as TextAreaItem, 
+				alsoReport, reportComment as TextAreaItem, deviceSid, price
+			}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						add(finishDate.asWidget,widgets.VLayoutData(1,-1))
+						add(finishTime.asWidget,widgets.VLayoutData(1,-1))
+						add(deviceSid.asWidget,widgets.VLayoutData(1,-1))
+						add(price.asWidget,widgets.VLayoutData(1,-1))
+						add(comment.asWidget,widgets.VLayoutData(366,80))
+						add(alsoReport.asWidget,widgets.VLayoutData(120,-1))
+						add(reportComment.asWidget,widgets.VLayoutData(366,80))
+					]
+				]
+			}			
+		}
+	}
+	
+	presenter WorkItemCancelPendPresenter  with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : WorkItemCancelPendData
+			signal in setComment(comment : String)
+			signal in canReport()
+		}
+		
+		interaction{
+			context : proxy of RCWorkItemTask
+			input call.setup(context : proxy of RCWorkItemTask,postInit : (WorkItemCancelPendPresenter)=>void){
+				this.context = context
+				this.activate[
+					service.getComment(context,onSuccess[
+						fire view.setComment(it)	
+						service.canReport(context,onSuccess[canReport|
+							if(canReport) fire view.canReport()
+							postInit.apply(this)
+						])				
+					])
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.commit(context,getView().value,onSuccess[
+					fire eventbus.WorkItemTasksChanged
+					fire eventbus.GroupTasksChanged
+					notifier.success
+				])
+			}
+		}
+	
+		service{
+			@Inject ^validator : WorkItemCancelPendDataValidator
+			op commit(context : proxy of RCWorkItemTask,data : WorkItemCancelPendData) : void{
+				data.validateWith(^validator)
+				val task = (resolve context)
+				task.finishDate = data.finishDate
+				task.finishTime = data.finishTime
+				task.comment = data.comment
+				task.cancelPend
+				
+				if(data.alsoReport){
+					task.groupTask.finishDate = data.finishDate
+					task.groupTask.finishTime = data.finishTime
+					task.groupTask.comment = data.reportComment
+					task.groupTask.reportFinish
+				}
+			}
+			op getComment(context : proxy of RCWorkItemTask) : String{
+				(resolve context).comment
+			}
+			op canReport(context : proxy of RCWorkItemTask):Boolean{
+				val task = resolve context
+				task.groupTask.allTasksFinishedExcept(task)
+			}
+		}
+	}
+	
+	view WorkItemCancelPendView for WorkItemCancelPendPresenter  implements IHasSize, IHasTitle{
+		@Inject form : WorkItemCancelPendDataForm
+		required timeService : ServerSideTimeServiceAsync
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget=>[
+				timeService.getTime(onSuccess[
+					form.finishDate.value = it.trimDate
+					form.finishTime.value = it
+				])
+					form.alsoReport.asWidget=>[disable]
+					form.reportComment.asWidget=>[disable]],widgets.VLayoutData(1,-1,10))			
+				]
+		}
+		
+		op getValue() : WorkItemCancelPendData{
+			form.value
+		}
+		
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{   
+			form.clearErrors
+		}
+		op setComment(comment : String):void{
+			form.comment.value = comment
+		}
+		op getSize():Size{
+			new Size(400,400)
+		}
+		op getTitle():String{
+			"结束挂起"
+		}
+		op canReport():void{
+			form.alsoReport.asWidget=>[
+				form.alsoReport.value = true
+				enable
+			]
+			form.reportComment.asWidget=>[enable]
+			
+		}
+		
+	}	
+}

@@ -1,0 +1,68 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	
+	ui-command ShowInHospitalLocationManagementCommand "病区信息维护"{
+		factory managementPresenter : InHospitalLocationManagementPresenter
+		execute{
+			managementPresenter.get.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}	
+	presenter InHospitalLocationManagementPresenter{
+		view interface{
+		}
+		interaction{
+			part queryListPresenter : InHospitalLocationQueryListPresenter
+			input prepare.setup(){
+				initPart(queryListPresenter).setup[
+					this.activate[
+						done
+					]
+				]
+			}
+		}
+	}
+	
+	view InHospitalLocationManagementView for InHospitalLocationManagementPresenter{
+		@Inject createInHospitalLocationCommand : CreateInHospitalLocationCommand
+		@Inject updateInHospitalLocationCommand:UpdateInHospitalLocationCommand
+		@Inject deleteInHospitalLocationCommand :DeleteInHospitalLocationCommand
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}	
+		layout{
+			val ac = queryListPresenter.getView().actionContext.adapt[toProxy]
+			con = widgets.FramedPanel("病区信息维护")=>[
+				widget = queryListPresenter.getView().asWidget
+				addCommand(createInHospitalLocationCommand)
+				addCommand(ac,updateInHospitalLocationCommand)
+				addCommand(ac,deleteInHospitalLocationCommand)
+				
+			]
+		}
+		
+	}	
+	
+}

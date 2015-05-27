@@ -1,0 +1,579 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.*
+	
+	import com.uniquesoft.gwt.shared.datatype.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.uniquesoft.uidl.validation.*
+	
+	
+	content-provider RCMaterialBrandContentProvider for proxy of RCMaterialBrand{
+		contents{
+			entities.all(typeof(RCMaterialBrand))
+		}
+	}
+	
+	ui-entity UIProductSpecification for RCProductSpecification{
+		sid : String "条码"
+		
+		materialId : String "物品编号"
+		brandType : proxy of RCMaterialBrand "品牌"
+		referencePrice : Double "参考单价"
+		shelfLife : Integer "保质期(天)"
+		lowerStorage : Integer "最小库存"
+		upperStorage : Integer "最大库存"
+		
+		//materialId,brand,referencePrice,shelfLife,lowerStorage,upperStorage
+		
+		name : String "物品名称"
+		typeDesc : String  "规格型号"
+		unit : proxy of RCProduceSpecificationUnit "单位"
+		productType : proxy of RCProductType "物品类别"	//code
+		defaultSupplier : proxy of RCSupplier "默认供应商"
+		
+		map ProductSpecificationMapper validate by ProductSpecificationValidator{
+			direct{sid,name,typeDesc,unit,productType,defaultSupplier,materialId,brandType,referencePrice,shelfLife,lowerStorage,upperStorage}
+		}
+		
+		csv-map ProductSpecificationCSVMapper{
+			binding{sid,name,typeDesc,unit,productType,defaultSupplier,materialId,brandType,referencePrice,shelfLife,lowerStorage,upperStorage}
+			item-mapper for brandType{
+				from-csv{
+					val result = entities.all(typeof(RCMaterialBrand)).findFirst[
+						it.name == value
+					].toProxy
+					if(value!=null && result==null){
+						acceptor.accept("无效品牌名称")
+					}
+					result
+				}
+			}
+			item-mapper for unit{
+				from-csv{
+					val result = entities.all(typeof(RCProduceSpecificationUnit)).findFirst[
+						it.name == value
+					].toProxy
+					if(!value.isNullOrEmpty && result==null){
+						acceptor.accept("无效单位名称")
+					}
+					result
+				}
+			}
+			item-mapper for productType{
+				@Inject productTypeDAO : RCProductTypeDAO
+				from-csv{
+					val result = productTypeDAO.findByCode(value).toProxy
+					if(!value.isNullOrEmpty && result==null){
+						acceptor.accept("无效物品类别编号")
+					}
+					result
+				}
+			}
+			item-mapper for defaultSupplier{
+				@Inject supplierDAO : RCSupplierDAO
+				from-csv{
+					val result = supplierDAO.findByName(value).toProxy
+					if(!value.isNullOrEmpty && result==null){
+						acceptor.accept("无效供应商名称")
+					}
+					result
+				}
+			}
+		}
+	
+		constraints ProductSpecificationValidator{
+			
+			@Inject productSpecificationDAO : RCProductSpecificationDAO
+			rule Required on sid
+			rule Required on materialId
+			rule Required on brandType
+			rule Required on typeDesc
+			rule Required on name
+			rule Required on productType
+			constraint UniqueSid on sid "物品条码已存在"{
+				entity.isUnique[
+					productSpecificationDAO.findBySid(entity.sid)
+				]
+			}
+			constraint UniqueMid on materialId "物品编号已存在"{
+				entity.isUnique[
+					productSpecificationDAO.findByMaterialId(entity.materialId)
+				]
+			}
+		}
+	
+		ui-component ProductSpecificationForm as GXTForm{
+			binding{
+				sid,name,typeDesc,unit as ComboBoxItem content from AllProduceSpecificationUnitContentProvider,
+				productType as SuggestionItem content from AllProductTypeContentProvider,
+				defaultSupplier as SuggestionItem content from AllSupplierContentProvider,
+				materialId,referencePrice,shelfLife,lowerStorage,upperStorage,
+				brandType as ComboBoxItem content from RCMaterialBrandContentProvider
+			}
+			con : Widget
+			factory maintenamceTypeManagementPresenter : ProductCategoryManagementPresenter
+			
+			op asWidget() : Widget{
+				con = con.lazy[
+					
+					TABLE=>[
+						tr=>[
+							td=>[it += sid.asWidget]
+							td=>[it += materialId.asWidget]
+						]
+						tr=>[
+							td=>[it += name.asWidget]
+							td=>[it += typeDesc.asWidget]
+						]
+						tr=>[
+							td=>[it += unit.asWidget]
+							td=>[
+								it += TABLE=>[
+									tr=>[
+										td=>[it += productType.asWidget]
+										td=>[
+											it += widgets.TextButton("选择")=>[
+												addSelectHandler[
+													maintenamceTypeManagementPresenter.get.setup4Readonly[
+															asSelector("选择材料类别",800,400)[selected|
+																productType.value=selected.toProxy
+															].show
+													]
+												]										
+											]
+										]
+									]
+								]
+								
+							]
+						]
+						tr=>[
+							td=>[it += defaultSupplier.asWidget]
+							td=>[it += brandType.asWidget]
+						]
+						tr=>[
+							td=>[it += referencePrice.asWidget]
+							td=>[it += shelfLife.asWidget]
+						]
+						tr=>[
+							td=>[it += lowerStorage.asWidget]
+							td=>[it += upperStorage.asWidget]
+						]
+					]
+				]
+			}			
+		}
+		ui-component ProductSpecificationDetailForm as GXTPropertyView{
+			binding{
+				sid,name,typeDesc,
+				unit,productType,defaultSupplier,
+				brandType,referencePrice,materialId, 
+				shelfLife,lowerStorage,upperStorage
+			}
+			op getCols():Integer{
+				3
+			}
+		}
+	
+		ui-component ProductSpecificationListGrid as GXTGrid{
+			binding{
+				sid  as StringColumn(80),materialId  as StringColumn(80),
+				name as StringColumn(100),typeDesc,unit as DefaultColumn(60),productType,
+				defaultSupplier as DefaultColumn(150),brandType as DefaultColumn(108),
+				referencePrice as DoubleColumn(70),
+				shelfLife ,lowerStorage,upperStorage
+			}
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+			}
+		}
+		
+		ui-component ProductSpecificationListView as GXTListView{
+			template render(value : UIProductSpecification) {
+				"<div><div style='float:left'><span style='font-size:120%;font-weight:bold;'>{value.name}</span><BR><b>物品编号</b>:{value.materialId}</div> <div style='width:120px;float:right'>规格:{value.typeDesc}<BR>品牌:{value.brandType}</div></div>"
+			}
+		}
+//				"<div><div style='float:left'><span style='font-size:120%;font-weight:bold;'>{value.name}</span><BR>条码编号:{value.productSpecsSid},入库批号:{value.sid}</div> <div style='width:50px;float:right'>{value.quantity}{value.unit}</div></div>"
+	
+	}
+	
+	signal ProductSpecificationsChanged
+	
+	presenter CreateOrUpdateProductSpecificationPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIProductSpecification
+			op setValue(value : UIProductSpecification) : void
+		}
+		
+		interaction{
+			used4Update : boolean
+			input call.setup4Create(
+				(CreateOrUpdateProductSpecificationPresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.activate[postInitializer.apply(this)]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCProductSpecification,
+				(CreateOrUpdateProductSpecificationPresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						postInitializer.apply(this)
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.ProductSpecificationsChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.ProductSpecificationsChanged()
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : ProductSpecificationMapper
+			op loadValue(pvalue : proxy of RCProductSpecification) : UIProductSpecification{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIProductSpecification) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIProductSpecification) : void{
+				var value = entities.create(typeof(RCProductSpecification))
+				mapper.transform(uivalue,value)
+			}
+		}
+	}
+	
+	view CreateOrUpdateProductSpecificationView for CreateOrUpdateProductSpecificationPresenter implements IHasSize, IHasTitle{
+		@Inject form : ProductSpecificationForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIProductSpecification{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIProductSpecification value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(600,280)
+		}
+		op getTitle():String{
+			'物品信息维护'
+		}
+					
+	}		
+	
+	content-provider TopLevelProductCategoryProvider for proxy of RCProductCategory{
+		@Inject dao : RCProductCategoryDAO
+		contents{
+			dao.allToplevelCategories.unlazy
+		}
+	}
+	ui-criteria UIProductSpecificationCriteria for RCProductSpecificationCriteria{
+		info : String "物品信息"
+		category : proxy of RCProductCategory "物品大类"
+		map ProductSpecificationCriteriaMapper{
+			direct{info,category}
+		}
+		ui-component ProductSpecificationCriteriaForm as GXTForm{
+			binding{info as EscapedTextItem,category as ComboBoxItem content from TopLevelProductCategoryProvider}
+		}
+	}
+	
+	presenter ProductSpecificationManagementPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UIProductSpecification>)
+			signal in refresh()
+
+			signal out createRequest() @productSpecificationManagementPresenter "新建"
+			signal out importRequest() @productSpecificationManagementPresenter "导入"
+			signal out deleteRequest(value : proxy of RCProductSpecification) @productSpecificationManagementPresenter "删除"
+			signal out modifyRequest(value : proxy of RCProductSpecification) @productSpecificationManagementPresenter "修改"
+			signal out filterRequest(c : UIProductSpecificationCriteria)
+		}
+
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateProductSpecificationPresenter
+			factory ProductSpecificationUploaderPresenter :ProductSpecificationUploaderPresenter
+			input call.setup(postInit : (ProductSpecificationManagementPresenter)=>void ){
+				this.activate[
+					fire view.refresh
+					postInit.apply(this)
+				]
+			}
+			
+			input view.createRequest(){
+					createOrUpdatePresenter.get=>[
+						setup4Create[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]
+			}
+			input view.modifyRequest(value : proxy of RCProductSpecification){
+					createOrUpdatePresenter.get=>[
+						setup4Update(value)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]				
+			}
+			input view.deleteRequest(value : proxy of RCProductSpecification){
+				service.delete(value,onSuccess[
+					fire eventbus.ProductSpecificationsChanged
+				])
+			}
+			input view.filterRequest(c : UIProductSpecificationCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.ProductSpecificationsChanged(){
+				fire view.refresh
+			}
+			input view.importRequest(){
+				ProductSpecificationUploaderPresenter.get.asDialog("材料品种导入")
+			}
+		}
+		service{
+			@Inject criteriaMapper : ProductSpecificationCriteriaMapper
+			@Inject mapper : ProductSpecificationMapper
+
+			op filter(uicriteria : UIProductSpecificationCriteria) : IPagedResult<UIProductSpecification>{
+				var c = uicriteria.createPagedCriteria(typeof(RCProductSpecificationCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op delete(value : proxy of RCProductSpecification) : void {
+				entities.delete(resolve value)
+			}
+		}
+	}
+	
+	view ProductSpecificationManagementView for ProductSpecificationManagementPresenter{
+		@Inject listGrid : ProductSpecificationListGrid
+		@Inject criteriaForm : ProductSpecificationCriteriaForm
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.FramedPanel("物品信息维护")=>[
+				setWidget(widgets.VLayout=>[
+					add(
+						widgets.HTableLayout()=>[
+							add(<Widget>newArrayList(
+								criteriaForm.info.asWidget=>[
+									toolTip = "可用拼音码 条码"
+								],
+								criteriaForm.category.asWidget,
+								widgets.TextButton("查询")=>[
+									setWidth("80px")
+									addSelectHandler[
+										fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+											page = 1
+										])
+									]
+								]
+							)	
+						)]
+
+					)
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]	
+					add(widgets.ContentPanel=>[						
+								widget = widgets.VLayout=>[
+									add(listGrid.asWidget,widgets.VLayoutData(1,1))
+									add(pager.asWidget,widgets.VLayoutData(1,-1))
+								]
+					],widgets.VLayoutData(1,1))
+				
+				])
+				
+				val ac = listGrid.createActionContext
+				securities.check(ui-requester.createRequest)[v|
+					addButton(new TextButton("新建")=>[
+						addSelectHandler[
+							fire view.createRequest
+						]
+					])
+				]
+				securities.check(ui-requester.importRequest)[v|
+					addButton(new TextButton("导入")=>[
+						addSelectHandler[
+							fire view.importRequest
+						]
+					])
+				]
+				securities.check(ui-requester.modifyRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIProductSpecification selectedValue |
+							fire view.modifyRequest(selectedValue.toProxy)
+						]
+					].asButtonRequester("修改"))					
+				]					
+				securities.check(ui-requester.deleteRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIProductSpecification selectedValue |
+							widgets.ConfirmMessageBox("确认","确认删除")[
+								fire view.deleteRequest(selectedValue.toProxy)
+							].show
+						]
+					].asButtonRequester("删除"))					
+				]
+			
+			]					
+		}
+		
+		op showResults(results : IPagedResult<UIProductSpecification>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+	}
+	
+	presenter ProductSpecificationDetailPresenter{
+		view interface{
+			signal in showDetail(UIProductSpecification detail)
+		}
+		
+		interaction{
+			input call.setup(postInit : (ProductSpecificationDetailPresenter)=>void){
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			input call.setDetailInfo(detail : proxy of RCProductSpecification){
+				service.loadDetail(detail,onSuccess[
+					fire view.showDetail(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject mapper : ProductSpecificationMapper
+			op loadDetail(detail : proxy of RCProductSpecification) : UIProductSpecification{
+				mapper.transform(resolve detail)
+			}
+		}
+	}
+	
+	view ProductSpecificationDetailView for ProductSpecificationDetailPresenter{
+		@Inject detailForm : ProductSpecificationDetailForm
+		con : Widget
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = detailForm.asWidget
+		}
+		interaction{
+			input view.showDetail(UIProductSpecification detail){
+				detailForm.value = detail
+			}
+		}
+	}
+	
+	presenter ProductSpecificationUploaderPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getFile() : File
+		}
+		
+		interaction{
+			input call.performCommit(CommitResultNotifier notifier){
+				service.doUpload(getView().getFile,callback[
+					onSuccessDo[
+						notifier.success
+						fire eventbus.ProductSpecificationsChanged()
+					]
+					onFailureDo[caught|
+						caught.showErrors
+					]					
+				])
+			}
+		}
+
+		service{
+			@Inject csvMapper : ProductSpecificationCSVMapper
+			@Inject mapper : ProductSpecificationMapper
+			op doUpload(file : File) throws CSVValidationException : void{
+				file.importWith(csvMapper)[
+					onCommitEach[uivalue|
+						var value = entities.create(typeof(RCProductSpecification))
+						mapper.transform(uivalue,value)
+					]
+				]
+			}
+		}
+	}
+	
+	view ProductSpecificationUploaderView for ProductSpecificationUploaderPresenter implements IHasSize, IHasTitle{
+		@Inject uploadForm : CommonUploadForm
+		initializer{
+			this += widgets.VLayout=>[add(uploadForm.asWidget, widgets.VLayoutData(1,-1,10))]			
+		}
+		
+		op getFile() : File{
+			uploadForm.file.value
+		}
+		
+		op mapField( errorKey:String ): HasEditorErrors {
+			uploadForm.mapToErrorEditor(errorKey)
+		}
+		
+		op getSize():Size{
+			new Size(400,150)
+		}
+		
+		op getTitle():String{
+			"材料品种信息导入"
+		}
+	}
+}

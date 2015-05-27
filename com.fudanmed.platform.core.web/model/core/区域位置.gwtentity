@@ -1,0 +1,495 @@
+package com.fudanmed.platform.core.web feature organization{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import com.uniquesoft.gwt.shared.datatype.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.sencha.gxt.data.shared.TreeStore
+	import com.sencha.gxt.widget.core.client.treegrid.TreeGrid
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.validation.ValidationException
+	import com.uniquesoft.uidl.validation.*
+	import com.uniquesoft.gwt.client.common.selector.IHasObjectSelectionProvider
+
+	ui-entity UIOnsitePosition for RCOnsitePosition{
+		code : String "位置代码"
+		name : String "位置名称"
+		phone : String "联系电话"
+		simplePy : String
+		parent : proxy of RCOnsitePosition "所属位置"
+		parentCode : String "所属位置"
+		inputNext : Boolean "继续输入"
+		fullPath : String
+	
+		map OnsitePositionMapper validate by OnsitePositionValidator{
+			direct{code,name,phone,parent, simplePy}
+			from entity{
+				ui.fullPath = entity.fullPath
+			}
+			to entity{
+				entity.path = entity.fullIdPath
+			}
+		}
+		
+		csv-map OnsitePositionCSVMapper{
+			binding{code,name,phone,parentCode}
+		}
+	
+		constraints OnsitePositionValidator{
+			@Inject onsitePositionDAO : RCOnsitePositionDAO
+			
+			rule Required on code
+			rule Required on name
+			constraint CodeIsUnique on code "位置代码必须唯一"{
+				entity.isUnique[newValue|
+					onsitePositionDAO.findByCode(newValue.code)
+				]
+			}
+		}
+	
+		ui-component OnsitePositionForm as GXTForm{
+			binding{code,name,phone,parent as ReadonlyItem,inputNext}
+			con : Widget
+			op createWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(parent.asWidget)
+						addFill(code.asWidget)
+						addFill(name.asWidget)
+						addFill(phone.asWidget)
+						add(inputNext.asWidget=>[inputNext.value=true])
+					]
+				]
+			}			
+		}
+	
+		ui-component OnsitePositionListGrid as GXTTreeGrid{
+			binding{name,code,phone,parent}
+		}
+		ui-component OnsitePositionSimpleTreeGrid as GXTTreeGrid{
+			binding{name}
+		}
+		
+		ui-component OnsitePositionSimpleListGrid as GXTGrid{
+			binding{name}
+		}
+	}
+	
+	signal OnsitePositionsChanged
+	signal OnsitePositionChanged(org : proxy of RCOnsitePosition)
+	signal OnsitePositionDeleted(org : proxy of RCOnsitePosition)
+	signal OnsitePositionAdded(org : proxy of RCOnsitePosition)
+	signal InputNextOnsitePosition(parent : proxy of RCOnsitePosition)
+	
+	presenter CreateOrUpdateOnsitePositionPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIOnsitePosition
+			op setValue(value : UIOnsitePosition) : void
+			op setParent(parent : proxy of RCOnsitePosition) : void 
+		}
+		
+		interaction{
+			used4Update : boolean
+			parent : proxy of RCOnsitePosition
+			input prepare.setup4Create(parent : proxy of RCOnsitePosition){
+				used4Update = false
+				this.parent = parent
+				this.activate[
+					getView().setParent(parent)
+					done
+				]
+			}
+			
+			
+			input prepare.setup4Update(value : proxy of RCOnsitePosition){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.OnsitePositionChanged(getView().value.toProxy)
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value=>[it.parent = this.parent],onSuccess[
+						fire eventbus.OnsitePositionAdded(it)
+						notifier.success
+						if(getView().value.inputNext.isLogicTrue){
+							fire eventbus.InputNextOnsitePosition(parent)
+						}
+					])
+				}
+			}			
+		}
+		
+		service{
+			
+			@Inject mapper : OnsitePositionMapper
+			
+			op loadValue(pvalue : proxy of RCOnsitePosition) : UIOnsitePosition{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIOnsitePosition) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIOnsitePosition) : proxy of RCOnsitePosition{
+				var value = entities.create(typeof(RCOnsitePosition))
+				mapper.transform(uivalue,value)
+				value.toProxy
+			}
+		}
+	}
+	
+	view CreateOrUpdateOnsitePositionView for CreateOrUpdateOnsitePositionPresenter implements IHasSize, IHasTitle{
+		@Inject form : OnsitePositionForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIOnsitePosition{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIOnsitePosition value) : void{
+			form.value = value
+			form.inputNext.asWidget.hide
+		}
+		op getSize():Size{
+			new Size(300,220)
+		}
+		op getTitle():String{
+			'区域位置维护'
+		}
+		
+		op setParent(parent : proxy of RCOnsitePosition):void{
+			form.parent.value = parent
+		}
+	}
+			
+	presenter OnsitePositionManagementPresenter{
+		view interface{
+
+			signal in setOnsiteLocationOutlinePresenter(onsiteLocationOutlinePresenter : OnsiteLocationOutlinePresenter)
+			signal out createRequest(parent : proxy of RCOnsitePosition) @onsitePositionManagementPresenter "新建"
+			signal out importRequest() @onsitePositionManagementPresenter "导入"
+			signal out deleteRequest(value : proxy of RCOnsitePosition) @onsitePositionManagementPresenter "删除"
+			signal out modifyRequest(value : proxy of RCOnsitePosition) @onsitePositionManagementPresenter "修改"
+		}
+
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateOnsitePositionPresenter
+			factory onsitePositionUploaderPresenter : OnsitePositionUploaderPresenter
+			required onsiteLocationOutlinePresenter : OnsiteLocationOutlinePresenter
+
+			input call.setup(postInit : (OnsitePositionManagementPresenter)=>void){
+				onsiteLocationOutlinePresenter.setup[
+					fire view.setOnsiteLocationOutlinePresenter(it)
+					this.registerPart(it)
+					this.activate[
+						postInit.apply(this)
+					]
+				]
+			}
+			input view.createRequest(parent : proxy of RCOnsitePosition){
+				createOrUpdatePresenter.get=>[
+					setup4Create(parent)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input eventbus.InputNextOnsitePosition(parent : proxy of RCOnsitePosition){
+				createOrUpdatePresenter.get=>[
+					setup4Create(parent)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.modifyRequest(value : proxy of RCOnsitePosition){
+					createOrUpdatePresenter.get=>[
+						setup4Update(value)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]				
+			}
+			input view.deleteRequest(value : proxy of RCOnsitePosition){
+				service.delete(value,onSuccess[
+					fire eventbus.OnsitePositionDeleted(value)
+				])
+			}
+			input view.importRequest(){
+				onsitePositionUploaderPresenter.get.asDialog("导入位置信息")
+			}
+		}
+		service{
+			@Inject mapper : OnsitePositionMapper
+			@Inject OnsitePositionService : RCOrganizationService
+			op delete(value : proxy of RCOnsitePosition) : void {
+				entities.delete(resolve value)
+			}
+		}
+	}
+	
+	view OnsitePositionManagementView for OnsitePositionManagementPresenter{
+		onsiteLocationOutlinePresenter : OnsiteLocationOutlinePresenter
+		con: Widget
+		asWidget() : Widget{
+			con
+		}
+		layout{
+			con = widgets.FramedPanel("区域位置维护")=>[
+				setWidget(onsiteLocationOutlinePresenter.getView().asWidget)
+				
+				val ac = onsiteLocationOutlinePresenter.getView().actionContext
+				
+				securities.check(ui-requester.createRequest)[v|
+					addButton(widgets.TextButton("新建")=>[
+						addSelectHandler[
+							val possibleParent = ac.onlySelected
+							fire view.createRequest(possibleParent?.toProxy)
+						]
+					])
+				]
+				securities.check(ui-requester.importRequest)[v|
+					addButton(widgets.TextButton("导入")=>[
+						addSelectHandler[
+							fire view.importRequest()
+						]
+					])
+				]
+				securities.check(ui-requester.modifyRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIOnsitePosition selectedValue |
+							fire view.modifyRequest(selectedValue.toProxy)
+						]
+					].asButtonRequester("修改"))					
+				]					
+				securities.check(ui-requester.deleteRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIOnsitePosition selectedValue |
+							widgets.ConfirmMessageBox("确认","确认删除")[
+								fire view.deleteRequest(selectedValue.toProxy)
+							].show
+						]
+					].asButtonRequester("删除"))					
+				]
+			]					
+		}
+		op setOnsiteLocationOutlinePresenter(onsiteLocationOutlinePresenter : OnsiteLocationOutlinePresenter):void{
+			this.onsiteLocationOutlinePresenter = onsiteLocationOutlinePresenter
+		}		
+	}	
+	
+	
+	presenter OnsiteLocationOutlinePresenter  implements IHasObjectSelectionProvider<UIOnsitePosition>{
+		view interface{
+			signal in showResults(results : UIOnsitePosition[*])
+			signal in updateOnsitePosition(org : UIOnsitePosition)
+			signal in deleteOnsitePosition(org : proxy of RCOnsitePosition)
+			signal in addOnsitePosition(org : UIOnsitePosition)
+			
+			op getActionContext() : ActionContext<UIOnsitePosition>
+			signal in setAsSimpleTree(isSimple : Boolean)
+		}
+		
+		interaction{
+			input call.setup(postInit : (OnsiteLocationOutlinePresenter)=>void){
+				fire view.setAsSimpleTree(false)
+				this.activate[
+					service.loadAllOnsitePosition(onSuccess[
+						fire view.showResults(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			input call.setupAsSimpleTree(postInit : (OnsiteLocationOutlinePresenter)=>void){
+				fire view.setAsSimpleTree(true)
+				this.activate[
+					service.loadAllOnsitePosition(onSuccess[
+						fire view.showResults(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			input call.getSelectionProvider():ObjectSelectionProvider<UIOnsitePosition>{
+				getView().getActionContext
+			}
+			
+			input eventbus.OnsitePositionsChanged(){
+				service.loadAllOnsitePosition(onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.OnsitePositionChanged(org : proxy of RCOnsitePosition){
+				service.getValue(org,onSuccess[
+					fire view.updateOnsitePosition(it)
+				])
+			}
+			input eventbus.OnsitePositionDeleted(org : proxy of RCOnsitePosition){
+				fire view.deleteOnsitePosition(org)
+			}
+			input eventbus.OnsitePositionAdded(org : proxy of RCOnsitePosition){
+				service.getValue(org,onSuccess[
+					fire view.addOnsitePosition(it)
+				])
+			}
+			
+		}
+		
+		service{
+			@Inject mapper : OnsitePositionMapper
+			@Inject OnsitePositionService : RCOrganizationService
+			op loadAllOnsitePosition() : UIOnsitePosition[*]{
+				OnsitePositionService.getAllOnsitePositions.^map[mapper.transform(it)].unlazy
+			}
+			op getValue(org : proxy of RCOnsitePosition) : UIOnsitePosition{
+				mapper.transform(resolve org)
+			}
+		}
+	}
+	
+	view OnsiteLocationOutlineView for OnsiteLocationOutlinePresenter{
+		con : Widget
+		@Inject fullListGrid : OnsitePositionListGrid
+		@Inject simpleGrid : OnsitePositionSimpleTreeGrid
+		listGrid : edu.fudan.langlab.gxt.client.component.treegrid.GXTTreeGridComponent<UIOnsitePosition>
+		asWidget():Widget{
+			con
+		}
+		
+		layout{
+			listGrid.asWidget
+			con = widgets.VLayout=>[
+				add(listGrid.createFilter[item,filter|
+					item.name.contains(filter) || (item.simplePy!=null && item.simplePy.contains(filter))
+				],widgets.VLayoutData(1,-1))
+				add(widgets.ContentPanel()=>[
+					widget = listGrid.asWidget
+				],widgets.VLayoutData(1,1))
+			]
+		}	
+		op showResults(results : UIOnsitePosition[*]) : void{
+			listGrid.setContentProvider(new OnsitePositionTreeContentProvider(results))
+		}
+		
+		op updateOnsitePosition(org : UIOnsitePosition) : void{
+			listGrid.store.update(org)
+		}
+		
+		op deleteOnsitePosition(org : proxy of RCOnsitePosition) : void{
+			var store = listGrid.store
+			store.remove(store.findModelWithKey(org.hashCode.toString))
+		}
+		
+		op addOnsitePosition(org : UIOnsitePosition) : void{
+			var TreeStore store = listGrid.store
+			if(org.parent==null){
+				store.add(org);
+			}else{
+				var parentInStore = store.findModelWithKey(org.parent.hashCode.toString)				
+				store.add(parentInStore,org);
+			}
+		}
+		
+		op getActionContext() : ActionContext<UIOnsitePosition>{
+			listGrid.createActionContext
+		}
+		
+		op setAsSimpleTree(isSimple : Boolean):void{
+			if(isSimple)
+				listGrid = simpleGrid
+			else
+				listGrid = fullListGrid
+		}
+	}
+	
+	presenter OnsitePositionUploaderPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getFile() : File
+		}
+		
+		interaction{
+			input call.performCommit(CommitResultNotifier notifier){
+				service.doUpload(getView().getFile,callback[
+					onSuccessDo[
+						notifier.success
+						fire eventbus.OnsitePositionsChanged()
+					]
+					onFailureDo[caught|
+						caught.showErrors
+					]					
+				])
+			}
+		}
+
+		service{
+			@Inject onsitePositionCSVMapper : OnsitePositionCSVMapper
+			@Inject onsitePositionMapper : OnsitePositionMapper
+			@Inject onsitePositionDAO : RCOnsitePositionDAO
+			op doUpload(file : File) throws CSVValidationException : void{
+				file.importWith(onsitePositionCSVMapper)[
+					onCommitEach[uivalue|
+						var value = entities.create(typeof(RCOnsitePosition))
+						onsitePositionMapper.transform(uivalue,value)
+						if(!uivalue.parentCode.nullOrEmpty)
+							value.parent = onsitePositionDAO.findByCode(uivalue.parentCode)=>[
+								if(it==null) Validates::reportSingleError("parentCode","所属位置不存在")
+							]
+					]
+				]
+			}
+		}
+	}
+	
+	view OnsitePositionUploaderView for OnsitePositionUploaderPresenter implements IHasSize, IHasTitle{
+		@Inject uploadForm : CommonUploadForm
+		initializer{
+			this += uploadForm.asWidget
+		}
+		
+		op getFile() : File{
+			uploadForm.file.value
+		}
+		
+		op mapField( errorKey:String ): HasEditorErrors {
+			uploadForm.mapToErrorEditor(errorKey)
+		}
+		
+		op getSize():Size{
+			new Size(400,150)
+		}
+		
+		op getTitle():String{
+			"位置信息导入"
+		}
+	}
+		
+}

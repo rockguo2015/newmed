@@ -1,0 +1,262 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.uniquesoft.gwt.client.common.selector.IHasObjectSelectionProvider	
+	ui-datatype UIPlanDateTime for DLPlanDateTime{
+		planDate : Date "计划日期"
+		planTime : Date "计划时间"
+		
+	}
+	
+	ui-enum UICenterlizedDeliverTaskStatus for DLCenterlizedDeliverTaskStatus{
+		title{
+			canceled = "已取消"
+			dispatched = "已派发"
+			finished = "已完成"
+			scheduled = "新建"
+		}
+	}
+	
+	ui-entity UICenterlizedDeliverTask for DLCenterlizedDeliverTask{
+		sid : String "任务编号"
+		createTime : Date "生成时间"
+		subject : proxy of DLDeliverSubject "运送项目"
+		performers : proxy of RCEmployee[*] "运送人"
+		resources : proxy of DLResource[*] "资源"
+		taskSourceType : UITaskSourceType "任务来源"
+		operator : proxy of RCEmployee "操作员"
+		planDate : Date "计划日期"
+		planTime : Date "计划时间"
+		status : UICenterlizedDeliverTaskStatus "状态"
+
+		map CenterlizedDeliverTaskMapper validate by CenterlizedDeliverTaskValidator{
+			direct{sid,createTime,{planDate,entity.planDateTime.planDate}readonly,{planTime,entity.planDateTime.planTime}readonly,subject,performers,resources,{taskSourceType,entity.taskSource.type},operator,status readonly}
+		}
+	
+		constraints CenterlizedDeliverTaskValidator{
+		}
+	
+		ui-component CenterlizedDeliverTaskListGrid as GXTGrid{
+			binding{sid,createTime,planDate,planTime as TimeColumn,subject,performers,resources,taskSourceType,operator,status}
+		}
+		ui-component CenterlizedDeliverTaskSimpleListGrid as GXTGrid{
+			binding{createTime,planDate,planTime as TimeColumn,subject,resources}
+		}
+	}
+	
+	signal CenterlizedDeliverTasksChanged
+
+	ui-criteria UICenterlizedDeliverTaskCriteria for DLCenterlizedDeliverTaskCriteria{
+		
+		sid : String "任务编号"
+		createTimeFrom : Date "开始时间"
+		createTimeTo : Date "结束时间"
+		performer : proxy of RCEmployee "运送人"
+		taskSourceType : UITaskSourceType "任务来源"
+		
+		map CenterlizedDeliverTaskCriteriaMapper{
+			direct{sid,createTimeFrom,createTimeTo,performer,taskSourceType}
+		}
+		ui-component CenterlizedDeliverTaskCriteriaForm as GXTForm{
+			binding{sid,createTimeFrom,createTimeTo,performer as SuggestionItem content from client.organization.AllEmployeesAsyncContentProvider,taskSourceType}
+		}		
+	}
+	
+	presenter CenterlizedDeliverTaskQueryListPresenter implements IHasObjectSelectionProvider<UICenterlizedDeliverTask> provide UICenterlizedDeliverTask {
+		view interface{
+			signal in showResults(results : IPagedResult<UICenterlizedDeliverTask>)
+			signal in refresh()
+
+			signal out filterRequest(c : UICenterlizedDeliverTaskCriteria)
+			op getActionContext():ActionContext<UICenterlizedDeliverTask>
+			
+		}
+
+		interaction{
+			
+			input prepare.setup(){
+				this.activate[
+					fire view.refresh
+					done
+				]
+			}
+			input view.filterRequest(c : UICenterlizedDeliverTaskCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.CenterlizedDeliverTasksChanged(){
+				fire view.refresh
+			}
+			
+			input call.getSelectionProvider():ObjectSelectionProvider<UICenterlizedDeliverTask>{
+				getView().getActionContext
+			}
+		}
+		service{
+			@Inject criteriaMapper : CenterlizedDeliverTaskCriteriaMapper
+			@Inject mapper : CenterlizedDeliverTaskMapper
+			op filter(uicriteria : UICenterlizedDeliverTaskCriteria) : IPagedResult<UICenterlizedDeliverTask>{
+				var c = uicriteria.createPagedCriteria(typeof(DLCenterlizedDeliverTaskCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+		}
+	}
+	
+	view CenterlizedDeliverTaskQueryListView for CenterlizedDeliverTaskQueryListPresenter{
+		@Inject listGrid : CenterlizedDeliverTaskListGrid
+		@Inject criteriaForm : CenterlizedDeliverTaskCriteriaForm
+		
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asMultiSelectGrid
+			con = widgets.VLayout=>[
+				add(
+					TABLE=>[
+						tr=>[
+							td=>[it += criteriaForm.sid.asWidget]
+							td=>[it += criteriaForm.createTimeFrom.asWidget]
+							td=>[it += criteriaForm.createTimeTo.asWidget]
+						]
+						tr=>[
+							td=>[it += criteriaForm.performer.asWidget]
+							td=>[it += criteriaForm.taskSourceType.asWidget]
+							td=>[it += widgets.TextButton("查找")=>[
+								setWidth("80px")
+								addSelectHandler[
+									fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+										page = 1
+									])
+								]
+							]]
+						]
+					]
+				)
+
+				pager = listGrid.createPager=>[
+					pagerHandler = [int pageNum, int recordsPerPage|
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = pageNum
+							pageSize = recordsPerPage
+						])							
+					]
+				]
+				
+				add(listGrid.asWidget,widgets.VLayoutData(1,1))
+				add(pager.asWidget)
+			]
+		}
+		
+		op showResults(results : IPagedResult<UICenterlizedDeliverTask>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		
+		op getActionContext():ActionContext<UICenterlizedDeliverTask>{
+			listGrid.createActionContext
+		}
+	}	
+
+	
+	ui-command ShowCenterlizedDeliverTaskManagementCommand "中央运送管理" @dlCenterlizedDeliverTaskManagementPresenter{
+		factory managementPresenter : CenterlizedDeliverTaskManagementPresenter
+		execute{
+			managementPresenter.get.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}	
+	presenter CenterlizedDeliverTaskManagementPresenter{
+		view interface{
+		}
+		interaction{
+			part queryListPresenter : CenterlizedDeliverTaskQueryListPresenter
+			part patientCheckDeliverTaskEventListPresenter : PatientCheckDeliverTaskEventListPresenter
+			input prepare.setup(){
+				initPart(queryListPresenter).setup[
+				initPart(patientCheckDeliverTaskEventListPresenter).setup[
+					this.activate[
+						done
+					]
+				]]
+			}
+		}
+	}
+	
+	view CenterlizedDeliverTaskManagementView for CenterlizedDeliverTaskManagementPresenter{
+		con: Widget
+		@Inject centerlizedDeliverTaskDispatchCommand : CenterlizedDeliverTaskDispatchCommand
+		@Inject createCenterlizedDeliverTaskCommand : CreateCenterlizedDeliverTaskCommand
+		@Inject deliverTaskDispatchCommand : DeliverTaskDispatchCommand
+		@Inject deliverTaskDeleteCommand : DeliverTaskDeleteCommand
+		@Inject deliverTaskCancelDispatchCommand : DeliverTaskCancelDispatchCommand
+		@Inject deliverTaskFinishCommand : DeliverTaskFinishCommand
+		asWidget() : Widget{
+			con
+		}	
+		layout{
+			
+			val ac = queryListPresenter.getView().actionContext
+			val acProxy =  ac.adapt[toProxy]
+			con = widgets.FramedPanel("中央运送管理")=>[
+				widget=widgets.VLayout=>[
+				 	add(widgets.ContentPanel=>[
+						widget = queryListPresenter.getView().asWidget
+						addSimpleCommand(createCenterlizedDeliverTaskCommand)
+						addCommand(ac,deliverTaskDeleteCommand)
+						addCommand(ac,deliverTaskCancelDispatchCommand)
+						addCommand(ac,deliverTaskDispatchCommand)
+						addCommand(ac,deliverTaskFinishCommand)
+					],widgets.VLayoutData(1,0.7))
+					add(widgets.TabPanel=>[
+						add(patientCheckDeliverTaskEventListPresenter.getView().asWidget,"处理记录")
+						patientCheckDeliverTaskEventListPresenter.setContext(acProxy)
+					],widgets.VLayoutData(1,0.3))
+				]
+			]
+		}
+		
+	} 
+	ui-command CenterlizedDeliverTaskDispatchCommand for UICenterlizedDeliverTask "派发" @dlCenterlizedDeliverTaskManagementPresenter{
+		execute{
+			widgets.ConfirmMessageBox("确认","确认派发")[
+				service.accept(value.toProxy,onSuccess[
+					fire eventbus.CenterlizedDeliverTasksChanged
+				])
+			].show
+		}
+		check-enable{
+			DLCenterlizedDeliverTaskManager::isActionValid(DLCenterlizedDeliverTaskAction::dispatch,value.status)
+		}
+		service{
+			op accept(value : proxy of DLCenterlizedDeliverTask):void{
+				(resolve value).dispatch(null)
+			}
+		}
+	}
+	
+}

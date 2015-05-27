@@ -1,0 +1,32 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.fudanmed.platform.core.device.*
+
+	content-provider AllDeviceTypeContentProvider for proxy of RCDeviceType{
+		contents{
+			entities.all(typeof(RCDeviceType))
+		}
+	}
+	
+	content-provider AllDeviceIndicatorContentProvider for proxy of RCDeviceIndicator{
+		contents{
+			entities.all(typeof(RCDeviceIndicator)).sortBy[codeid]
+		}
+	}	
+
+	content-provider AllDeviceUsageTypeContentProvider for proxy of RCDeviceUsageType{
+		contents{
+			entities.all(typeof(RCDeviceUsageType)).sortBy[codeid]
+		}
+	}
+	
+
+	content-provider AllAquireTypeContentProvider for proxy of RCAcquireType{
+		contents{
+			entities.all(typeof(RCAcquireType)).sortBy[codeid]
+		}
+		
+	}
+		
+}

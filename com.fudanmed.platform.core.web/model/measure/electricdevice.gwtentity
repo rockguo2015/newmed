@@ -1,0 +1,253 @@
+package com.fudanmed.platform.core.web feature measure{
+	
+	import java.util.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.measure.*
+	import com.fudanmed.platform.core.measure.^proxy.*
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import  com.fudanmed.platform.core.web.shared.measure.*
+	
+	ui-entity UIElectricMeasureDevice for RCElectricMeasureDevice{
+		sid : String "编号"
+		name:String "名称"
+		location : String "安装位置"
+		map ElectricMeasureDeviceMapper validate by ElectricMeasureDeviceValidator{
+			direct{sid,name,location}
+		}
+	
+		constraints ElectricMeasureDeviceValidator{
+		}
+	
+		ui-component ElectricMeasureDeviceForm as GXTForm{
+			binding{sid,name,location}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(sid.asWidget)
+						addFill(name.asWidget)
+						addFill(location.asWidget)
+					]
+				]
+			}			
+		}
+	
+		ui-component ElectricMeasureDeviceListGrid as GXTGrid{
+			binding{sid,name,location}
+		}
+		
+	}
+	
+	signal ElectricMeasureDevicesChanged
+	
+	ui-command CreateElectricMeasureDeviceCommand require proxy of RCElectricMeasureDeviceType "新建"{
+		factory createOrUpdateElectricMeasureDevicePresenter : CreateOrUpdateElectricMeasureDevicePresenter
+		execute{
+			createOrUpdateElectricMeasureDevicePresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command UpdateElectricMeasureDeviceCommand require proxy of RCElectricMeasureDevice "修改"{
+		factory createOrUpdateElectricMeasureDevicePresenter : CreateOrUpdateElectricMeasureDevicePresenter
+		execute{
+			createOrUpdateElectricMeasureDevicePresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeleteElectricMeasureDeviceCommand require proxy of RCElectricMeasureDevice "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.ElectricMeasureDevicesChanged
+				])
+			].show
+		}
+		service{
+			op delete(value : proxy of RCElectricMeasureDevice):void{
+				//TODO Delete
+			}
+		}
+	}
+
+	presenter CreateOrUpdateElectricMeasureDevicePresenter for UIElectricMeasureDevice{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : proxy of RCElectricMeasureDeviceType){
+				commiter=[notifier|
+					service.createValue(getView().value,parent,onSuccess[
+						fire eventbus.ElectricMeasureDevicesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of RCElectricMeasureDevice){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.ElectricMeasureDevicesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+	
+		service{
+			@Inject mapper : ElectricMeasureDeviceMapper
+			op loadValue(pvalue : proxy of RCElectricMeasureDevice) : UIElectricMeasureDevice{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIElectricMeasureDevice) : void{
+				(resolve uivalue).update[
+					mapper.transform(uivalue,it)
+				]
+			}
+			op createValue(uivalue : UIElectricMeasureDevice,parent : proxy of RCElectricMeasureDeviceType) : void{
+				(resolve parent).createDevice[
+					mapper.transform(uivalue,it)	
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateElectricMeasureDeviceView<ElectricMeasureDeviceForm> for CreateOrUpdateElectricMeasureDevicePresenter ui-size:(300,200) ui-title:"电表信息维护"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}
+	
+	presenter ElectricMeasureDeviceListPresenter {
+		view interface{
+			signal in setResults(results : UIElectricMeasureDevice[*])
+			op getActionContext() : ActionContext< UIElectricMeasureDevice>	
+		}
+		
+		interaction{
+			context : proxy of RCElectricMeasureDeviceType
+			
+			input prepare.setup(context : proxy of RCElectricMeasureDeviceType){
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadElectricMeasureDeviceList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input eventbus.ElectricMeasureDevicesChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : ElectricMeasureDeviceMapper
+			
+			op loadElectricMeasureDeviceList(context : proxy of RCElectricMeasureDeviceType) : UIElectricMeasureDevice[*]{
+				(resolve context).measureDevices.filter(typeof(RCElectricMeasureDevice)).^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view ElectricMeasureDeviceListView for ElectricMeasureDeviceListPresenter{
+		con : Widget
+		@Inject listGrid : ElectricMeasureDeviceListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		
+		interaction{
+			input view.setResults(results : UIElectricMeasureDevice[*]){
+				listGrid.objects = results
+			}
+		}
+		op getActionContext() : ActionContext< UIElectricMeasureDevice>{
+				listGrid.createActionContext
+		}
+	}
+	
+	
+	ui-command ShowElectricMeasureDeviceManagementCommand require  proxy of RCElectricMeasureDeviceType ""{
+		factory managementPresenter : ElectricMeasureDeviceManagementPresenter
+		execute{
+			managementPresenter.get.setup(value)[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}	
+	presenter ElectricMeasureDeviceManagementPresenter{
+		view interface{
+			op setContext(context : proxy of RCElectricMeasureDeviceType):void			
+		}
+		interaction{
+			part queryListPresenter : ElectricMeasureDeviceListPresenter
+			input prepare.setup(context : proxy of RCElectricMeasureDeviceType){
+				initPart(queryListPresenter).setup(context)[
+					this.activate[
+						getView().setContext(context)
+						done
+					]
+				]
+			}
+		}
+	}
+	
+	view ElectricMeasureDeviceManagementView for ElectricMeasureDeviceManagementPresenter{
+		con: Widget
+		asWidget() : Widget{
+			con
+		}	
+		context : proxy of RCElectricMeasureDeviceType
+		@Inject createElectricMeasureDeviceCommand : CreateElectricMeasureDeviceCommand
+		@Inject updateElectricMeasureDeviceCommand : UpdateElectricMeasureDeviceCommand
+		@Inject deleteElectricMeasureDeviceCommand : DeleteElectricMeasureDeviceCommand
+		
+		layout{
+			val ac = queryListPresenter.getView().actionContext.adapt[toProxy]
+			con = widgets.ContentPanel=>[
+				widget = queryListPresenter.getView().asWidget
+				addCommand([|context],createElectricMeasureDeviceCommand)
+				addCommand(ac,updateElectricMeasureDeviceCommand)
+				addCommand(ac,deleteElectricMeasureDeviceCommand)
+			]
+		}
+		op setContext(context : proxy of RCElectricMeasureDeviceType):void{
+			this.context = context
+		}
+	}	
+}
+		

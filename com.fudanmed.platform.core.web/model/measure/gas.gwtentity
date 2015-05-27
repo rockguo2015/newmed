@@ -1,0 +1,245 @@
+package com.fudanmed.platform.core.web feature measure{
+	
+	import java.util.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.measure.*
+	import com.fudanmed.platform.core.measure.^proxy.*
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import  com.fudanmed.platform.core.web.shared.measure.*
+	
+	
+	ui-entity UIGasMeasureValue for RCGasMeasureValue{
+		theValue : Double "读数"
+		incrementalValue : Double "用量"
+		measureDate : Date "抄表日期"
+		measurePerson : String "抄表人"
+		map GasMeasureValueMapper validate by GasMeasureValueValidator{
+			direct{{theValue,entity.value},measureDate,measurePerson,incrementalValue readonly}
+		}
+	
+		constraints GasMeasureValueValidator{
+			rule Required on theValue
+		}
+	
+		ui-component GasMeasureValueForm as GXTForm{
+			binding{theValue,measureDate,measurePerson}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(theValue.asWidget)
+						addFill(measureDate.asWidget)
+						addFill(measurePerson.asWidget)
+					]
+				]
+			}			
+		}
+		
+		ui-component GasMeasureValueListGrid as GXTGrid{
+			binding{theValue,incrementalValue,measureDate as DateTimeColumn,measurePerson}
+		}
+	}
+	
+	signal MeasureValuesChanged
+	
+	ui-command CreateGasMeasureValueCommand require proxy of RCMeasureDevice "新建"{
+		factory createOrUpdateGasMeasureValuePresenter : CreateOrUpdateGasMeasureValuePresenter
+		execute{
+			createOrUpdateGasMeasureValuePresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command UpdateGasMeasureValueCommand require proxy of RCGasMeasureValue "修改"{
+		factory createOrUpdateGasMeasureValuePresenter : CreateOrUpdateGasMeasureValuePresenter
+		execute{
+			createOrUpdateGasMeasureValuePresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeleteGasMeasureValueCommand require proxy of RCGasMeasureValue "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.MeasureValuesChanged
+				])
+			].show
+		}
+		service{
+			@Inject valueDAO : RCMeasureValueDAO
+			op delete(value : proxy of RCGasMeasureValue):void{
+				valueDAO.^delete(resolve value)
+			}
+		}
+	}
+
+	presenter CreateOrUpdateGasMeasureValuePresenter for UIGasMeasureValue{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : proxy of RCMeasureDevice){
+				commiter=[notifier|
+					service.createValue(getView().value,parent,onSuccess[
+						fire eventbus.MeasureValuesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of RCGasMeasureValue){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.MeasureValuesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : GasMeasureValueMapper
+			op loadValue(pvalue : proxy of RCGasMeasureValue) : UIGasMeasureValue{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIGasMeasureValue) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIGasMeasureValue,parent : proxy of RCMeasureDevice) : void{
+				((resolve parent).createValue(uivalue.measureDate,uivalue.measurePerson) as RCGasMeasureValue)=>[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateGasMeasureValueView<GasMeasureValueForm> for CreateOrUpdateGasMeasureValuePresenter ui-size:(300,200) ui-title:"读数"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}	
+	
+	presenter GasMeasureValueQueryListPresenter provide UIGasMeasureValue{
+		view interface{
+			signal in showResults(results : IPagedResult<UIGasMeasureValue>)
+			signal in refresh()
+			op setMeasureDevice(device : proxy of RCMeasureDevice):void
+
+			signal out filterRequest(c : UIMeasureValueCriteria)
+			op getActionContext():ActionContext<UIGasMeasureValue>
+		}
+
+		interaction{
+			
+			input prepare.setup(device : proxy of RCMeasureDevice){
+				this.activate[
+					getView().setMeasureDevice(device)
+					done
+				]
+			}
+			input view.filterRequest(c : UIMeasureValueCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.MeasureValuesChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : MeasureValueCriteriaMapper
+			@Inject mapper : GasMeasureValueMapper
+			op filter(uicriteria : UIMeasureValueCriteria) : IPagedResult<UIGasMeasureValue>{
+				var c = uicriteria.createPagedCriteria(typeof(RCMeasureValueCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it as RCGasMeasureValue)]
+			}
+		}
+	}
+	
+	view GasMeasureValueQueryListView for GasMeasureValueQueryListPresenter{
+		@Inject listGrid : GasMeasureValueListGrid
+		@Inject criteriaForm : MeasureValueCriteriaForm
+		
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.VLayout=>[
+				add(
+					TABLE=>[
+						tr=>[
+							td=>[it += criteriaForm.measureDateFrom.asWidget]
+							td=>[it += criteriaForm.measureDateTo.asWidget]
+							td=>[it += widgets.TextButton("查找")=>[
+								setWidth("80px")
+								addSelectHandler[
+									fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+										page = 1
+									])
+								]
+							]]
+						]
+					]
+				)
+
+				pager = listGrid.createPager=>[
+					pagerHandler = [int pageNum, int recordsPerPage|
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = pageNum
+							pageSize = recordsPerPage
+						])							
+					]
+				]
+				
+				add(listGrid.asWidget,widgets.VLayoutData(1,1))
+				add(pager.asWidget)
+			]
+		}
+		
+		op showResults(results : IPagedResult<UIGasMeasureValue>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		
+		op getActionContext():ActionContext<UIGasMeasureValue>{
+			listGrid.createActionContext
+		}
+		op setMeasureDevice(device : proxy of RCMeasureDevice):void{
+			criteriaForm.device.value = device
+			fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+				page = 1
+			])			
+		}
+		
+	}		
+	
+}

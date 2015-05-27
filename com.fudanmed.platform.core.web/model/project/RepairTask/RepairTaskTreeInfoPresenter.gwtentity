@@ -1,0 +1,159 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.sencha.gxt.data.shared.TreeStore
+	import com.sencha.gxt.widget.core.client.treegrid.TreeGrid
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.uniquesoft.uidl.transform.IConvertService
+	import com.sencha.gxt.widget.core.client.form.TextArea
+	import com.fudanmed.platform.core.web.client.warehouse.*
+	import com.fudanmed.platform.core.web.client.device.*
+	presenter RepairTaskTreeInfoPresenter{
+		view interface{
+			signal in setResults(results : UIGeneralTask[*])
+			signal in showComment(comment : String)
+			signal out showCommentRequest(generalTask : UIGeneralTask)
+		}
+		
+		interaction{
+			part repairTaskDetailInfoPresenter : RepairTaskDetailInfoPresenter
+			part workItemStorageListPresenter : WorkItemStorageListPresenter
+			part showRepairEvaluatePresenter : ShowRepairEvaluatePresenter
+			part complaintListPresenter : ComplaintListPresenter
+			part workitemPictureListPresenter : PictureListPresenter
+			input call.setup(postInit : (RepairTaskTreeInfoPresenter)=>void){
+				initPart(workItemStorageListPresenter).setup[
+				initPart(repairTaskDetailInfoPresenter).setup[
+				initPart(complaintListPresenter).setup[
+				initPart(showRepairEvaluatePresenter).setup[
+				initPart(workitemPictureListPresenter).setup[
+					this.activate[
+						postInit.apply(this)
+					]]]]]
+				]
+			}
+			
+			input call.setRepairTask(value : proxy of RCRepairTask){
+				service.loadTree(value,onSuccess[
+					fire view.setResults(it)
+				])
+				repairTaskDetailInfoPresenter.setRepairTask(value)
+				workItemStorageListPresenter.setRepairTask(value)
+				complaintListPresenter.setRepairTask(value)
+				showRepairEvaluatePresenter.setRepairTask(value)
+				workitemPictureListPresenter.setDevice(value)
+			}
+			
+			input view.showCommentRequest(generalTask:UIGeneralTask){
+				service.loadComment(generalTask,onSuccess[
+					fire view.showComment(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject convertService : IConvertService
+			@Inject mapper : RepairTaskMapper
+			op loadTree(value : proxy of RCRepairTask) : UIGeneralTask[*]{
+				val result = <UIGeneralTask>newArrayList;
+				(resolve value).groupTasks.forEach[groupTask|
+					result.add(new UIGeneralTask=>[generalGroupTask|
+						generalGroupTask.taskType = UIGeneralTaskType::groupTask
+						generalGroupTask.objectId = groupTask.id
+						generalGroupTask.dateTime = groupTask.date.appendTime(groupTask.time)
+						generalGroupTask.finishDateTime = groupTask.finishDate.appendTime(groupTask.finishTime)
+						generalGroupTask.taskOwner = groupTask.team.toProxy.name
+						generalGroupTask.status = convertService.toValue(typeof(UIGroupTaskStatus),groupTask.status).toString
+						generalGroupTask.operator = groupTask.operator?.toProxy
+						groupTask.tasks.forEach[workItemTask|
+							result.add(new UIGeneralTask=>[generalWorkItemTask|
+								generalWorkItemTask.taskType = UIGeneralTaskType::workitemTask
+								generalWorkItemTask.objectId = workItemTask.id
+								generalWorkItemTask.dateTime = workItemTask.date.appendTime(workItemTask.time)
+								generalWorkItemTask.finishDateTime = workItemTask.finishDate.appendTime(workItemTask.finishTime)
+								generalWorkItemTask.taskOwner = workItemTask.workers.^map[entityName].join(',')
+								generalWorkItemTask.parent = generalGroupTask.hashCode
+								generalWorkItemTask.status = convertService.toValue(typeof(UIWorkItemTaskStatus),workItemTask.status).toString
+								generalWorkItemTask.operator = workItemTask.operator?.toProxy
+							])
+						]
+					])
+				]
+				result
+			}
+			op loadComment(generalTask : UIGeneralTask) : String{
+				switch(generalTask.taskType){
+					case UIGeneralTaskType::groupTask:{
+						entities.get(typeof(RCGroupTask),generalTask.objectId).comment
+					}
+					case UIGeneralTaskType::workitemTask:{
+						entities.get(typeof(RCWorkItemTask),generalTask.objectId).comment
+					}
+				}
+			}
+		}
+	}
+	
+	view RepairTaskTreeInfoView for RepairTaskTreeInfoPresenter implements IHasSize, IHasTitle{
+		con : Widget
+		required treeList : GeneralTaskTreeList
+		comment : com.sencha.gxt.widget.core.client.form.TextArea
+		asWidget():Widget{
+			con
+		}
+		
+		layout{
+			con =  widgets.TabPanel=>[
+				add(repairTaskDetailInfoPresenter.getView().asWidget,"报修信息")
+				add(workItemStorageListPresenter.getView().asWidget,"用料信息")
+				add(widgets.HLayout=>[
+					add(treeList.asWidget,widgets.HLayoutData(0.7,1))
+					add(widgets.FieldSet("维修说明")=>[
+						widget = widgets.VLayout=>[
+							add(comment= new com.sencha.gxt.widget.core.client.form.TextArea(),widgets.VLayoutData(1,1))
+						]
+					],widgets.HLayoutData(0.3,1))
+				],"维修信息")
+				add(complaintListPresenter.getView().asWidget(),"投诉信息")
+				add(showRepairEvaluatePresenter.getView().asWidget,"评价信息")
+				add(workitemPictureListPresenter.getView().asWidget,"工单图片")
+
+				treeList.addSelectEntityListener[
+					fire view.showCommentRequest(it)
+				]
+			]
+		}
+		
+		op getSize():Size{
+			new Size(800,400)
+		}
+		
+		op getTitle():String{
+			"报修单详情"
+		}
+		interaction{
+			input view.setResults(results : UIGeneralTask[*]){
+				treeList.setContentProvider(new GeneralTaskTreeContentProvider(results.sortBy[dateTime].reverse))
+			}
+			input view.showComment(comment : String){
+				this.comment.value = comment
+			}
+		}
+	}
+	
+}

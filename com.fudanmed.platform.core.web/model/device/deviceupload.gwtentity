@@ -1,0 +1,138 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.fudanmed.platform.core.web.client.web.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.client.device.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.datatype.File
+	import com.fudanmed.platform.core.web.shared.device.*
+	import edu.fudan.langlab.csv.shared.CSVValidationExtensions
+	
+	ui-datatype DeviceUploadData{
+		file : File "上传文件"
+	
+		ui-component  DeviceUploadForm as GXTForm{
+			binding{file}
+			con : Widget
+			asWidget(): Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						it += file.asWidget
+					]
+				]
+			}
+		}
+	}
+
+	ui-command UploadDeviceCommand "设备导入" @deviceManagementPresenter{
+		factory uploadDevicePresenter : UploadDevicePresenter
+		execute{
+			uploadDevicePresenter.get.setup[
+				popup(it)
+			]
+		}
+	}
+
+	presenter UploadDevicePresenter for DeviceUploadData{
+		view interface{
+			signal out fileUploaded()
+			op setPreviewValues(values:Collection<UIDevice>):void
+			op getPreviewValues():Collection<UIDevice>
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			
+			input view.fileUploaded(){
+				service.doUpload(getView().value.file,callback[
+					onSuccessDo[
+						getView().setPreviewValues(it)
+					]
+					onFailureDo[caught|
+						caught.showErrors
+					]
+				])
+			}
+			input form-commit{
+				service.commit(getView().getPreviewValues,callback[
+					onSuccessDo[
+						notifier.success
+						fire eventbus.DevicesChanged
+					]
+					onFailureDo[caught|
+						caught.showErrors
+					]
+				]
+				)
+			}
+		}
+		
+		service{
+			@Inject csvMapper : DeviceCSVMapper
+			@Inject mapper : DeviceMapper
+			@Inject dao : RCDeviceDAO
+			op doUpload(file : File)  throws CSVValidationException : Collection<UIDevice>{
+				val result = <UIDevice>newArrayList
+				file.importWith(csvMapper)[
+					onCommitAll[
+						it.forEachWithIndex[item,index|
+							result.add(item)
+						]
+					]
+				]
+				result
+			}
+			op commit(results : Collection<UIDevice>) throws CSVValidationException:void{
+				CSVValidationExtensions::forEachWithCVSValidation(results,[data|
+					dao.createDevice(data.sid)[
+						mapper.transform(data,it)
+					]			
+				],[key|csvMapper.getTitle4Key(key)])
+			}
+		}
+	}
+	
+	view UploadDeviceView<DeviceUploadForm> for UploadDevicePresenter ui-title:"设备导入" ui-size:(800,430){
+		@Inject listGrid : DeviceListGrid
+		initializer{
+			this += widgets.VLayout=>[
+				addFill(form.asWidget=>[
+					form.file.addValueChangedListener[
+						fire view.fileUploaded
+					]
+				])
+				add(listGrid.asWidget,widgets.VLayoutData(1,350))
+			]
+		}
+		op setPreviewValues(objects : Collection<UIDevice>) : void{
+			listGrid.objects = objects
+		}
+		op getPreviewValues():Collection<UIDevice>{
+			listGrid.objects.unlazy
+		}
+	}
+	
+	ui-command ExportDeviceCommand for UIDeviceCriteria "设备导出" @deviceManagementPresenter{
+		execute{
+			service.prepareExport(value,onSuccess[
+				doDownload(it)
+			])
+		}
+		service{
+			@Inject mapper : DeviceMapper
+			@Inject criteriaMapper : DeviceCriteriaMapper
+			op prepareExport(pagedCriteria : UIDeviceCriteria):String{
+				var c = pagedCriteria.createCriteria4All(typeof(RCDeviceCriteria),criteriaMapper,entities)
+				csvPrepare("Device",typeof(DeviceCSVMapper),c.listAndTransform[mapper.apply(it)])
+			}
+		}
+	}	
+}

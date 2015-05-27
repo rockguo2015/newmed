@@ -1,0 +1,669 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.sencha.gxt.widget.core.client.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.sencha.gxt.data.shared.TreeStore
+	import com.sencha.gxt.widget.core.client.treegrid.TreeGrid
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.uniquesoft.gwt.client.common.selector.IHasObjectSelectionProvider
+	
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.*
+	
+	ui-entity UIMaintenamceType for RCMaintenamceType{
+		code : String "类别代码"
+		name : String "类别名称"
+		simplePy : String
+		parent : proxy of RCMaintenamceType "父类型"
+		inputNext : Boolean "继续输入"
+		
+		map MaintenamceTypeMapper validate by MaintenamceTypeValidator{
+			direct{name,code,parent,simplePy readonly}
+		}
+	
+		constraints MaintenamceTypeValidator{
+			rule Required on code
+			rule Required on name
+		}
+	
+		ui-component MaintenamceTypeForm as GXTForm{
+			binding{code,name,parent as ReadonlyItem,inputNext}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(parent.asWidget)
+						addFill(code.asWidget)
+						addFill(name.asWidget)
+						add(inputNext.asWidget=>[inputNext.value=true])
+					]
+				]
+			}			
+		}
+	
+		ui-component MaintenamceTypeListGrid as GXTTreeGrid{
+			binding{name,code}
+		}
+	}	
+	
+	ui-enum UIFaultRiskDegree for RCFaultRiskDegree{
+		title{
+			jiaoda = "较大"
+			yanzhong = "严重"
+			yiban = "一般"
+			zhongda = "重大"
+		}
+	}
+	
+	signal InputNextFaultType(parent : proxy of RCMaintenamceType )
+	
+	ui-entity UIFaultType for RCFaultType{
+		name : String "名称"
+		standardCostTime : Double "标准工时(小时)"
+		performanceWeight : Double "绩效系数"
+		faultRiskLevel : proxy of RCFaultLevel "风险等级"
+		team : proxy of RCMaintenanceTeam "维修班组"
+		mtype : proxy of RCMaintenamceType "维修类别"
+		workType : proxy of RCWorkType "工种"
+		needAudit : Boolean "需审批"
+		inputNext : Boolean "继续输入"
+		
+		teamName : String 
+		
+		map FaultTypeMapper validate by FaultTypeValidator{
+			direct{name,standardCostTime,performanceWeight,faultRiskLevel,team,mtype readonly,workType,needAudit}
+			to entity{
+				entity.buildPath
+			}
+			from entity{
+				ui.teamName = entity.team?.entityName.nullsafe
+			}
+		}
+	
+		constraints FaultTypeValidator{
+			rule Required on name
+			rule Required on standardCostTime
+			rule Required on performanceWeight
+			rule Required on faultRiskLevel
+			rule Required on needAudit
+		}
+	
+		ui-component FaultTypeForm as GXTForm{
+			binding{
+				name,standardCostTime,performanceWeight,mtype as ReadonlyItem,workType as ComboBoxItem content from AllWorkTypeContentProvider,
+				faultRiskLevel as ComboBoxItem content from AllFaultLevelContentProvider,team as ComboBoxItem content from AllMaintenanceTeamContentProvider,
+				inputNext,needAudit
+			}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(mtype.asWidget)
+						addFill(name.asWidget)
+						addFill(standardCostTime.asWidget)
+						addFill(performanceWeight.asWidget)
+						addFill(faultRiskLevel.asWidget)
+						addFill(team.asWidget)
+						addFill(workType.asWidget)
+						add(needAudit.asWidget)
+						add(inputNext.asWidget=>[inputNext.value=true])
+					]
+				]
+			}			
+		}
+	
+		ui-component FaultTypeListGrid as GXTGrid{
+			binding{name as StringColumn(150),team  as DefaultColumn(160),workType,standardCostTime,performanceWeight,faultRiskLevel,needAudit}
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+			}
+		}
+		ui-component FaultTypeSimpleListGrid as GXTGrid{
+			binding{name,faultRiskLevel}
+		}
+		
+		ui-component FaultTypeListView as GXTListView{
+			template render(ft:UIFaultType){
+				"<div><div style='float:left'><span style='font-size:120%;font-weight:bold;'>{ft.name}</span><BR>工时:{ft.standardCostTime},绩效:{ft.performanceWeight},风险等级:{ft.faultRiskLevel.name}</div> <div style='width:100px;float:right'>{ft.teamName}</div></div>"
+			}
+		}
+	}
+	
+	signal MaintenamceTypesChanged
+	signal MaintenamceTypeChanged(org : proxy of RCMaintenamceType)
+	signal MaintenamceTypeDeleted(org : proxy of RCMaintenamceType)
+	signal MaintenamceTypeAdded(org : proxy of RCMaintenamceType)
+	signal InputNextMaintenamceType(parent : proxy of RCMaintenamceType)
+	
+	presenter CreateOrUpdateMaintenamceTypePresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIMaintenamceType
+			signal in setParent(parent : proxy of RCMaintenamceType)
+			op setValue(value : UIMaintenamceType) : void
+		}
+		
+		interaction{
+			used4Update : boolean
+			parent : proxy of RCMaintenamceType
+			input call.setup4Create(parent : proxy of RCMaintenamceType,
+				(CreateOrUpdateMaintenamceTypePresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.parent = parent
+				this.activate[
+					fire view.setParent(parent)
+					postInitializer.apply(this)
+				]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCMaintenamceType,
+				(CreateOrUpdateMaintenamceTypePresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						postInitializer.apply(this)
+					])
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.MaintenamceTypeChanged(getView().value.toProxy)
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value=>[it.parent = this.parent],onSuccess[
+						fire eventbus.MaintenamceTypeAdded(it)
+						notifier.success
+						if(getView().value.inputNext.isLogicTrue){
+							fire eventbus.InputNextMaintenamceType(parent)
+						}
+						
+					])
+				}
+			}			
+		}
+		
+		service{
+			
+			@Inject mapper : MaintenamceTypeMapper
+			
+			op loadValue(pvalue : proxy of RCMaintenamceType) : UIMaintenamceType{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIMaintenamceType) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIMaintenamceType) : proxy of RCMaintenamceType{
+				var value = entities.create(typeof(RCMaintenamceType))
+				mapper.transform(uivalue,value)
+				value.toProxy
+			}
+		}
+	}
+	
+	view CreateOrUpdateMaintenamceTypeView for CreateOrUpdateMaintenamceTypePresenter implements IHasSize, IHasTitle{
+		@Inject form : MaintenamceTypeForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIMaintenamceType{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIMaintenamceType value) : void{
+			form.value = value
+			form.inputNext.asWidget.hide
+		}
+		op getSize():Size{
+			new Size(300,190)
+		}
+		op getTitle():String{
+			'维修类别维护'
+		}
+		op setParent(parent : proxy of RCMaintenamceType):void{
+			form.parent.value = parent
+		}
+	}
+			
+	presenter MaintenamceTypeManagementPresenter implements IHasObjectSelectionProvider<UIFaultType>{
+		view interface{
+			signal in showResults(results : UIMaintenamceType[*])
+			signal in updateMaintenamceType(org : UIMaintenamceType)
+			signal in deleteMaintenamceType(org : proxy of RCMaintenamceType)
+			signal in addMaintenamceType(org : UIMaintenamceType)
+			signal in showItems(items : UIFaultType[*])
+			
+			signal in setAsReadonly(isReadonly : Boolean)
+			signal in setAsSelector()
+		
+			signal out typeSelected(value : proxy of RCMaintenamceType)
+			signal out createRequest(parent : proxy of RCMaintenamceType) @maintenanceTypeManagerPresenter "新建维修类别"
+			signal out deleteRequest(value : proxy of RCMaintenamceType) @maintenanceTypeManagerPresenter "删除维修类别"
+			signal out modifyRequest(value : proxy of RCMaintenamceType) @maintenanceTypeManagerPresenter "修改维修类别"
+			
+			signal out createChildRequest(parent : proxy of RCMaintenamceType)  @maintenanceTypeManagerPresenter "新建维修项目"
+			signal out modifyChildRequest(child : proxy of RCFaultType) @maintenanceTypeManagerPresenter "修改维修项目"
+			signal out deleteChildRequest(child : proxy of RCFaultType) @maintenanceTypeManagerPresenter "删除维修项目"
+			
+			op getActionContext() : ActionContext<UIFaultType>
+			
+		}
+
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateMaintenamceTypePresenter
+			factory createOrUpdateFaultTypePresenter : CreateOrUpdateFaultTypePresenter
+			parent : proxy of RCMaintenamceType
+		
+			input call.setup(postInit : (MaintenamceTypeManagementPresenter)=>void){
+				fire view.setAsReadonly(false)
+				this.activate[
+					service.loadAllMaintenamceType(onSuccess[
+						fire view.showResults(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			
+			input call.setup4Readonly(postInit : (MaintenamceTypeManagementPresenter)=>void){
+				fire view.setAsReadonly(true)
+				this.activate[
+					service.loadAllMaintenamceType(onSuccess[
+						fire view.showResults(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			
+			input prepare.setup4Selector(){
+				fire view.setAsSelector()
+				fire view.setAsReadonly(true)
+				this.activate[
+					service.loadAllMaintenamceType(onSuccess[
+						fire view.showResults(it)
+						done
+					])
+				]				
+			}
+			
+			input view.createRequest(parent : proxy of RCMaintenamceType){
+					createOrUpdatePresenter.get=>[
+						setup4Create(parent)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]
+			}
+			input eventbus.InputNextMaintenamceType(parent : proxy of RCMaintenamceType){
+					createOrUpdatePresenter.get=>[
+						setup4Create(parent)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]
+			}
+			input view.modifyRequest(value : proxy of RCMaintenamceType){
+					createOrUpdatePresenter.get=>[
+						setup4Update(value)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]				
+			}
+			input view.deleteRequest(value : proxy of RCMaintenamceType){
+				service.delete(value,onSuccess[
+					fire eventbus.MaintenamceTypeDeleted(value)
+				])
+			}
+			input eventbus.MaintenamceTypeChanged(org : proxy of RCMaintenamceType){
+				service.getValue(org,onSuccess[
+					fire view.updateMaintenamceType(it)
+				])
+			}
+			input eventbus.MaintenamceTypeDeleted(org : proxy of RCMaintenamceType){
+				fire view.deleteMaintenamceType(org)
+			}
+			input eventbus.MaintenamceTypeAdded(org : proxy of RCMaintenamceType){
+				service.getValue(org,onSuccess[
+					fire view.addMaintenamceType(it)
+				])
+			}
+			input view.typeSelected(value : proxy of RCMaintenamceType){
+				this.parent = value
+				service.loadItems(value,onSuccess[
+					fire view.showItems(it)
+				])
+			}
+		
+			input view.createChildRequest(parent : proxy of RCMaintenamceType){
+				createOrUpdateFaultTypePresenter.get=>[setup4Create(parent)[
+					fire eventbus.PopActivatedPresenter(it)
+				]]
+			}
+			input eventbus.InputNextFaultType(parent : proxy of RCMaintenamceType){
+				createOrUpdateFaultTypePresenter.get=>[setup4Create(parent)[
+					fire eventbus.PopActivatedPresenter(it)
+				]]
+			}
+			input view.modifyChildRequest(child : proxy of RCFaultType){
+				createOrUpdateFaultTypePresenter.get=>[setup4Update(child)[
+					fire eventbus.PopActivatedPresenter(it)
+				]]				
+			}
+			input view.deleteChildRequest(child : proxy of RCFaultType){
+				service.deleteChild(child,onSuccess[
+					fire eventbus.FaultTypesChanged()
+				])
+			}
+			input eventbus.FaultTypesChanged(){
+				service.loadItems(parent,onSuccess[
+					fire view.showItems(it)
+				])
+			}
+			input call.getSelectionProvider() :ObjectSelectionProvider<UIFaultType>{
+				getView().getActionContext()
+			}
+		}
+		service{
+			@Inject mapper : MaintenamceTypeMapper
+			@Inject faultTypeMapper : FaultTypeMapper
+			op loadAllMaintenamceType() : UIMaintenamceType[*]{
+				entities.all(typeof(RCMaintenamceType)).^map[mapper.transform(it)].unlazy
+			}
+			op delete(value : proxy of RCMaintenamceType) : void {
+				entities.delete(resolve value)
+			}
+			op getValue(org : proxy of RCMaintenamceType) : UIMaintenamceType{
+				mapper.transform(resolve org)
+			}
+			op loadItems(value : proxy of RCMaintenamceType) : UIFaultType[*]{
+				(resolve value).getAllSubFaultTypes.^map[faultTypeMapper.transform(it)].unlazy
+			}
+			op deleteChild(child : proxy of RCFaultType) : void{
+				entities.delete(resolve child)
+			}
+			
+		}
+	}
+	
+	view MaintenamceTypeManagementView for MaintenamceTypeManagementPresenter{
+		@Inject listGrid : MaintenamceTypeListGrid
+		@Inject itemListGrid : FaultTypeListGrid
+		con: Widget
+		isReadonly : Boolean
+		asWidget() : Widget{
+			con
+		}
+		isSelector : Boolean
+		setAsSelector():void{
+			isSelector = true
+		}
+		layout{
+			listGrid.asWidget
+			var  com.sencha.gxt.widget.core.client.ContentPanel  cp =
+					if(isSelector.isLogicTrue) widgets.ContentPanel
+					else widgets.FramedPanel("维修类别维护")
+			con = cp =>[
+				val ac = listGrid.createActionContext
+				listGrid.addSelectEntityListener[
+					fire view.typeSelected(it.toProxy)
+				]
+				setWidget(
+					widgets.HLayout=>[
+						add(
+							widgets.FieldSet("维修类别")=>[
+								widget = widgets.ContentPanel=>[
+									setBorders(false)
+									setBodyBorder(false)
+									widget = widgets.VLayout=>[
+										add(listGrid.createFilter[item,filter|
+											item.name.contains(filter) || item.simplePy.contains(filter)
+										],widgets.VLayoutData(1,-1))
+										add(widgets.ContentPanel=>[widget=listGrid.asWidget],widgets.VLayoutData(1,1))
+									]
+									if(!isReadonly){
+										securities.check(ui-requester.createRequest)[v|
+											addButton(widgets.TextButton("新建")=>[
+												addSelectHandler[
+													val s = listGrid.onlySelected
+													fire view.createRequest(s?.toProxy)
+													]
+												]
+											)
+											
+										]
+										securities.check(ui-requester.modifyRequest)[v|
+											addButton(ac.onSingleObjectAction[
+												onExecute[UIMaintenamceType selectedValue |
+													fire view.modifyRequest(selectedValue.toProxy)
+												]
+											].asButtonRequester("修改"))					
+										]					
+										securities.check(ui-requester.deleteRequest)[v|
+											addButton(ac.onSingleObjectAction[
+												onExecute[UIMaintenamceType selectedValue |
+													widgets.ConfirmMessageBox("确认","确认删除")[
+														fire view.deleteRequest(selectedValue.toProxy)
+													].show
+												]
+											].asButtonRequester("删除"))					
+										]
+									}									
+								]
+
+							],widgets.HLayoutData(300,1,1)
+						)
+						add(
+							widgets.FieldSet("维修项目")=>[
+								widget = widgets.ContentPanel=>[
+									widget =itemListGrid.asWidget
+									if(!isReadonly){
+										val itemAc = itemListGrid.createActionContext
+										securities.check(ui-requester.createChildRequest)[v|
+											addButton(
+												ac.onSingleObjectAction[
+													onExecute[UIMaintenamceType item|
+														fire view.createChildRequest(item.toProxy)
+													]
+												].asButtonRequester("新建")				
+											)
+										]
+										securities.check(ui-requester.modifyChildRequest)[v|
+											addButton(
+												itemAc.onSingleObjectAction[
+													onExecute[UIFaultType item|
+														fire view.modifyChildRequest(item.toProxy)
+													]
+												].asButtonRequester("修改")				
+											)
+										]
+										securities.check(ui-requester.deleteChildRequest)[v|
+											addButton(
+												itemAc.onSingleObjectAction[
+													onExecute[UIFaultType item|
+														widgets.ConfirmMessageBox("确认","确认删除选定维修项目")[
+															fire view.deleteChildRequest(item.toProxy)
+														].show
+													]
+												].asButtonRequester("删除")				
+											)
+										]
+									}										
+								]
+						
+							],widgets.HLayoutData(1,1,1)
+						)
+				])
+			]					
+		}
+		
+		op showItems(items : UIFaultType[*]) : void{
+			itemListGrid.objects = items
+		}
+		
+		op showResults(results : UIMaintenamceType[*]) : void{
+			listGrid.setContentProvider(new MaintenanceTypeTreeContentProvider(results))
+		}
+		
+		op updateMaintenamceType(org : UIMaintenamceType) : void{
+			listGrid.store.update(org)
+		}
+		
+		op deleteMaintenamceType(org : proxy of RCMaintenamceType) : void{
+			var store = listGrid.store
+			store.remove(store.findModelWithKey(org.hashCode.toString))
+		}
+		
+		op addMaintenamceType(org : UIMaintenamceType) : void{
+			var TreeStore store = listGrid.store
+			if(org.parent!=null){
+				var parentInStore = store.findModelWithKey(org.parent.hashCode.toString)				
+				store.add(parentInStore as UIMaintenamceType,org as UIMaintenamceType);
+			}else{
+				store.add(org as UIMaintenamceType);
+			}
+		}
+		
+		ac : ActionContext<UIFaultType>
+		op getActionContext() : ActionContext<UIFaultType>{
+			ac = ac.lazy[
+				itemListGrid.createActionContext
+			]
+		}
+		
+		op setAsReadonly(isReadonly : Boolean):void{
+			this.isReadonly = isReadonly
+		}
+	}	
+	
+	signal FaultTypesChanged
+	
+	presenter CreateOrUpdateFaultTypePresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIFaultType
+			signal in setParent(parent : proxy of RCMaintenamceType)
+			op setValue(value : UIFaultType) : void
+			op setDefaultValues():void
+		}
+		
+		interaction{
+			used4Update : boolean
+			parent : proxy of RCMaintenamceType
+			input call.setup4Create(
+				parent : proxy of RCMaintenamceType,
+				(CreateOrUpdateFaultTypePresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.parent = parent
+				this.activate[
+					getView().setDefaultValues()
+					fire view.setParent(parent)
+					postInitializer.apply(this)
+				]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCFaultType,
+				(CreateOrUpdateFaultTypePresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						postInitializer.apply(this)
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update){
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.FaultTypesChanged()
+						notifier.success
+					])
+				}else{
+					service.createValue(parent,getView().value,onSuccess[
+						fire eventbus.FaultTypesChanged()
+						notifier.success
+						if(getView().value.inputNext.isLogicTrue){
+							fire eventbus.InputNextFaultType(parent)
+						}
+						
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : FaultTypeMapper
+			op loadValue(pvalue : proxy of RCFaultType) : UIFaultType{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIFaultType) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(parent : proxy of RCMaintenamceType,uivalue : UIFaultType) : void{
+				var value = (resolve parent).createAndAddtoFaultTypes
+				mapper.transform(uivalue,value)
+			}
+		}
+	}
+	
+	view CreateOrUpdateFaultTypeView for CreateOrUpdateFaultTypePresenter implements IHasSize, IHasTitle{
+		@Inject form : FaultTypeForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIFaultType{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIFaultType value) : void{
+			form.value = value
+			form.inputNext.asWidget.hide
+		}
+		op getSize():Size{
+			new Size(350,340)
+		}
+		op getTitle():String{
+			'维修项目维护'
+		}
+		op setParent(parent : proxy of RCMaintenamceType):void{
+			form.mtype.value = parent
+		}
+		op setDefaultValues():void{
+			form.standardCostTime.value = 0.75
+			form.performanceWeight.value = 1.0
+			form.faultRiskLevel.selectFirst
+		}
+	}
+}

@@ -1,0 +1,257 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.Collection
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.domain.organization.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.server.^service.organization.*
+	import com.fudanmed.platform.core.web.shared.project.*
+	import com.fudanmed.platform.core.web.client.project.*
+	import com.fudanmed.platform.core.web.server.^service.project.*
+	import com.fudanmed.platform.core.web.client.chart.*
+	import edu.fudan.langlab.gxt.client.component.grid.ValueProviderAdaptor
+	import edu.fudan.langlab.uidl.domain.app.client.workbench.*
+	import com.uniquesoft.gwt.shared.datatype.UIDateRange
+	ui-entity UIRepairTaskStatisticData for RCRepairTask{
+		reportOrg : proxy of RCOrganization "报修部门"
+		reportOrgFullPath : String "报修部门"
+		reporterName : String "报修人"
+		location : String "报修地址"
+		operator : proxy of Party "接报人"
+		reportSid : String "报修单号"
+		faultReportSource : proxy of RCFaultReportSource "报修来源"
+		reportTime : Date "报修时间"
+		status : UIRepairTaskStatus "维修状态"
+		faultEmergencyLevel : proxy of RCFaultEmergencyLevel "紧急度"
+		teams : proxy of RCMaintenanceTeam[*] "维修班组"
+		workers : proxy of RCEmployee[*] "维修人员"
+		faultType : proxy of RCFaultType "维修类别"
+		mType : proxy of RCMaintenamceType "维修大类"
+		comment : String "报修内容"
+		dispatchTime : Date "派工时间"
+		finishTime : Date "完成时间"
+		hasSettlement : String "材料结算状态"
+		evaluateComment : String "用户评价"
+		evaluater : proxy of RCEmployee "评价人"
+		evaluateTime : Date "评价时间"
+		
+		map RepairTaskStatisticDataMapper{
+			direct{
+				reportOrg readonly,reporterName readonly,location readonly,faultReportSource readonly,operator readonly,reportSid readonly,reportTime readonly,status readonly,
+				faultEmergencyLevel readonly, faultType readonly,{mType,entity.faultType.mtype}readonly,comment readonly,finishTime readonly,
+				{evaluateComment, entity.repairEvaluate.comment} readonly,
+				{evaluater,entity.repairEvaluate.evaluator} readonly,
+				{evaluateTime,entity.repairEvaluate.evaluateDate} readonly
+			}
+			from entity{
+				ui.teams = entity.groupTasks.^map[team.toProxy].toSet
+				ui.workers = entity.groupTasks.^map[tasks].flatten.^map[it.workers].flatten.^map[toProxy].toSet
+				ui.dispatchTime = entity.groupTasks.sortBy[it.time].head?.time
+				ui.hasSettlement = if(entity.settlement!=null)"已结算" else "未结算"
+				ui.reportOrgFullPath = entity.reportOrg.fullPath
+			}
+		}
+		
+		csv-map RepairTaskStatisticDataCSVMapper{
+			field-list{reportOrgFullPath readonly,reporterName readonly,faultReportSource readonly,location readonly,operator readonly,reportSid readonly,
+				reportTime readonly,status readonly,faultEmergencyLevel readonly,
+				teams readonly,workers readonly,mType readonly,faultType readonly,comment readonly,
+				dispatchTime readonly,finishTime readonly,hasSettlement readonly,evaluateComment readonly,evaluater readonly,evaluateTime readonly}
+		}
+		
+		ui-component RepairTaskStatisticDataListGrid as GXTGrid4LargeData{
+			binding{
+				reportOrg,reportTime as DateTimeColumn,dispatchTime as DateTimeColumn,finishTime as DateTimeColumn,location,operator,reportSid,status,faultEmergencyLevel,
+				teams  as StringColumn(160),workers,mType,faultType,comment,
+				reporterName,faultReportSource,hasSettlement,evaluateComment,evaluater,evaluateTime 
+			}
+			
+			op initializeComponent():void{
+				createSummaryRow=>[
+					it += reportOrg.renderSummaryColumn[sb,state|
+						sb.appendHtmlConstant("合计:"+objects.size.toString+"条")
+					]
+				]
+				asWidget.groupBy(reportOrg,true)				
+				this.unForceFit;
+				this.reportOrg.groupRender = [value,sb|
+					sb.appendHtmlConstant("小计:"+value.nullsafe[0].toString+"条")
+				]
+				
+			}
+		}
+	}
+	
+	ui-criteria UIRepairTaskStatisticCriteria for RCRepairTaskStatisticCriteria{
+		reportOrg : proxy of RCOrganization "报修部门"
+		team : proxy of RCMaintenanceTeam "维修班组"
+		worker : proxy of RCEmployee "维修人员"
+		comment : String "报修信息"
+		status : UIRepairTaskStatus "报修单状态"
+		reportDateRange : UIDateRange "报修日期"
+		map RepairTaskStatisticCriteriaMapper{
+			direct{reportOrg,team,worker,comment,status}
+			to entity{
+				entity.reportDateFrom = ui.reportDateRange.^from
+				entity.reportDateTo = ui.reportDateRange.^to
+			}
+		}
+		
+		ui-component RepairTaskStatisticCriteriaForm as GXTForm{
+			@Inject employeeListView : EmployeeListView
+			binding{
+				reportOrg as ComboBoxItem content from AllOrganizationContentProvider,
+				team as ComboBoxItem content from AllMaintenanceTeamContentProvider,
+				worker as ComboBoxItem content from AllOrgEmployeeContentProvider,
+				reportDateRange,comment as EscapedTextItem, status as ComboBoxItem
+			}
+		}
+	}
+	
+	presenter RepairTaskStatisticListPresenter{
+		view interface{
+			op setResults(results : UIRepairTaskStatisticData[*]):void
+			op setSelectedOrganization(newOrg : proxy of RCOrganization) : void
+			op refresh() : void
+			signal out queryRequest(c : UIRepairTaskStatisticCriteria)
+			signal out teamChanged(newTeam : proxy of RCMaintenanceTeam)
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input view.teamChanged(newTeam : proxy of RCMaintenanceTeam){
+				service.loadOrganization(newTeam,onSuccess[
+					getView().setSelectedOrganization(it)
+				])
+			}
+			input call.refresh(){
+				getView().refresh()
+			}
+			
+			input view.queryRequest(c : UIRepairTaskStatisticCriteria){
+				service.loadRepairTaskList(c,onSuccess[
+					getView().setResults(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject mapper : RepairTaskStatisticDataMapper
+			@Inject criteriaMapper : RepairTaskStatisticCriteriaMapper
+			
+			op loadRepairTaskList(uicriteria : UIRepairTaskStatisticCriteria) : UIRepairTaskStatisticData[*]{
+				var c = uicriteria.createPagedCriteria(typeof(RCRepairTaskStatisticCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op loadOrganization(team : proxy of RCMaintenanceTeam) : proxy of RCOrganization{
+				(resolve team).organization.toProxy
+			}
+		}
+	}
+	
+	view RepairTaskStatisticListView for RepairTaskStatisticListPresenter{
+		con : Widget
+		@Inject listGrid : RepairTaskStatisticDataListGrid
+		@Inject criteriaForm : RepairTaskStatisticCriteriaForm
+		factory organizationOutlinePresenter : OrganizationOutlinePresenter
+		
+		@Inject exportRepairTaskStatisticDataCommand : ExportRepairTaskStatisticDataCommand
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con=widgets.FramedPanel("报修单统计表")=>[
+				widget = widgets.VLayout=>[
+					addFill(TABLE=>[
+						tr=>[
+							td=>[it+=criteriaForm.comment.asWidget]
+							td=>[it+=criteriaForm.team.asWidget=>[
+								criteriaForm.team.addValueChangedListener[
+									fire view.teamChanged(criteriaForm.team.value)
+								]
+							]]
+							td=>[it += criteriaForm.worker.asWidget]
+						]
+						tr=>[
+							td=>[
+								it += TABLE=>[tr=>[
+									td=>[
+										it += criteriaForm.reportOrg.asWidget
+									]
+									td=>[
+										it += widgets.TextButton("选择")=>[
+											addSelectHandler[
+												organizationOutlinePresenter.get=>[
+													it.setupAsSimpleTree[
+														asSelector("选择组织机构",300,500)[
+															criteriaForm.reportOrg.value = it.toProxy
+														].show
+													]
+												]
+											]
+										]
+									]
+								]
+							]]
+							td=>[it += criteriaForm.status.asWidget]
+							td=>[]
+						]
+						tr=>[
+							td=>[it+=criteriaForm.reportDateRange.asWidget=>[
+								criteriaForm.reportDateRange.value = new UIDateRange=>[
+									^from = today.addMonths(-1)
+									^to = today
+								]
+							]]
+							td=>[]
+							td=>[it+=widgets.TextButton("筛选")[
+								fire view.queryRequest(criteriaForm.value=>[it.setPageSize(5000)])
+							]]
+							
+						]
+					])
+					criteriaForm.workerContentProvider.load(null)[]
+					add(listGrid.asWidget.withBorder,widgets.VLayoutData(1,1))
+				]
+				addCommand([|criteriaForm.value],exportRepairTaskStatisticDataCommand)
+			]
+		}
+		op setSelectedOrganization(newOrg : proxy of RCOrganization) : void{
+			criteriaForm.workerContentProvider.load(newOrg)[]
+		}
+		op setResults(results : UIRepairTaskStatisticData[*]) :void {
+			if(results.size>5000) display("警告","筛选结果多于5000条，可能未显示出全部满足条件的数据")
+			listGrid.objects = results
+		}
+		
+		op refresh():void{
+			fire view.queryRequest(criteriaForm.value=>[it.setPageSize(501)])
+		}
+	}
+	
+
+	ui-command ExportRepairTaskStatisticDataCommand for UIRepairTaskStatisticCriteria "报修单导出"{
+		execute{
+			service.prepareExport(value,onSuccess[
+				doDownload(it)
+			])
+		}
+		service{
+			@Inject mapper : RepairTaskStatisticDataMapper
+			@Inject criteriaMapper : RepairTaskStatisticCriteriaMapper
+			op prepareExport(pagedCriteria : UIRepairTaskStatisticCriteria):String{
+				var c = pagedCriteria.createCriteria4All(typeof(RCRepairTaskStatisticCriteria),criteriaMapper,entities)
+				csvPrepare("RepairTaskStatisticData",typeof(RepairTaskStatisticDataCSVMapper),c.listAndTransform[mapper.apply(it)])
+			}
+		}
+	}
+}

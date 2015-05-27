@@ -1,0 +1,124 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import com.fudanmed.platform.core.web.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	 
+	ui-datatype WorkItemOutsourceData{
+		finishDate : Date "外协日期"
+		finishTime : Date "外协时间"
+		comment : String "维修说明"
+		
+		constraints WorkItemOutsourceDataValidator{
+			rule Required on finishDate
+			rule Required on finishTime
+		}
+		
+		ui-component WorkItemOutsourceDataForm as GXTForm{
+			binding{finishDate, finishTime as TimeItem, comment as TextAreaItem}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						add(finishDate.asWidget,widgets.VLayoutData(1,-1))
+						add(finishTime.asWidget,widgets.VLayoutData(1,-1))
+						add(comment.asWidget,widgets.VLayoutData(366,80))
+						
+					]
+				]
+			}			
+		}
+	}
+	
+	presenter WorkItemOutsourcePresenter  with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : WorkItemOutsourceData
+			signal in setComment(comment : String)
+		}
+		
+		interaction{
+			context : proxy of RCWorkItemTask
+			input call.setup(context : proxy of RCWorkItemTask,postInit : (WorkItemOutsourcePresenter)=>void){
+				this.context = context
+				this.activate[
+					service.getComment(context,onSuccess[
+						fire view.setComment(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.commit(context,getView().value,onSuccess[
+					fire eventbus.WorkItemTasksChanged
+					fire eventbus.GroupTasksChanged
+					notifier.success
+				])
+			}
+		}
+	
+		service{
+			@Inject ^validator : WorkItemOutsourceDataValidator
+			op commit(context : proxy of RCWorkItemTask,data : WorkItemOutsourceData) : void{
+				data.validateWith(^validator)
+				val value = (resolve context)
+//				value.finishDate = data.finishDate
+//				value.finishTime = data.finishTime
+				value.comment = data.comment
+				value.outsource
+			}
+			op getComment(context : proxy of RCWorkItemTask):String{
+				(resolve context).comment
+			}
+		}
+	}
+	
+	view WorkItemOutsourceView for WorkItemOutsourcePresenter  implements IHasSize, IHasTitle{
+		@Inject form : WorkItemOutsourceDataForm
+		required timeService : client.common.ServerSideTimeServiceAsync
+
+		initializer{
+			this  += widgets.VLayout=>[add( form.asWidget=>[
+				timeService.getTime(onSuccess[
+					form.finishDate.value = it.trimDate
+					form.finishTime.value = it
+				])
+				],widgets.VLayoutData(1,-1,10))				
+			]
+		}
+		
+		op getValue() : WorkItemOutsourceData{
+			form.value
+		}
+		
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{   
+			form.clearErrors
+		}
+		
+		op getSize():Size{
+			new Size(400,240)
+		}
+		op getTitle():String{
+			"外协"
+		}
+		op setComment(comment : String) : void{
+			form.comment.value = comment
+		}
+	}
+	
+	
+	
+}

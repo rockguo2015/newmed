@@ -1,0 +1,258 @@
+package com.fudanmed.platform.core.web feature measure{
+	
+	import java.util.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.measure.*
+	import com.fudanmed.platform.core.measure.^proxy.*
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import  com.fudanmed.platform.core.web.shared.measure.*
+	
+	
+	ui-entity UIPhasedElectricMeasureValue for RCPhasedElectricMeasureValue{
+		highValue : Double "峰电量"
+		averageValue : Double "平电量"
+		peekValue : Double "尖电量"
+		lowValue : Double "谷电量"
+		maxRequiredValue : Double "最大需量"
+		noPowerValue : Double "无功电量"
+		measureDate : Date "抄表日期"
+		measurePerson : String "抄表人"
+		
+		totalEfficentPower : Double "总有功电量"
+		consumedPower : Double "本次耗电量"
+		map PhasedElectricMeasureValueMapper validate by PhasedElectricMeasureValueValidator{
+			direct{totalEfficentPower readonly,consumedPower readonly, highValue,averageValue,peekValue,lowValue,maxRequiredValue,measureDate,noPowerValue,measurePerson}
+		}
+	
+		constraints PhasedElectricMeasureValueValidator{
+			rule Required on highValue
+			rule Required on lowValue
+		}
+	
+		ui-component PhasedElectricMeasureValueForm as GXTForm{
+			binding{highValue,averageValue,peekValue,lowValue,maxRequiredValue,noPowerValue,measureDate,measurePerson}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(highValue.asWidget)
+						addFill(averageValue.asWidget)
+						addFill(peekValue.asWidget)
+						addFill(lowValue.asWidget)
+						addFill(maxRequiredValue.asWidget)
+						addFill(noPowerValue.asWidget)
+						addFill(measureDate.asWidget)
+						addFill(measurePerson.asWidget)
+					]
+				]
+			}			
+		}
+		
+		ui-component PhasedElectricMeasureValueListGrid as GXTGrid{
+			binding{totalEfficentPower,consumedPower,highValue,averageValue,peekValue,lowValue,maxRequiredValue,noPowerValue,measureDate as DateTimeColumn,measurePerson}
+		}
+	}
+	
+	signal MeasureValuesChanged
+	
+	ui-command CreatePhasedElectricMeasureValueCommand require proxy of RCMeasureDevice "新建"{
+		factory createOrUpdatePhasedElectricMeasureValuePresenter : CreateOrUpdatePhasedElectricMeasureValuePresenter
+		execute{
+			createOrUpdatePhasedElectricMeasureValuePresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command UpdatePhasedElectricMeasureValueCommand require proxy of RCPhasedElectricMeasureValue "修改"{
+		factory createOrUpdatePhasedElectricMeasureValuePresenter : CreateOrUpdatePhasedElectricMeasureValuePresenter
+		execute{
+			createOrUpdatePhasedElectricMeasureValuePresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeletePhasedElectricMeasureValueCommand require proxy of RCPhasedElectricMeasureValue "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.MeasureValuesChanged
+				])
+			].show
+		}
+		service{
+			@Inject valueDAO : RCMeasureValueDAO
+			op delete(value : proxy of RCPhasedElectricMeasureValue):void{
+				valueDAO.^delete(resolve value)
+			}
+		}
+	}
+
+	presenter CreateOrUpdatePhasedElectricMeasureValuePresenter for UIPhasedElectricMeasureValue{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : proxy of RCMeasureDevice){
+				commiter=[notifier|
+					service.createValue(getView().value,parent,onSuccess[
+						fire eventbus.MeasureValuesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of RCPhasedElectricMeasureValue){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.MeasureValuesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : PhasedElectricMeasureValueMapper
+			op loadValue(pvalue : proxy of RCPhasedElectricMeasureValue) : UIPhasedElectricMeasureValue{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIPhasedElectricMeasureValue) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIPhasedElectricMeasureValue,parent : proxy of RCMeasureDevice) : void{
+				((resolve parent).createValue(uivalue.measureDate,uivalue.measurePerson) as RCPhasedElectricMeasureValue)=>[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdatePhasedElectricMeasureValueView<PhasedElectricMeasureValueForm> for CreateOrUpdatePhasedElectricMeasureValuePresenter ui-size:(300,200) ui-title:"读数"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}	
+	
+	presenter PhasedElectricMeasureValueQueryListPresenter provide UIPhasedElectricMeasureValue{
+		view interface{
+			signal in showResults(results : IPagedResult<UIPhasedElectricMeasureValue>)
+			signal in refresh()
+			op setMeasureDevice(device : proxy of RCMeasureDevice):void
+
+			signal out filterRequest(c : UIMeasureValueCriteria)
+			op getActionContext():ActionContext<UIPhasedElectricMeasureValue>
+		}
+
+		interaction{
+			
+			input prepare.setup(device : proxy of RCMeasureDevice){
+				this.activate[
+					getView().setMeasureDevice(device)
+					done
+				]
+			}
+			input view.filterRequest(c : UIMeasureValueCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.MeasureValuesChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : MeasureValueCriteriaMapper
+			@Inject mapper : PhasedElectricMeasureValueMapper
+			op filter(uicriteria : UIMeasureValueCriteria) : IPagedResult<UIPhasedElectricMeasureValue>{
+				var c = uicriteria.createPagedCriteria(typeof(RCMeasureValueCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it as RCPhasedElectricMeasureValue)]
+			}
+		}
+	}
+		
+	view PhasedElectricMeasureValueQueryListView for PhasedElectricMeasureValueQueryListPresenter{
+		@Inject listGrid : PhasedElectricMeasureValueListGrid
+		@Inject criteriaForm1 : MeasureValueCriteriaForm
+		
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.VLayout=>[
+				add(
+					TABLE=>[
+						tr=>[
+							td=>[it += criteriaForm1.measureDateFrom.asWidget]
+							td=>[it += criteriaForm1.measureDateTo.asWidget]
+							td=>[it += widgets.TextButton("查找")=>[
+								setWidth("80px")
+								addSelectHandler[
+									fire view.filterRequest(criteriaForm1.value.withPagerInfo(pager)=>[
+										page = 1
+									])
+								]
+							]]
+						]
+					]
+				)
+
+				pager = listGrid.createPager=>[
+					pagerHandler = [int pageNum, int recordsPerPage|
+						fire view.filterRequest(criteriaForm1.value.withPagerInfo(pager)=>[
+							page = pageNum
+							pageSize = recordsPerPage
+						])							
+					]
+				]
+				
+				add(listGrid.asWidget,widgets.VLayoutData(1,1))
+				add(pager.asWidget)
+			]
+		}
+		
+		op showResults(results : IPagedResult<UIPhasedElectricMeasureValue>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		
+		op getActionContext():ActionContext<UIPhasedElectricMeasureValue>{
+			listGrid.createActionContext
+		}
+		op setMeasureDevice(device : proxy of RCMeasureDevice):void{
+			criteriaForm1.device.value = device
+			fire view.filterRequest(criteriaForm1.value.withPagerInfo(pager)=>[
+				page = 1
+			])			
+		}
+		
+	}		
+	
+}

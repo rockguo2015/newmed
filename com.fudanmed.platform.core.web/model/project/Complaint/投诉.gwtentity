@@ -1,0 +1,202 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.Date
+	import com.fudanmed.platform.core.domain.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.web.client.common.*
+	 
+	ui-entity UIComplaint for RCComplaint{
+		date : Date "投诉日期"
+		^contents : String "投诉内容"
+		owner : proxy of RCEmployee "投诉人"
+		
+		map ComplaintMapper validate by ComplaintValidator{
+			direct{date,^contents,owner}
+		}
+	
+		constraints ComplaintValidator{
+			rule Required on ^contents
+		}
+	
+		ui-component ComplaintForm as GXTForm{
+			required timeService : ServerSideTimeServiceAsync
+			binding{date as ReadonlyItem,^contents as TextAreaItem}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						add(date.asWidget=>[
+							timeService.getTime(onSuccess[
+								date.value=it
+							])
+						],widgets.VLayoutData(1,-1))
+						add(^contents.asWidget,widgets.VLayoutData(1,80))
+					]
+				]
+			}			
+		}
+	
+		ui-component ComplaintListGrid as GXTGrid{
+			binding{ date as StringColumn(130), owner as StringColumn(130), ^contents as StringColumn(897)}
+			op initializeComponent() : void{
+				this.asWidget
+				this.unForceFit			
+				}
+		}
+	}
+
+	signal ComplaintsChanged
+	
+	presenter CreateOrUpdateComplaintPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIComplaint
+			op setValue(value : UIComplaint) : void
+		}
+		
+		interaction{
+			used4Update : boolean
+			parent : proxy of RCRepairTask
+			input call.setup4Create(
+				parent : proxy of RCRepairTask,
+				(CreateOrUpdateComplaintPresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.parent = parent
+				this.activate[postInitializer.apply(this)]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCComplaint,
+				(CreateOrUpdateComplaintPresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						postInitializer.apply(this)
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.ComplaintsChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(parent,getView().value,onSuccess[
+						fire eventbus.ComplaintsChanged()
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : ComplaintMapper
+			@Inject systemUserService : ISystemUserService
+			op loadValue(pvalue : proxy of RCComplaint) : UIComplaint{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIComplaint) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(parent : proxy of RCRepairTask,uivalue : UIComplaint) : void{
+				var value = (resolve parent).createCompaint
+				mapper.transform(uivalue,value)
+				value.owner = systemUserService.currentUserAsParty as RCEmployee
+			}
+		}
+	}
+	
+	view CreateOrUpdateComplaintView for CreateOrUpdateComplaintPresenter implements IHasSize, IHasTitle{
+		@Inject form : ComplaintForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIComplaint{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIComplaint value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(300,200)
+		}
+		op getTitle():String{
+			'投诉'
+		}
+	}		
+	
+	presenter ComplaintListPresenter{
+		view interface{
+			signal in setResults(results : UIComplaint[*])
+		}
+		
+		interaction{
+			context : proxy of RCRepairTask
+			input call.setup(postInit : (ComplaintListPresenter)=>void){
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			input call.setup(context : proxy of RCRepairTask,postInit : (ComplaintListPresenter)=>void){
+				this.context = context
+				this.activate[
+					refresh
+					postInit.apply(this)
+				]
+			}
+			
+			input call.setRepairTask(context : proxy of RCRepairTask){
+				this.context = context
+				refresh
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadComplaintList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input eventbus.ComplaintsChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : ComplaintMapper
+			
+			op loadComplaintList(context : proxy of RCRepairTask) : UIComplaint[*]{
+				(resolve context).complaints.^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view ComplaintListView for ComplaintListPresenter{
+		con : Widget
+		@Inject listGrid : ComplaintListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		
+		interaction{
+			input view.setResults(results : UIComplaint[*]){
+				listGrid.objects = results
+			}
+		}
+	}	
+}

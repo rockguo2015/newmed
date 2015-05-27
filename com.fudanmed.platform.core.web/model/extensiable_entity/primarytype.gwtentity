@@ -1,0 +1,337 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import com.uniquesoft.gwt.shared.datatype.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.entityextension.^proxy.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.sencha.gxt.data.shared.TreeStore
+	import com.sencha.gxt.widget.core.client.treegrid.TreeGrid
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.validation.ValidationException
+	import com.uniquesoft.uidl.validation.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+		
+	ui-entity UICustomizableType for RCCustomizableType{
+		alias:String "别名"
+		typeName : String "单位/类型"
+		isPrimary : Boolean
+		map CustomizableTypeMapper {
+			direct{typeName readonly,alias readonly}
+			from entity{
+				ui.isPrimary = entity instanceof RCNumberWithUnitType
+			}
+		}
+	
+		ui-component CustomizableTypeListGrid as GXTGrid{
+			binding{alias,typeName}
+		}
+	}
+	
+	
+	
+	ui-entity UINumberWithUnitType for RCNumberWithUnitType{
+		alias:String "别名"
+		unit : String "单位"
+		map NumberWithUnitTypeMapper validate by NumberWithUnitTypeValidator{
+			direct{unit,alias}
+		}
+	
+		constraints NumberWithUnitTypeValidator{
+			rule Required on unit
+			rule Required on alias
+		}
+	
+		ui-component NumberWithUnitTypeForm as GXTForm{
+			binding{alias,unit}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(alias.asWidget)
+						addFill(unit.asWidget)
+					]
+				]
+			}			
+		}
+	
+		ui-component NumberWithUnitTypeListGrid as GXTGrid{
+			binding{alias,unit}
+		}
+	
+	}
+	
+	signal NumberWithUnitTypesChanged
+	
+	presenter CreateOrUpdateNumberWithUnitTypePresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UINumberWithUnitType
+			op setValue(value : UINumberWithUnitType) : void
+		}
+		
+		interaction{
+			used4Update : boolean
+			input call.setup4Create(
+				(CreateOrUpdateNumberWithUnitTypePresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.activate[postInitializer.apply(this)]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCNumberWithUnitType,
+				(CreateOrUpdateNumberWithUnitTypePresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						postInitializer.apply(this)
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.NumberWithUnitTypesChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.NumberWithUnitTypesChanged()
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : NumberWithUnitTypeMapper
+			op loadValue(pvalue : proxy of RCNumberWithUnitType) : UINumberWithUnitType{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UINumberWithUnitType) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UINumberWithUnitType) : void{
+				var value = entities.create(typeof(RCNumberWithUnitType))
+				mapper.transform(uivalue,value)
+			}
+		}
+	}
+	
+	view CreateOrUpdateNumberWithUnitTypeView for CreateOrUpdateNumberWithUnitTypePresenter implements IHasSize, IHasTitle{
+		@Inject form : NumberWithUnitTypeForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UINumberWithUnitType{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UINumberWithUnitType value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(300,200)
+		}
+		op getTitle():String{
+			'数值参数单位维护'
+		}
+					
+	}
+	
+	ui-criteria UICustomizableTypeCriteria for RCCustomizableTypeCriteria{
+		map CustomizableTypeCriteriaMapper{
+			direct{}
+		}
+		ui-component CustomizableTypeCriteriaForm as GXTForm{
+			binding{}
+		}
+	}
+	
+	presenter NumberWithUnitTypeManagementPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UICustomizableType>)
+			signal in refresh()
+	
+			signal out createRequest() @numberWithUnitTypeManagementPresenter "新建参数类型"
+			signal out deleteRequest(value : proxy of RCCustomizableType) @numberWithUnitTypeManagementPresenter "删除参数类型"
+			signal out modifyRequest(value : proxy of RCNumberWithUnitType) @numberWithUnitTypeManagementPresenter "修改参数类型"
+			signal out createRangeTypeRequest(value : proxy of RCNumberWithUnitType) @numberWithUnitTypeManagementPresenter "新建范围类型"
+			signal out filterRequest(c : UICustomizableTypeCriteria)
+		}
+	
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateNumberWithUnitTypePresenter
+			
+			input prepare.setup(){
+				this.activate[
+					fire view.refresh
+					done
+				]
+			}
+			
+			input view.createRequest(){
+					createOrUpdatePresenter.get=>[
+						setup4Create[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]
+			}
+			input view.modifyRequest(value : proxy of RCNumberWithUnitType){
+					createOrUpdatePresenter.get=>[
+						setup4Update(value)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]				
+			}
+			input view.deleteRequest(value : proxy of RCCustomizableType){
+				service.delete(value,onSuccess[
+					fire eventbus.NumberWithUnitTypesChanged
+				])
+			}
+			input view.filterRequest(c : UICustomizableTypeCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input view.createRangeTypeRequest(value : proxy of RCNumberWithUnitType){
+				service.rangeTypeCreated(value,onSuccess[created|
+					if(!created)
+						service.createRangeType(value,onSuccess[
+							fire eventbus.NumberWithUnitTypesChanged
+						])
+					else display("错误","该类型的范围类型已定义")
+				])
+			}
+			input eventbus.NumberWithUnitTypesChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : CustomizableTypeCriteriaMapper
+			@Inject mapper : CustomizableTypeMapper
+			@Inject rangeTypeDAO : RCRangeTypeDAO
+			op filter(uicriteria : UICustomizableTypeCriteria) : IPagedResult<UICustomizableType>{
+				var c = uicriteria.createPagedCriteria(typeof(RCCustomizableTypeCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op rangeTypeCreated(baseType : proxy of RCNumberWithUnitType):Boolean{
+				rangeTypeDAO.rangeTypeCreated(resolve baseType)
+			}
+			op createRangeType(baseType : proxy of RCNumberWithUnitType):void{
+				rangeTypeDAO.create(resolve baseType)
+			}
+			op delete(value : proxy of RCCustomizableType) : void {
+				entities.delete(resolve value)
+			}
+		}
+	}
+	
+	view NumberWithUnitTypeManagementView for NumberWithUnitTypeManagementPresenter{
+		@Inject listGrid : CustomizableTypeListGrid
+		@Inject criteriaForm : CustomizableTypeCriteriaForm
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.FramedPanel("数值参数单位管理")=>[
+				setWidget(widgets.VLayout=>[
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]
+					add(widgets.ContentPanel()=>[
+						widget = widgets.VLayout=>[
+						add(listGrid.asWidget,widgets.VLayoutData(1,1))
+						add(pager.asWidget,widgets.VLayoutData(1,-1))]
+					],widgets.VLayoutData(1,1))							
+				])
+				
+				val ac = listGrid.createActionContext
+				securities.check(ui-requester.createRequest)[v|
+					addButton(new TextButton("新建")=>[
+						addSelectHandler[
+							fire view.createRequest
+						]
+					])
+				]
+				securities.check(ui-requester.modifyRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UICustomizableType selectedValue |
+							fire view.modifyRequest(selectedValue.toProxy as RCNumberWithUnitTypeProxy)
+						]
+						onCheckEnable[
+							listGrid.singleSelectedAnd[
+								it.isPrimary
+							]
+						]
+					].asButtonRequester("修改"))					
+				]					
+				securities.check(ui-requester.createRangeTypeRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UICustomizableType selectedValue |
+							fire view.createRangeTypeRequest(selectedValue.toProxy as RCNumberWithUnitTypeProxy)
+						]
+						onCheckEnable[
+							listGrid.singleSelectedAnd[
+								it.isPrimary
+							]
+						]
+					].asButtonRequester("创建范围类型"))					
+				]					
+				securities.check(ui-requester.deleteRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UICustomizableType selectedValue |
+							widgets.ConfirmMessageBox("确认","确认删除")[
+								fire view.deleteRequest(selectedValue.toProxy)
+							].show
+						]
+					].asButtonRequester("删除"))					
+				]
+			
+			]					
+		}
+		
+		op showResults(results : IPagedResult<UICustomizableType>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+	}	
+	
+	
+}

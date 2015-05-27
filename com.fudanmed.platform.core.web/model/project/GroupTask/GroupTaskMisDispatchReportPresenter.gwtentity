@@ -1,0 +1,112 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.Date
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.web.client.common.*
+	 
+	ui-datatype GroupTaskMisDispatchReportData{
+		finishDate : Date "串单上报日期"
+		finishTime : Date "串单上报时间"
+		comment : String "维修说明"
+		constraints GroupTaskMisDispatchReportDataValidator{
+			rule Required on finishDate
+			rule Required on finishTime
+		}
+		
+		ui-component GroupTaskMisDispatchReportDataForm as GXTForm{
+			binding{ finishDate, finishTime as TimeItem, comment as TextAreaItem}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						add(finishDate.asWidget,widgets.VLayoutData(1,-1))
+						add(finishTime.asWidget,widgets.VLayoutData(1,-1))
+						add(comment.asWidget,widgets.VLayoutData(366,80))
+					]
+				]
+			}			
+		}
+	}
+	
+	presenter GroupTaskMisDispatchReportPresenter  with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : GroupTaskMisDispatchReportData
+		}
+		
+		interaction{
+			context : proxy of RCGroupTask
+			input prepare.setup(context : proxy of RCGroupTask){
+				this.context = context
+				this.activate[
+					done
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.commit(context,getView().value,callback[
+					onSuccessDo[workItemTask|
+						fire eventbus.GroupTasksChanged
+						notifier.success
+					]
+					onFailureDo[
+						display("错误","无法上报，请刷新确认报修状态")
+					]
+					
+				])
+			}
+		}
+	
+		service{
+			@Inject ^validator : GroupTaskMisDispatchReportDataValidator
+			op commit(context : proxy of RCGroupTask,data : GroupTaskMisDispatchReportData) : void{
+				data.validateWith(^validator)
+				(resolve context)=>[
+					finishDate = data.finishDate
+					finishTime = data.finishTime
+					comment = data.comment
+					reportMisdispatch
+				]
+			}
+		}
+	}
+	
+	view GroupTaskMisDispatchReportView for GroupTaskMisDispatchReportPresenter  implements IHasSize, IHasTitle{
+		@Inject form : GroupTaskMisDispatchReportDataForm
+		required timeService : ServerSideTimeServiceAsync
+		layout{
+			this += widgets.VLayout=>[add(form.asWidget=>[
+				timeService.getTime(onSuccess[
+					form.finishDate.value = it.trimDate
+					form.finishTime.value = it
+				])
+				],widgets.VLayoutData(1,-1,10))				
+			]
+		}
+		
+		op getValue() : GroupTaskMisDispatchReportData{
+			form.value
+		}
+		
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{   
+			form.clearErrors
+		}
+		
+		op getSize():Size{
+			new Size(400,240)
+		}
+		op getTitle():String{
+			"串单上报"
+		}
+		
+	}	
+}

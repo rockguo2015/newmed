@@ -1,0 +1,215 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	 
+	ui-entity UIDeliverMaterialCategory for DLDeliverMaterialCategory{
+		code : String "代码"
+		name : String "名称"
+		parentCategory : proxy of DLDeliverMaterialCategory "父类别"
+		
+		map DeliverMaterialCategoryMapper validate by DeliverMaterialCategoryValidator{
+			direct{code,name,parentCategory readonly}
+		}
+		
+		constraints DeliverMaterialCategoryValidator{
+			rule Required on code
+			rule Required on name
+		}
+	
+		ui-component DeliverMaterialCategoryForm as GXTForm{
+			binding{code,name,parentCategory as ReadonlyItem}
+			con : Widget
+			op createWidget() : Widget{
+				widgets.VLayout=>[
+					addFill(parentCategory.asWidget)
+					addFill(code.asWidget)
+					addFill(name.asWidget)
+				]
+			}		
+		}
+	
+		ui-component DeliverMaterialCategoryListGrid as GXTTreeGrid{
+			binding{name,code}
+		}
+	}
+	
+	
+	signal DeliverMaterialCategorysChanged
+	
+	ui-command CreateDeliverMaterialCategoryCommand require proxy of DLDeliverMaterialCategory "新建"{
+		factory createOrUpdateDeliverMaterialCategoryPresenter : CreateOrUpdateDeliverMaterialCategoryPresenter
+		execute{
+			createOrUpdateDeliverMaterialCategoryPresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command UpdateDeliverMaterialCategoryCommand require proxy of DLDeliverMaterialCategory "修改"{
+		factory createOrUpdateDeliverMaterialCategoryPresenter : CreateOrUpdateDeliverMaterialCategoryPresenter
+		execute{
+			createOrUpdateDeliverMaterialCategoryPresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeleteDeliverMaterialCategoryCommand require proxy of DLDeliverMaterialCategory "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.DeliverMaterialCategorysChanged
+				])
+			].show
+		}
+		service{
+			@Inject dao : DLDeliverMaterialCategoryDAO
+			op delete(value : proxy of DLDeliverMaterialCategory):void{
+				dao.delete(resolve value)
+			}
+		}
+	}
+
+	presenter CreateOrUpdateDeliverMaterialCategoryPresenter for UIDeliverMaterialCategory{
+		view interface{
+			op setParent(parent : proxy of DLDeliverMaterialCategory):void
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : proxy of DLDeliverMaterialCategory){
+				commiter=[notifier|
+					service.createValue(parent, getView().value,onSuccess[
+						fire eventbus.DeliverMaterialCategorysChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					getView().setParent(parent)
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of DLDeliverMaterialCategory){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.DeliverMaterialCategorysChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}
+						
+		}
+		
+		service{
+			@Inject mapper : DeliverMaterialCategoryMapper
+			@Inject dao : DLDeliverMaterialCategoryDAO
+			op loadValue(pvalue : proxy of DLDeliverMaterialCategory) : UIDeliverMaterialCategory{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIDeliverMaterialCategory) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(parent: proxy of DLDeliverMaterialCategory, uivalue : UIDeliverMaterialCategory) : void{
+				dao.create(resolve parent)[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateDeliverMaterialCategoryView<DeliverMaterialCategoryForm> for CreateOrUpdateDeliverMaterialCategoryPresenter ui-size:(300,200) ui-title:"运送材料大类维护"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+		op setParent(parent : proxy of DLDeliverMaterialCategory):void{
+			form.parentCategory.value = parent
+		}		
+	}
+	
+	presenter DeliverMaterialCategoryListPresenter {
+		view interface{
+			signal in setResults(results : UIDeliverMaterialCategory[*])
+			op getActionContext() : ActionContext< UIDeliverMaterialCategory>		
+			op clear():void
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.refresh(){
+					service.loadDeliverMaterialCategoryList(onSuccess[items|
+						fire view.setResults(items)
+					])
+			}
+			
+			input eventbus.DeliverMaterialCategorysChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : DeliverMaterialCategoryMapper
+			op loadDeliverMaterialCategoryList() : UIDeliverMaterialCategory[*]{
+				entities.all(typeof(DLDeliverMaterialCategory)).^map[mapper.transform(it)].toList
+			}
+		}
+	}
+	
+	view DeliverMaterialCategoryListView for DeliverMaterialCategoryListPresenter{
+		con : Widget
+		@Inject listGrid : DeliverMaterialCategoryListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		
+		interaction{
+			input view.setResults(results : UIDeliverMaterialCategory[*]){
+				listGrid.setContentProvider(new DeliverMaterialCategoryTreeContentProvider(results)) 
+			}
+		}
+		op getActionContext() : ActionContext< UIDeliverMaterialCategory>{
+				listGrid.createActionContext
+		}
+		op clear():void{
+			listGrid.objects = newArrayList
+		}
+		
+	}	
+	
+}

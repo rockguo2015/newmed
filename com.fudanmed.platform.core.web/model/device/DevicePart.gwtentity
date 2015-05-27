@@ -1,0 +1,202 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.project.*
+	import com.fudanmed.platform.core.web.client.device.*
+	import com.fudanmed.platform.core.web.shared.warehouse.*
+	import com.fudanmed.platform.core.web.client.warehouse.*
+	import com.fudanmed.platform.core.web.server.^service.warehouse.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.web.*
+	
+	
+	ui-datatype UIPartTypeSelectData{
+		productSpec : UIProductSpecification "备件类型"
+		
+		ui-component PartTypeSelectDataForm as GXTForm{
+			@Inject productSpecificationListView : ProductSpecificationListView
+			binding{productSpec as SuggestionItem(productSpecificationListView) content from AllProductSpecificationContentProvider}
+			op createWidget():Widget{
+				widgets.VLayout=>[
+					addFill(productSpec.asWidget)
+				]
+			}
+		}
+		
+		constraints PartTypeSelectDataValidator{
+			rule Required on productSpec
+		}
+	}
+	
+	signal PartTypeSelectChanged
+	
+	presenter CreateOrUpdatePartTypeSelectDataPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIPartTypeSelectData
+			op setValue(value : UIPartTypeSelectData) : void
+		}
+		
+		interaction{
+			parent : proxy of RCDeviceType
+			input prepare.setup4Create(parent : proxy of RCDeviceType){
+				this.parent = parent
+				this.activate[
+					done
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+					service.createValue(parent,getView().value,onSuccess[
+						fire eventbus.PartTypeSelectChanged()
+						notifier.success
+					])
+			}			
+		}
+		
+		service{
+			@Inject ^validator : PartTypeSelectDataValidator
+			op createValue(parent : proxy of RCDeviceType, uivalue : UIPartTypeSelectData) : void{
+				uivalue.validateWith(^validator)
+//				val partType = uivalue.productSpec.^resolve(entities) as RCProductSpecification
+				(resolve parent).addtoPartTypes((resolve uivalue.productSpec.toProxy))
+			}
+		}
+	}
+	
+	view CreateOrUpdatePartTypeSelectDataView for CreateOrUpdatePartTypeSelectDataPresenter implements IHasSize, IHasTitle{
+		@Inject form : PartTypeSelectDataForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIPartTypeSelectData{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIPartTypeSelectData value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(300,200)
+		}
+		op getTitle():String{
+			'备件类型维护'
+		}
+					
+	}		
+	
+	
+	presenter PartTypeListPresenter{
+		view interface{
+			signal in setResults(results : UIProductSpecification[*])
+			signal out createRequest()
+			signal out deleteRequest(value : proxy of RCProductSpecification)
+		}
+		
+		interaction{
+			factory createOrUpdatePartTypeSelectDataPresenter : CreateOrUpdatePartTypeSelectDataPresenter
+			context : proxy of RCDeviceType
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(context : proxy of RCDeviceType){
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.setDeviceType(context : proxy of RCDeviceType){
+				this.context = context
+				refresh
+			}
+			
+			input view.createRequest(){
+				createOrUpdatePartTypeSelectDataPresenter.get.setup4Create(context)[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			input view.deleteRequest(value : proxy of RCProductSpecification){
+				service.delete(context,value,onSuccess[
+					fire eventbus.PartTypeSelectChanged
+				])
+			}
+			input call.refresh(){
+				if(context!=null){
+					service.loadProductSpecificationList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input eventbus.PartTypeSelectChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : ProductSpecificationMapper
+			
+			op loadProductSpecificationList(context : proxy of RCDeviceType) : UIProductSpecification[*]{
+				(resolve context).partTypes.^map[mapper.transform(it)].unlazy
+			}
+			
+			op delete(context : proxy of RCDeviceType,value : proxy of RCProductSpecification) : void{
+				(resolve context).removeFromPartTypes(resolve value)
+			}
+		}
+	}
+	
+	view PartTypeListView for PartTypeListPresenter{
+		con : Widget
+		@Inject listGrid : ProductSpecificationListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = widgets.ContentPanel=>[
+				widget = listGrid.asWidget
+				addButton(widgets.TextButton("添加备件")[
+					fire view.createRequest()
+				])
+				
+				val ac = listGrid.createActionContext
+				addButton(ac.onSingleObjectAction[
+					onExecute[UIProductSpecification productSpec|
+						widgets.ConfirmMessageBox("确认","确认移除备件")[
+							fire view.deleteRequest(productSpec.toProxy)
+						].show
+					]
+				].asButtonRequester("移除备件"))
+			]
+		}
+		
+		interaction{
+			input view.setResults(results : UIProductSpecification[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+}

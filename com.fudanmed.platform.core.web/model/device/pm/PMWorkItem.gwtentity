@@ -1,0 +1,1275 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.Date
+	import java.util.Collection
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.device.pm.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.command.IContextConsumer
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.google.gwt.i18n.client.DateTimeFormat
+	import com.uniquesoft.uidl.validation.Validates
+	import com.uniquesoft.gwt.shared.datatype.ActionColumn
+	
+	ui-enum UIPMWorkItemStatue for RCPMWorkItemStatue{
+		title{
+			planed = "新建"
+			executing = "执行中"
+			teamAssigned = "已派发"
+			teamFinished = "待结单"
+			finished = "已结单"
+			partialExecuting = '部分执行中'
+			ready4TeamFinishReport ='待上报'			
+		}
+	}
+	
+	ui-entity UIPMWorkItem for RCPMWorkItem{
+		^title : String "名称"
+		description : String "说明"
+		sid : String "任务单号"
+		assignDate : Date "安排执行日期"
+		dispatchDate : Date "派发日期"
+		supplier : proxy of RCSupplier "服务提供商"
+		team : proxy of RCMaintenanceTeam "配合班组"
+		finishDate : Date "完工日期"
+		teamComment : String "班组上报信息"
+		part assignments :  proxy of RCWorkItemPlanAssignment[*] "PM任务" 
+		status : UIPMWorkItemStatue "状态"
+		evaluate : UIPMWorkItemEvaluate
+	
+		dispatchTeam : Boolean "派发班组"
+		allWorkerTaskFinished : Boolean
+		map PMWorkItemMapper validate by PMWorkItemValidator{
+			direct{^title,description,sid readonly,assignDate,dispatchDate readonly,supplier,assignments,status readonly,team, finishDate, teamComment,evaluate}
+			from entity{
+				ui.allWorkerTaskFinished = entity.allWorkerTaskFinished
+			}
+		}
+	
+		constraints PMWorkItemValidator{
+			rule Required on ^title
+			rule Required on assignDate
+		}
+	
+		ui-component PMWorkItemForm as GXTForm{
+			binding{
+				^title,description as TextAreaItem,dispatchTeam,
+				sid as ReadonlyItem,assignDate,supplier as SuggestionItem content from client.organization.AllSupplierContentProvider,
+				team as ComboBoxItem content from client.organization.AllMaintenanceTeamContentProvider
+			}
+			op createWidget() : Widget{
+				TABLE=>[
+					tr=>[
+						td=>[it += ^title.asWidget]
+						td=>[it += assignDate.asWidget]
+					]
+					tr=>[
+						td=>[it += supplier.asWidget]
+					]
+					tr=>[
+						td=>[it += dispatchTeam.asWidget=>[dispatchTeam.addValueChangedListener[dispatchToo|
+							if(dispatchToo)team.asWidget.enable
+							else{ 
+								team.asWidget.disable
+								team.value = null
+							}
+						]]]
+						td=>[it += team.asWidget=>[it.disable]]
+					]
+					tr=>[
+						td=>[colSpan=2 it += description.asWidget=>[height = 50 width=700]]
+					]
+				]
+			}
+		}
+	
+		ui-component PMWorkItem4DispatcherListGrid as GXTGrid{
+			binding{sid,^title,assignDate,dispatchDate, supplier as DefaultColumn(150),team,status, finishDate, teamComment as StringColumn(300)}
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+				status.render=[context,value,sb|
+					if(
+						value == UIPMWorkItemStatue::teamFinished ||value == UIPMWorkItemStatue::planed
+					){
+						sb.appendHtmlConstant("<B style='color:red;'>"+value.toString+"</B>")
+					}else{
+						sb.appendHtmlConstant(value.toString)
+					}
+				]
+			}			
+			
+		}
+		
+		ui-component PMWorkItem4TeamListGrid as GXTGrid{
+			binding{sid,^title,assignDate,dispatchDate,supplier as DefaultColumn(150),team,status, finishDate, teamComment as StringColumn(300)}
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+				status.render=[context,value,sb|
+//					val stateStr = switch(value){
+//						case UIPMWorkItemStatue::teamAssigned:{
+//							'新派发'
+//						}
+//						case UIPMWorkItemStatue::teamFinished:{
+//							'完成'
+//						}
+//						default:{
+//							value.toString
+//						}
+//					}
+					val stateStr = value.toString
+					if(
+						value == UIPMWorkItemStatue::teamAssigned || value == UIPMWorkItemStatue::partialExecuting || value == UIPMWorkItemStatue::ready4TeamFinishReport
+					){
+						sb.appendHtmlConstant("<B style='color:red;'>"+stateStr+"</B>")
+					}else{
+						sb.appendHtmlConstant(value.toString)
+					}
+				]
+			}			
+			
+		}
+		ui-component PMWorkItemListGrid as GXTGrid{
+			binding{sid,^title,assignDate,supplier as DefaultColumn(150),team,status, finishDate, teamComment as StringColumn(300)}	
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+			}
+					
+		}
+		
+		ui-component PMWorkItemProperty as GXTPropertyView{
+			binding{
+				sid,^title,
+				description as PropertyItem(2),
+				assignDate,supplier,
+				dispatchDate,team,
+				status, finishDate, 
+				teamComment as PropertyItem(2)
+			}	
+			op getCols():Integer{
+				2
+			}
+		}
+	
+	}
+	presenter PMWorkItemPropertyPresenter implements IContextConsumer<RCPMWorkItemProxy>{
+		
+		view interface{
+			signal in setValue(value : UIPMWorkItem)
+			signal in clear()
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input call.setContext(ac : ActionContext<RCPMWorkItemProxy>){
+				ac.addSelectionChangedListener[Iterable<RCPMWorkItemProxy> selections|
+					if(selections.size==1){
+						setValue(selections.head)
+					}else{
+						getView().clear
+					}
+				]
+			}
+			input call.setValue(value : proxy of RCPMWorkItem){
+				service.loadValue(value,onSuccess[
+					fire view.setValue(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject mapper : PMWorkItemMapper
+			op loadValue(value : proxy of RCPMWorkItem): UIPMWorkItem{
+				mapper.transform(resolve value)
+			}
+		}
+	}
+	
+	view PMWorkItemPropertyView for PMWorkItemPropertyPresenter ui-title:"PM任务单详情" ui-size:(650,200){
+		con : Widget
+		@Inject propertyView : PMWorkItemProperty
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = con.lazy[
+				propertyView.asWidget
+			]
+		}
+		interaction{
+			input view.setValue(value : UIPMWorkItem){
+				propertyView.value = value
+			}
+			input view.clear(){
+				propertyView.value = new UIPMWorkItem
+			}
+		}
+	}
+	signal PMWorkItemsChanged
+	
+	presenter CreateOrUpdatePMWorkItemPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIPMWorkItem
+			op setValue(value : UIPMWorkItem) : void
+			op setDevicePlans(plans : Collection<UIDevicePMPlan>) : void
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(selectedItems: Collection<RCDevicePMPlanProxy>){
+				commiter = [notifier|
+					service.createValue(selectedItems,getView().value,onSuccess[
+						fire eventbus.PMWorkItemsChanged()
+						notifier.success
+					])
+					
+				]
+				this.activate[
+					service.resolveDevicePMPlans(selectedItems,onSuccess[
+						getView().setDevicePlans(it)
+						done
+					])
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of RCPMWorkItem){
+				commiter = [notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.PMWorkItemsChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						service.loadAssignedDevicePlans(value,onSuccess[
+							getView().setDevicePlans(it)
+							done
+						])
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : PMWorkItemMapper
+			@Inject devicePMPlanMapper : DevicePMPlanMapper
+			@Inject dao : RCPMWorkItemDAO
+			op loadValue(pvalue : proxy of RCPMWorkItem) : UIPMWorkItem{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIPMWorkItem) : void{
+				dao.update(resolve uivalue)[
+					mapper.transform(uivalue,it)
+					if(it.team!=null)
+						it.assignTeam
+					
+				]
+			}
+			op resolveDevicePMPlans(selectedPlans: Collection<RCDevicePMPlanProxy>) :Collection<UIDevicePMPlan>{
+				selectedPlans.^map[
+					devicePMPlanMapper.transform(entities.^resolve(it,typeof(RCDevicePMPlan)))
+				].unlazy
+			}
+			
+			op loadAssignedDevicePlans(workItem : proxy of RCPMWorkItem) : Collection<UIDevicePMPlan>{
+				(resolve workItem).assignments.^map[devicePMPlanMapper.transform(it.plan)].unlazy
+			}
+			
+			op createValue(selectedPlans: Collection<RCDevicePMPlanProxy>,uivalue : UIPMWorkItem) : void{
+				dao.create()[workItem|
+					mapper.transform(uivalue,workItem)
+				]=>[workItem|
+					selectedPlans.forEach[it|
+						workItem.assignPlan(entities.^resolve(it,typeof(RCDevicePMPlan)))
+					]
+					if(workItem.team!=null)
+						workItem.assignTeam
+				]
+				
+			}
+		}
+	}
+	
+	view CreateOrUpdatePMWorkItemView for CreateOrUpdatePMWorkItemPresenter implements IHasSize, IHasTitle{
+		@Inject form : PMWorkItemForm
+		@Inject devicePlanList : client.device.DevicePMPlan4ConfirmListGrid
+		initializer{
+			
+			this += widgets.VLayout=>[
+				add(widgets.FieldSet("设备PM计划清单")=>[
+					widget = devicePlanList.asWidget
+				],widgets.VLayoutData(1,280,10))
+				add(form.asWidget,widgets.VLayoutData(1,-1,10))
+			]
+		}
+		op getValue() : UIPMWorkItem{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIPMWorkItem value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(800,550)
+		}
+		op getTitle():String{
+			'PM任务单'
+		}
+		op setDevicePlans(plans : Collection<UIDevicePMPlan>) : void{
+			devicePlanList.objects = plans
+		}					
+	}
+	
+	ui-criteria UIPMWorkItemCriteria for RCPMWorkItemCriteria{
+		assignDateFrom : Date "安排日期(开始)"
+		assignDateTo : Date "安排日期(结束)"
+		team : proxy of RCMaintenanceTeam "班组"
+		status : UIPMWorkItemStatue "状态"
+		includeFinishedItems : Boolean "含已完成任务"
+		teams : Collection<Long> 		
+		map PMWorkItemCriteriaMapper{
+			@Inject workflowService : RCWorkflowService
+			
+			direct{assignDateFrom,assignDateTo,includeFinishedItems,team,status}
+			to entity{
+				workflowService.loadMaintenanceTeams4SystemUser.forEach[
+					entity.teams.add(it.id)
+				]
+			}
+		}
+		
+		ui-component PMWorkItemCriteriaForm as GXTForm{
+			binding{assignDateFrom,assignDateTo,includeFinishedItems,status as ComboBoxItem,team as ComboBoxItem content from client.organization.AllMaintenanceTeamContentProvider}
+		}
+	}
+	
+	presenter PMWorkItemManagementPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UIPMWorkItem>)
+			signal in refresh()
+	
+			signal out createRequest() @pmWorkItemManagementPresenter "新建PM任务"
+			signal out deleteRequest(value : proxy of RCPMWorkItem)
+			signal out modifyRequest(value : proxy of RCPMWorkItem)@pmWorkItemManagementPresenter "修改/派发"
+			signal out filterRequest(c : UIPMWorkItemCriteria)
+			signal out pmworkitemSelected(value : proxy of RCPMWorkItem)
+			signal out selectedPlansRequest(value : proxy of RCPMWorkItem)
+			signal out finishWorkItemRequest(value : proxy of RCPMWorkItem) @pmWorkItemManagementPresenter "PM任务结单"
+		}
+	
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdatePMWorkItemPresenter
+			factory createPresenter : DevicePMPlanSelectorPresenter
+			factory devicePMPlanSelectorPresenter : DevicePMPlanSelectorPresenter
+			
+			part workItemPlanAssignmentListPresenter : WorkItemPlanAssignmentListPresenter
+			part workItemWorkerAssignmentListPresenter : PMWorkItemWorkerAssignmentListPresenter
+			part workItemEvaluatePropertyViewPresenter : PMWorkItemEvaluatePropertyViewPresenter
+			part workItemPropertyPresenter : PMWorkItemPropertyPresenter
+			input prepare.setup( ){
+				initPart(workItemWorkerAssignmentListPresenter).setup[
+				initPart(workItemPlanAssignmentListPresenter).setup(true)[
+				initPart(workItemEvaluatePropertyViewPresenter).setup[
+				initPart(workItemPropertyPresenter).setup[
+				this.activate[
+					fire view.refresh
+					done
+				]]]]]
+			}
+			
+			input view.createRequest(){
+				createPresenter.get=>[
+					it.setup4CreateWorkItem()[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.finishWorkItemRequest(value : proxy of RCPMWorkItem){
+				service.finishWorkItem(value,onSuccess[
+					fire eventbus.PMWorkItemsChanged
+				])
+			}
+			
+			input view.modifyRequest(value : proxy of RCPMWorkItem){
+				createOrUpdatePresenter.get=>[
+					setup4Update(value)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]				
+			}
+			input view.deleteRequest(value : proxy of RCPMWorkItem){
+				service.delete(value,onSuccess[
+					fire eventbus.PMWorkItemsChanged
+				])
+			}
+			input view.selectedPlansRequest(value : proxy of RCPMWorkItem){
+				devicePMPlanSelectorPresenter.get.setup(value)[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			input view.pmworkitemSelected(value : proxy of RCPMWorkItem){
+				workItemPlanAssignmentListPresenter.setPMWorkItem(value)
+				workItemWorkerAssignmentListPresenter.setPMWorkItem(value)
+				workItemEvaluatePropertyViewPresenter.setPMWorkItem(value)
+			}
+			input view.filterRequest(c : UIPMWorkItemCriteria){
+				if(c.status == UIPMWorkItemStatue::finished) c.setIncludeFinishedItems(true)
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			
+			input eventbus.PMWorkItemWorkerAssignmentsChanged(){
+				fire view.refresh
+			}
+			input eventbus.PMWorkItemsChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : PMWorkItemCriteriaMapper
+			@Inject mapper : PMWorkItemMapper
+			@Inject dao : RCPMWorkItemDAO
+			op filter(uicriteria : UIPMWorkItemCriteria) : IPagedResult<UIPMWorkItem>{
+				var c = uicriteria.createPagedCriteria(typeof(RCPMWorkItemCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op finishWorkItem(value : proxy of RCPMWorkItem) : void{
+				(resolve value).finish
+			}
+			op delete(value : proxy of RCPMWorkItem) : void {
+				dao.delete(resolve value)[]
+			}
+		}
+	}
+	
+	view PMWorkItemManagementView for PMWorkItemManagementPresenter{
+		@Inject listGrid : PMWorkItem4DispatcherListGrid
+		@Inject criteriaForm : PMWorkItemCriteriaForm
+		@Inject removeWorkItemPlanAssignmentCommand : RemoveWorkItemPlanAssignmentCommand
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			listGrid.keepSelection
+			val ac = listGrid.createActionContext
+			con = widgets.FramedPanel("PM调度工作台")=>[
+				setWidget(widgets.BorderLayout=>[
+					center[
+						widgets.ContentPanel()=>[
+							setBodyBorder(false)
+							setBorders(false)
+							widget = widgets.VLayout=>[
+								addFill(TABLE=>[
+									tr=>[
+										td=>[it += criteriaForm.assignDateFrom.asWidget]
+										td=>[it += criteriaForm.assignDateTo.asWidget]
+										td=>[it += criteriaForm.includeFinishedItems.asWidget]
+									]
+									tr=>[
+										td=>[it += criteriaForm.team.asWidget]
+										td=>[it += criteriaForm.status.asWidget]
+										td=>[it += widgets.TextButton("筛选")=>[
+												setWidth("80px")
+												addSelectHandler[
+													fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+														page = 1
+													])
+												]
+											]]
+									]
+								])
+								pager = listGrid.createPager=>[
+									pagerHandler = [int pageNum, int recordsPerPage|
+										fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+											page = pageNum
+											pageSize = recordsPerPage
+										])							
+									]
+								]	
+								listGrid.addSelectEntityListener[
+									fire view.pmworkitemSelected(it.toProxy)
+								]
+								add(widgets.ContentPanel()=>[
+									widget = widgets.VLayout=>[
+									add(listGrid.asWidget,widgets.VLayoutData(1,1))
+									add(pager.asWidget,widgets.VLayoutData(1,-1))]
+								],widgets.VLayoutData(1,1))
+							]	
+							securities.check(ui-requester.createRequest)[v|
+								addButton(widgets.TextButton("新建")=>[
+									addSelectHandler[
+										fire view.createRequest
+									]
+								])
+							]
+							securities.check(ui-requester.modifyRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIPMWorkItem selectedValue |
+										fire view.modifyRequest(selectedValue.toProxy)
+									]
+									onCheckEnable[
+										listGrid.singleSelectedAnd[
+											it.status == UIPMWorkItemStatue::planed 
+										]
+									]
+								].asButtonRequester("修改/派发"))					
+							]
+							securities.check(ui-requester.selectedPlansRequest)[v|
+									addButton(ac.onSingleObjectAction[
+										onExecute[UIPMWorkItem selectedValue |
+											fire view.selectedPlansRequest(selectedValue.toProxy)
+										]
+										onCheckEnable[
+											listGrid.singleSelectedAnd[
+												it.status == UIPMWorkItemStatue::planed 
+											]
+										]
+									].asButtonRequester("追加PM计划"))					
+								]							
+							securities.check(ui-requester.finishWorkItemRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIPMWorkItem selectedValue |
+										widgets.ConfirmMessageBox("确认","确认结单")[
+											fire view.finishWorkItemRequest(selectedValue.toProxy)
+										].show
+									]
+									onCheckEnable[
+										listGrid.singleSelectedAnd[
+											it.status == UIPMWorkItemStatue::teamFinished 
+										]
+									]
+									
+								].asButtonRequester("结单"))					
+							]
+							securities.check(ui-requester.deleteRequest)[v|
+								addButton(ac.onSingleObjectAction[
+									onExecute[UIPMWorkItem selectedValue |
+										widgets.ConfirmMessageBox("确认","确认删除")[
+											fire view.deleteRequest(selectedValue.toProxy)
+										].show
+									]
+									onCheckEnable[
+										listGrid.singleSelectedAnd[
+											it.status == UIPMWorkItemStatue::planed 
+										]
+									]
+									
+								].asButtonRequester("删除"))					
+							]							
+						]	
+					]
+					
+					south(0.4)[
+						widgets.TabPanel=>[
+							workItemPropertyPresenter.context = ac.adapt[toProxy]
+							add(workItemPropertyPresenter.getView().asWidget,"任务详情")
+							add(widgets.ContentPanel=>[
+								widget = workItemPlanAssignmentListPresenter.getView().asWidget
+								val wiac = workItemPlanAssignmentListPresenter.getView().getActionContext().adapt[toProxy]
+	
+								
+								addCommand(wiac,removeWorkItemPlanAssignmentCommand=>[workitemContext = ac])
+							],"PM计划清单")
+							add(workItemWorkerAssignmentListPresenter.getView().asWidget,"派工信息")
+							add(workItemEvaluatePropertyViewPresenter.getView().asWidget,"服务评价")
+						]						
+					]
+				])
+			]					
+		}
+		
+		op showResults(results : IPagedResult<UIPMWorkItem>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+	}	
+	
+	
+	signal WorkItemPlanAssignmentsChanged
+
+	ui-entity UIWorkItemPlanAssignment for RCWorkItemPlanAssignment{
+	
+		sid : String "设备编号"
+		name : String "设备名称"
+		specification : String "规格型号"
+		location : proxy of RCOnsitePosition "安装地点"
+		deviceType : proxy of RCDeviceType "设备类型"
+		
+		planDate : Date "PM计划日期"
+		finishDate:Date "完成日期"
+		pmType : proxy of RCDevicePMType "维保类别"
+		intervalInDays : Integer "维保周期(天)"
+		pmComment : String "维保内容"
+		smstatus : UIDevicePMPlanStatus "状态"
+		comment : String "维保记录"
+		
+		team : proxy of RCMaintenanceTeam "检修班组"
+		workers : proxy of RCEmployee[*] "检修人"
+		
+		showDetails : ActionColumn "查看"
+	
+		map WorkItemPlanAssignmentMapper{
+			direct{
+				{sid,entity.plan.spec.device.sid} readonly,
+				{name,entity.plan.spec.device.name} readonly,
+				{specification,entity.plan.spec.device.specification} readonly,
+				{location,entity.plan.spec.device.location} readonly,
+				{deviceType,entity.plan.spec.device.deviceType} readonly,
+				{pmType,entity.plan.spec.pmType} readonly,
+				{intervalInDays,entity.plan.spec.intervalInDays} readonly,
+				{planDate,entity.plan.planDate} readonly,
+				{finishDate,entity.plan.finishDate} readonly,
+				{pmComment,entity.plan.spec.description} readonly,
+				{smstatus,entity.plan.status} readonly,
+				{team,entity.workitem.team} readonly,
+				{comment,entity.plan.comment}
+			}
+			from entity{
+				if( entity.workerAssignment!=null)
+					ui.workers = entity.workerAssignment.workers.^map[toProxy].toList
+			}
+		}
+	
+		ui-component WorkItemPlanAssignmentListGrid as GXTGrid{
+			required showWorkItemPlanAssignmentPropertyPresenterPropertyCommand : ShowWorkItemPlanAssignmentPropertyPresenterPropertyCommand
+			
+			binding{sid,name,specification,location,deviceType,pmType,planDate,finishDate,workers,intervalInDays,smstatus,showDetails as LinkColumn}
+			op initializeComponent():void{
+				this.showDetails.setSelectHandler(this)[
+					showWorkItemPlanAssignmentPropertyPresenterPropertyCommand.^execute(it.toProxy)
+				]
+			}
+		}
+		ui-component WorkItemPlanAssignment4DeviceListGrid as GXTGrid{
+			required showWorkItemPlanAssignmentPropertyPresenterPropertyCommand : ShowWorkItemPlanAssignmentPropertyPresenterPropertyCommand
+			binding{planDate,smstatus,finishDate,team,workers,pmComment,comment,pmType,intervalInDays,showDetails as LinkColumn}
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+				this.showDetails.setSelectHandler(this)[
+					showWorkItemPlanAssignmentPropertyPresenterPropertyCommand.^execute(it.toProxy)
+				]
+			}
+		}
+		
+		ui-component WorkItemPlanAssignmentPropertyView as GXTPropertyView{
+			binding{sid,name,specification,location,deviceType,pmType,intervalInDays, planDate,smstatus,pmComment,comment}
+		}
+	}
+	
+	ui-command ShowWorkItemPlanAssignmentPropertyPresenterPropertyCommand for proxy of RCWorkItemPlanAssignment "查看设备详情"{ 
+		factory workItemPlanAssignmentPropertyPresenter : WorkItemPlanAssignmentPropertyPresenter
+		execute{
+			workItemPlanAssignmentPropertyPresenter.get.setup[
+				setValue(value)
+				popup(it)
+			]
+		}
+	}
+	ui-command RemoveWorkItemPlanAssignmentCommand for proxy of RCWorkItemPlanAssignment[*] "移除PM计划"{ 
+		public workitemContext : ActionContext<UIPMWorkItem>
+		execute{
+			widgets.ConfirmMessageBox("确认","确认移除")[
+				service.removeAssignment(value.toList,onSuccess[
+					fire eventbus.PMWorkItemsChanged
+				])
+			].show
+		}
+		check-enable{
+			workitemContext.selectedObjects.head!=null && 
+			workitemContext.selectedObjects.head.status == UIPMWorkItemStatue::planed &&
+			value.size > 0
+		}
+		service{
+			op removeAssignment(assignments : Collection<RCWorkItemPlanAssignmentProxy>):void{
+				val workitem = (resolve assignments.head).workitem;
+				Validates::Assert(workitem.SMState == RCPMWorkItemSMState::planed,"PM任务派发后不能修改")
+				assignments.forEach[assignment|
+					(resolve assignment).workitem.deassignPlan((resolve assignment).plan)
+				]
+			}
+		}
+	}
+	
+	ui-command AppendWorkItemPlanAssignmentCommand for proxy of RCPMWorkItem "维保设备"{
+		execute{
+			
+		}
+	}
+	presenter WorkItemPlanAssignmentPropertyPresenter implements IContextConsumer<RCWorkItemPlanAssignmentProxy>{
+		
+		view interface{
+			signal in setValue(value : UIWorkItemPlanAssignment)
+			signal in clear()
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input call.setContext(ac : ActionContext<RCWorkItemPlanAssignmentProxy>){
+				ac.addSelectionChangedListener[Iterable<RCWorkItemPlanAssignmentProxy> selections|
+					if(selections.size==1){
+						setValue(selections.head)
+					}else{
+						getView().clear
+					}
+				]
+			}
+			input call.setValue(value : proxy of RCWorkItemPlanAssignment){
+				service.loadValue(value,onSuccess[
+					fire view.setValue(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject mapper : WorkItemPlanAssignmentMapper
+			op loadValue(value : proxy of RCWorkItemPlanAssignment): UIWorkItemPlanAssignment{
+				mapper.transform(resolve value)
+			}
+		}
+	}
+	
+	view WorkItemPlanAssignmentPropertyView1 for WorkItemPlanAssignmentPropertyPresenter
+	ui-size:(500,300)  ui-title:"设备PM任务信息"{
+		con : Widget
+		@Inject propertyView : WorkItemPlanAssignmentPropertyView
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = con.lazy[
+				propertyView.asWidget
+			]
+		}
+		interaction{
+			input view.setValue(value : UIWorkItemPlanAssignment){
+				propertyView.value = value
+			}
+			input view.clear(){
+				propertyView.value = new UIWorkItemPlanAssignment
+			}
+		}
+	}
+	
+	presenter WorkItemPlanAssignmentListPresenter{
+		view interface{
+			signal in setResults(results : UIWorkItemPlanAssignment[*])
+			op getActionContext():ActionContext<UIWorkItemPlanAssignment>
+			op supportMultiSelect(support : Boolean):void
+			op getSelectedValues():Collection<UIWorkItemPlanAssignment>
+		}
+		
+		interaction{
+			context : proxy of RCPMWorkItem
+			assignment  : proxy of pm.RCPMWorkItemWorkerAssignment
+			unassignedOnly : Boolean
+			input prepare.setup(multiSelect : Boolean){
+				getView().supportMultiSelect(multiSelect)
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(multiSelect : Boolean,context : proxy of RCPMWorkItem){
+				this.context = context
+				getView().supportMultiSelect(multiSelect)
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.setPMWorkItem(context : proxy of RCPMWorkItem){
+				this.context = context
+				refresh
+			}
+			
+			input prepare.setup4UnassignedItems(multiSelect : Boolean,context : proxy of RCPMWorkItem){
+				getView().supportMultiSelect(multiSelect)
+				unassignedOnly = true
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			input prepare.setup4WorkerReport(multiSelect : Boolean,context : proxy of pm.RCPMWorkItemWorkerAssignment){
+				getView().supportMultiSelect(multiSelect)
+				this.assignment = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			input call.refresh(){
+				if(assignment!=null){
+						service.loadWorkItemPlanAssignment4WorkerList(assignment,onSuccess[items|
+							fire view.setResults(items)
+						])
+					
+				}
+				if(context!=null){
+					if(!unassignedOnly.isLogicTrue)
+						service.loadWorkItemPlanAssignmentList(context,onSuccess[items|
+							fire view.setResults(items)
+						])
+					else
+						service.loadUnassignedWorkItemPlanAssignmentList(context,onSuccess[items|
+							fire view.setResults(items)
+						])
+				}
+			}
+			input eventbus.DevicePMPlansChanged(){
+				refresh
+			}
+			input eventbus.WorkItemPlanAssignmentsChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : WorkItemPlanAssignmentMapper
+			
+			op loadWorkItemPlanAssignmentList(context : proxy of RCPMWorkItem) : UIWorkItemPlanAssignment[*]{
+				(resolve context).assignments.^map[mapper.transform(it)].unlazy
+			}
+			op loadUnassignedWorkItemPlanAssignmentList(context : proxy of RCPMWorkItem) : UIWorkItemPlanAssignment[*]{
+				(resolve context).assignments.filter[workerAssignment==null].^map[mapper.transform(it)].unlazy
+			}
+			op loadWorkItemPlanAssignment4WorkerList(context : proxy of pm.RCPMWorkItemWorkerAssignment) : UIWorkItemPlanAssignment[*]{
+				val workterssignment = resolve context;
+				(workterssignment).workitem.assignments.filter[it.workerAssignment==workterssignment && !it.plan.finished].^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view WorkItemPlanAssignmentListView for WorkItemPlanAssignmentListPresenter{
+		con : Widget
+		@Inject listGrid : WorkItemPlanAssignmentListGrid
+		canSupportMultiSelect : Boolean
+		op supportMultiSelect(support : Boolean):void{
+			canSupportMultiSelect = support
+		}
+		asWidget():Widget{
+			con
+		}
+		layout{
+			if(canSupportMultiSelect)
+				con =listGrid.asMultiSelectGrid=>[listGrid.unForceFit]
+			else
+				con =listGrid.asWidget=>[listGrid.unForceFit]
+		}
+		op getActionContext():ActionContext<UIWorkItemPlanAssignment>{
+			listGrid.createActionContext
+		}
+		op getSelectedValues():Collection<UIWorkItemPlanAssignment>{
+			listGrid.selectedObjects.toList
+		}
+		
+		interaction{
+			input view.setResults(results : UIWorkItemPlanAssignment[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+	
+	presenter DevicePMPlanAssignmentListPresenter{
+		view interface{
+			signal in setResults(results : UIWorkItemPlanAssignment[*])
+			op getActionContext():ActionContext<UIWorkItemPlanAssignment>
+		}
+		
+		interaction{
+			context : proxy of RCDevice
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(context : proxy of RCDevice){
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.setDevice(context : proxy of RCDevice){
+				this.context = context
+				refresh
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadDevicePlanAssignmentList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input eventbus.WorkItemPlanAssignmentsChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : WorkItemPlanAssignmentMapper
+			@Inject dao : RCWorkItemPlanAssignmentDAO
+			op loadDevicePlanAssignmentList(context : proxy of RCDevice) : UIWorkItemPlanAssignment[*]{
+				dao.findByDevice(resolve context).^map[mapper.transform(it)].unlazy
+//				(resolve context).assignments.^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view DevicePMPlanAssignmentListView for DevicePMPlanAssignmentListPresenter{
+		con : Widget
+		@Inject listGrid : WorkItemPlanAssignment4DeviceListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		op getActionContext():ActionContext<UIWorkItemPlanAssignment>{
+			listGrid.createActionContext
+		}
+		interaction{
+			input view.setResults(results : UIWorkItemPlanAssignment[*]){
+				listGrid.objects = results
+			}
+		}
+	}	
+	
+	ui-command ShowDevicePMPlanCommand "PM计划查询" @pmShowDevicePMPlan{
+		factory devicePMPlanSelectorPresenter : DevicePMPlanSelectorPresenter
+		execute{
+			devicePMPlanSelectorPresenter.get.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}
+	
+	presenter DevicePMPlanSelectorPresenter  with-validation implements CommitablePresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UIDevicePMPlan>)
+			signal in refresh()
+			op setUsage(forSelector : Boolean) : void
+			op getSelectedValues() : Collection<RCDevicePMPlanProxy>
+			signal out filterRequest(c : UIDevicePMPlanCriteria)
+		}
+	
+		interaction{
+			factory createOrUpdatePMWorkItemPresenter : CreateOrUpdatePMWorkItemPresenter
+			part onsiteLocationOutlinePresenter : OnsiteLocationOutlinePresenter
+			part deviceCategoryAndTypeListPresenter : DeviceCategoryAndTypeListPresenter
+			
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup(pmworkItem : proxy of RCPMWorkItem){
+				commiter = [notifier|
+					service.assignPlansToWorkItem(pmworkItem,getView().selectedValues,onSuccess[
+						notifier.success
+						println('fire eventbus.DevicePMPlansChanged')
+						fire eventbus.DevicePMPlansChanged
+					])
+				]
+				this.initPart(onsiteLocationOutlinePresenter).setupAsSimpleTree[
+				this.initPart(deviceCategoryAndTypeListPresenter).setup[
+				this.getView().setUsage(true)
+				this.activate[
+					fire view.refresh
+					done
+				]]]
+			}
+			input prepare.setup4CreateWorkItem(){
+				commiter = [notifier|
+					createOrUpdatePMWorkItemPresenter.get.setup4Create(getView().getSelectedValues())[
+						notifier.success
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+				this.initPart(onsiteLocationOutlinePresenter).setupAsSimpleTree[
+				this.initPart(deviceCategoryAndTypeListPresenter).setup[
+				this.getView().setUsage(true)
+				this.activate[
+					fire view.refresh
+					done
+				]]]
+			}
+			
+			input prepare.setup(){
+				this.initPart(onsiteLocationOutlinePresenter).setupAsSimpleTree[
+				this.initPart(deviceCategoryAndTypeListPresenter).setup[
+				this.getView().setUsage(false)
+				this.activate[
+					fire view.refresh
+					done
+				]]]
+				
+			}
+			input view.filterRequest(c : UIDevicePMPlanCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.DevicePMPlansChanged(){
+				fire view.refresh
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				commiter.apply(notifier)
+			}
+		}
+		service{
+			@Inject criteriaMapper : DevicePMPlanCriteriaMapper
+			@Inject mapper : DevicePMPlanMapper
+	
+			op filter(uicriteria : UIDevicePMPlanCriteria) : IPagedResult<UIDevicePMPlan>{
+				var c = uicriteria.createPagedCriteria(typeof(RCDevicePMPlanCriteria),criteriaMapper,entities)=>[it.status = RCDevicePMPlanStatus::planed]
+				c.^limit = 1000
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op assignPlansToWorkItem(workItem : proxy of RCPMWorkItem, selectedPlans : Collection<RCDevicePMPlanProxy>) : void{
+				selectedPlans.forEach[it|
+					(resolve workItem).assignPlan(entities.^resolve(it,typeof(RCDevicePMPlan)))
+				]
+				
+			}
+		}
+	}
+	
+	view DevicePMPlanSelectorView for DevicePMPlanSelectorPresenter implements IHasSize, IHasTitle{
+		@Inject listGrid : DevicePMPlan4SelectListGrid
+		@Inject criteriaForm : DevicePMPlanCriteriaForm
+		pager : IPager 
+		location : proxy of RCOnsitePosition
+		con: Widget
+		asWidget() : Widget{
+			con
+		}
+		listGridInitializer : (DevicePMPlan4SelectListGrid)=>DevicePMPlan4SelectListGrid
+		op fireFilterRequester():void{
+			fire view.filterRequest((criteriaForm.value=>[
+				it.location = location
+			]).withPagerInfo(pager)=>[
+				page = 1
+				pageSize = 1000
+			])				
+			
+		}
+		layout{
+			
+			onsiteLocationOutlinePresenter.getView().actionContext.addSelectionChangedListener[o|
+				location = o.head?.toProxy
+				fireFilterRequester			
+			]
+			deviceCategoryAndTypeListPresenter.onUnselected[
+				criteriaForm.deviceType.value = null
+				criteriaForm.category.value = null
+				fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+					page = 1
+				])							
+			]
+			deviceCategoryAndTypeListPresenter.onDeviceTypeSelected[
+				criteriaForm.deviceType.value = it
+				criteriaForm.category.value = null
+				fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+					page = 1
+				])							
+			]
+			deviceCategoryAndTypeListPresenter.onDeviceTypeCategorySelected[
+				criteriaForm.deviceType.value = null
+				criteriaForm.category.value = '%[' + it.id + ']%'
+				fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+					page = 1
+				])							
+			]				
+//			listGrid.asMultiSelectGrid
+			listGridInitializer.apply(listGrid)
+			con = widgets.ContentPanel=>[
+				setBorders(false)
+				setBodyBorder(false)
+				widget = widgets.HLayout=>[
+				add(widgets.VLayout=>[
+					add(widgets.FieldSet("设备类型")=>[widget=deviceCategoryAndTypeListPresenter.getView().asWidget],widgets.VLayoutData(1,0.5))
+					add(widgets.FieldSet("区域位置")=>[widget=onsiteLocationOutlinePresenter.getView().asWidget],widgets.VLayoutData(1,0.5))
+				],widgets.HLayoutData(0.2,1))
+				add(widgets.VLayout=>[
+					add(TABLE=>[
+						tr=>[
+							td=>[it += criteriaForm.planDateFrom.asWidget]
+							td=>[it += criteriaForm.planDateTo.asWidget=>[
+								criteriaForm.planDateTo.value = today.addMonths(3)
+							]]
+							td=>[]
+						]
+						tr=>[
+							td=>[it += criteriaForm.deviceType.asWidget]
+							td=>[it += criteriaForm.pmType.asWidget]
+							td=>[
+								it += widgets.TextButton("筛选")=>[
+									setWidth("80px")
+									addSelectHandler[
+										fireFilterRequester									]
+								]
+							]
+						]
+					],widgets.VLayoutData(1,-1,10))
+
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]	
+					add( widgets.ContentPanel=>[
+							setWidget(widgets.VLayout=>[
+							add(listGrid.asWidget,widgets.VLayoutData(1,1))
+//							add(pager.asWidget,widgets.VLayoutData(1,-1))
+						])
+					],widgets.VLayoutData(1,1,10))
+
+				],widgets.HLayoutData(0.8,1))
+				
+				]
+			]					
+		}
+		
+		op showResults(results : IPagedResult<UIDevicePMPlan>) : void{
+			pager.pageLoaded(results)
+		}
+		op getSelectedValues() : Collection<RCDevicePMPlanProxy>{
+			listGrid.selectedObjects.^map[it.toProxy].unlazy
+		}
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		op getSize() : Size{
+			new Size(1000,650)
+		}
+		op formatDate(value:Date):String{
+			val d = DateTimeFormat::getFormat("yyyy/MM/dd").format(value)
+			if(value.time < today.time){
+				"<B style='color:red;'>"+d+"</B>"
+			}else if(value.addMonths(-2).time < today.time){
+				"<B style='color:orange;'>"+d+"</B>"
+			}else{
+				d
+			}
+		}
+		op setUsage(forSelector : Boolean) : void{
+			
+			if(forSelector) listGridInitializer = [listGrid=>[
+				asMultiSelectGrid 
+				unForceFit
+				withExpander[value,sb|
+					sb.appendEscapedLines(value.description.nullsafe)
+				]
+				planDate.render=[context,value,sb|
+					sb.appendHtmlConstant(formatDate(value))
+				]
+			]]
+			else listGridInitializer = [listGrid=>[
+				asWidget 
+				unForceFit
+				withExpander[value,sb|
+					sb.appendEscapedLines(value.description.nullsafe)
+				]
+				planDate.render=[context,value,sb|
+					sb.appendHtmlConstant(formatDate(value))
+
+				]
+				
+			]]
+		}
+		op getTitle():String{
+			'PM任务单维护：选择待安排的设备PM计划'
+		}
+	}	
+	
+	presenter PMWorkItemListPresenter{
+		view interface{
+			signal in setResults(results : UIPMWorkItem[*])
+			op getActionContext():ActionContext<UIPMWorkItem>
+		}
+		
+		interaction{
+			input call.setup(postInit : (PMWorkItemListPresenter)=>void){
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			
+			input call.setDevice(device : proxy of RCDevice){
+				service.loadPMWorkItemList(device,onSuccess[
+					getView.setResults(it)
+				])
+			}
+			
+		}
+		
+		service{
+			@Inject mapper : PMWorkItemMapper
+			@Inject workItemDAO : RCPMWorkItemDAO
+			op loadPMWorkItemList(device : proxy of RCDevice) : UIPMWorkItem[*]{
+				workItemDAO.findWorkItem4Device((resolve device)).^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view PMWorkItemListView for PMWorkItemListPresenter{
+		con : Widget
+		@Inject listGrid : PMWorkItemListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		op getActionContext():ActionContext<UIPMWorkItem>{
+			listGrid.createActionContext
+		}
+		interaction{
+			input view.setResults(results : UIPMWorkItem[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+	
+}

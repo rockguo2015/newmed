@@ -1,0 +1,128 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import com.uniquesoft.gwt.shared.datatype.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.sencha.gxt.data.shared.TreeStore
+	import com.sencha.gxt.widget.core.client.treegrid.TreeGrid
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.validation.ValidationException
+	import com.uniquesoft.uidl.validation.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	
+	ui-datatype RangeValueData{
+		lower : Double "上限"
+		upper : Double "下限"
+		ui-component RangeValueDataForm as GXTForm{
+			binding{lower,upper}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(lower.asWidget)
+						addFill(upper.asWidget)
+					]
+				]
+			}
+		}
+		constraints RangeValueDataValidator{
+			constraint seq on lower,upper "下限必须大于上限"{
+				if(entity.lower!=null&&entity.upper!=null){
+					entity.lower <= entity.upper
+				}
+			}
+		}
+	}
+	
+	presenter RangeValueEditorPresenter with-validation implements IValueEditor{
+		view interface{
+			op getValue() : RangeValueData
+			op setValue(value : RangeValueData) : void
+		}
+		
+		interaction{
+			commiter : ()=>void
+			input call.setup(slot : proxy of RCAttributeSlot, callback : (RangeValueEditorPresenter)=>void){
+				commiter = [|
+					service.updateValue(slot,getView().value,onSuccess[
+						fire eventbus.AttributeSlotChanged(it)
+					])
+				]
+				this.activate[
+					service.loadValue(slot,onSuccess[
+						getView().setValue(it)
+						callback.apply(this)
+					])
+				]
+			}
+			
+			input call.performCommit() {
+				commiter.apply()
+			}			
+		}
+		
+		service{
+			@Inject rangeValueDataValidator : RangeValueDataValidator
+			@Inject attributeSlotMapper : AttributeSlotMapper
+			op updateValue(slot : proxy of RCAttributeSlot, theValue : RangeValueData) : UIAttributeSlot{
+				theValue.validateWith(rangeValueDataValidator)
+				((resolve slot).value as RCRangeValue).setValue(theValue.lower,theValue.upper)
+				attributeSlotMapper.transform(resolve slot)
+			}
+			op loadValue(slot : proxy of RCAttributeSlot):RangeValueData{
+				val value = (resolve slot).value as RCRangeValue
+				new RangeValueData()=>[
+					it.lower = value.lowerBound
+					it.upper = value.upperBound					
+				]
+			}
+		}
+	}
+	
+	view RangeValueEditorView for RangeValueEditorPresenter{
+		@Inject form : RangeValueDataForm
+		initializer{
+			this += form.asWidget
+		}
+		op getValue() : RangeValueData{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(RangeValueData value) : void{
+			form.value = value
+		}		
+		op getSize():Size{
+			new Size(300,200)
+		}
+		op getTitle():String{
+			'设置数值'
+		}
+	}
+	
+	
+}

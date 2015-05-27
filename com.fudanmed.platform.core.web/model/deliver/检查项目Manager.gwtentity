@@ -1,0 +1,89 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	
+	
+		
+	ui-command ShowDeliverPatientCheckTypeManagementCommand "检查项目维护"{
+		factory managementPresenter : DeliverPatientCheckTypeManagementPresenter
+		execute{
+			managementPresenter.get.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}	
+	presenter DeliverPatientCheckTypeManagementPresenter{
+		view interface{
+		}
+		interaction{
+			part categoryQueryListPresenter : DeliverPatientCheckCategoryListPresenter
+			part deliverPatientCheckTypeQueryListPresenter : DeliverPatientCheckTypeQueryListPresenter
+			input prepare.setup(){
+				initPart(categoryQueryListPresenter).setup[
+				initPart(deliverPatientCheckTypeQueryListPresenter).setup(categoryQueryListPresenter.getView().actionContext.adapt[toProxy])[
+					this.activate[
+						done
+					]
+				]]
+			}
+		}
+	}
+	
+	view DeliverPatientCheckTypeManagementView for DeliverPatientCheckTypeManagementPresenter{
+		@Inject createDeliverPatientCheckCategoryCommand : CreateDeliverPatientCheckCategoryCommand
+		@Inject updateDeliverPatientCheckCategoryCommand : UpdateDeliverPatientCheckCategoryCommand
+		@Inject deleteDeliverPatientCheckCategoryCommand : DeleteDeliverPatientCheckCategoryCommand
+		
+		@Inject createDeliverPatientCheckTypeCommand : CreateDeliverPatientCheckTypeCommand
+		@Inject updateDeliverPatientCheckTypeCommand : UpdateDeliverPatientCheckTypeCommand
+		@Inject deleteDeliverPatientCheckTypeCommand : DeleteDeliverPatientCheckTypeCommand
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}	
+		layout{
+			val categoryAC = categoryQueryListPresenter.getView().actionContext.adapt[toProxy]
+			con = widgets.FramedPanel("检查项目维护")=>[
+				widget = widgets.HLayout=>[
+					add(widgets.FieldSet("检查项目大类")=>[
+						widget = widgets.ContentPanel=>[
+						widget = categoryQueryListPresenter.getView().asWidget
+						addCommand([|categoryAC.onlySelected],createDeliverPatientCheckCategoryCommand)
+						addCommand(categoryAC,updateDeliverPatientCheckCategoryCommand)
+						addCommand(categoryAC,deleteDeliverPatientCheckCategoryCommand)
+						]
+					],widgets.HLayoutData(0.3,1))
+					add(widgets.FieldSet("检查项目")=>[
+						widget = widgets.ContentPanel=>[
+						val typeAC = deliverPatientCheckTypeQueryListPresenter.getView().actionContext.adapt[toProxy]
+						widget = deliverPatientCheckTypeQueryListPresenter.getView().asWidget
+						addCommand(categoryAC,createDeliverPatientCheckTypeCommand)
+						addCommand(typeAC,updateDeliverPatientCheckTypeCommand)
+						addCommand(typeAC,deleteDeliverPatientCheckTypeCommand)
+						]
+					],widgets.HLayoutData(0.7,1))
+				]
+			]
+		}
+		
+	}	
+}

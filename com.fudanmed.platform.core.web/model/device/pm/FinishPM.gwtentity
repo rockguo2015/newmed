@@ -1,0 +1,91 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.Date
+	import java.util.Collection
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.device.pm.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.command.IContextConsumer
+	import com.fudanmed.platform.core.web.client.*
+
+	ui-datatype UIWorkItemPlanAssignmentFinishData{
+		comment : String "维保记录"
+		finished : Boolean "已完成"
+		ui-component WorkItemPlanAssignmentFinishDataForm as GXTForm{
+			binding{finished,comment as TextAreaItem}
+		}
+	}
+	
+	ui-command FinishWorkItemPlanAssignmentCommand require proxy of RCWorkItemPlanAssignment[*] "已维保" @pmTeamWorkItemManagementPresenter{
+		factory p : FinishWorkItemPlanAssignmentPresenter
+		execute{
+			p.get.setup4Create(value)[
+				fire eventbus.PopActivatedPresenter(it)
+			]
+		}
+	}
+
+	presenter FinishWorkItemPlanAssignmentPresenter  with-validation implements CommitablePresenter{
+		view interface{
+			op getValue():UIWorkItemPlanAssignmentFinishData
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : Iterable<RCWorkItemPlanAssignmentProxy>){
+				commiter=[notifier|
+					service.createValue(getView().value,parent.toList,onSuccess[
+						fire eventbus.WorkItemPlanAssignmentsChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			op createValue(uivalue : UIWorkItemPlanAssignmentFinishData,parents :Collection<RCWorkItemPlanAssignmentProxy>) : void{
+				parents.forEach[parent|
+					if(uivalue.finished)
+						(resolve parent).plan.finish(uivalue.comment)
+					else 
+						(resolve parent).plan.reportInfo(uivalue.comment)
+				]
+			}
+		}
+	}
+	
+	view FinishWorkItemPlanAssignmentView for FinishWorkItemPlanAssignmentPresenter ui-size:(400,250) ui-title:"PM维保记录"{
+		@Inject form : WorkItemPlanAssignmentFinishDataForm
+		initializer{
+			this += widgets.DialogContent(widgets.VLayout=>[
+				addFill(form.finished.asWidget)
+				addFill(form.comment.asWidget=>[width=400 height=100])
+			])
+		}
+		op getValue() : UIWorkItemPlanAssignmentFinishData{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIWorkItemPlanAssignmentFinishData value) : void{
+			form.value = value
+		}		
+	}
+	
+}

@@ -1,0 +1,1051 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.fudanmed.platform.core.web.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.project.*
+	import com.fudanmed.platform.core.web.client.device.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.domain.^proxy.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.^proxy.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.web.*
+	import edu.fudan.langlab.domain.security.ISystemUserService
+	import edu.fudan.langlab.domain.code.CodeService	
+	
+	content-provider AllDeviceContentProvider for UIDevice{
+		@Inject mapper : DeviceMapper
+		criteria extends PagedObjectNameFilter{}
+		contents{
+			(filter.createPagedCriteria(typeof(RCDeviceLookupCriteria),entities)=>[
+				info = filter.name
+			]).listAndTransform[mapper.transform(it)]
+		}
+	}
+	
+	ui-entity UIDevice for RCDevice{
+
+		sid : String "设备编号"
+		name : String "设备名称"
+		specification : String "规格型号"
+		location : proxy of RCOnsitePosition "区域位置"
+		locationName : String "安装地点"
+		serviceLocationName : String "服务区域"
+		productor : proxy of RCSupplier "生产厂商"
+		supplier : proxy of RCSupplier "供应厂商"
+		deviceType : proxy of RCDeviceType "设备类型"
+		deviceIndicator : proxy of RCDeviceIndicator "设备标识"
+		usageType : proxy of RCDeviceUsageType "使用情况"
+		acquireType : proxy of RCAcquireType "增置方式"
+		buyTime : Date "购买时间"
+		buyPrice : Double "资产原值"
+		outStockTime : Date "出厂时间"
+		netPrice : Double "资产净值"
+		owner : proxy of RCEmployee "资产负责人"
+		depreciationYears : Integer "折旧年限"
+		netLeaveRate : Double "净残率"
+		operator : proxy of RCEmployee "操作人员"
+		ownerDepartmentName : String "使用部门"
+		comment : String "备注"
+
+		map DeviceMapper validate by DeviceValidator{
+			direct{
+				sid,name,specification,
+				location,locationName,serviceLocationName,productor,supplier,
+				deviceType,deviceIndicator,usageType,acquireType,
+				buyTime,buyPrice,outStockTime,netPrice,
+				owner,ownerDepartmentName,depreciationYears,netLeaveRate,comment,operator readonly
+			}
+			@Inject systemUserService : ISystemUserService
+			
+			to entity{
+				entity.operator = (systemUserService.currentUser as RCEmployeeUser).employee
+			}
+		}
+	
+		constraints DeviceValidator{
+			@Inject dao : RCDeviceDAO
+			rule Required on sid
+			rule Required on name
+			rule Required on deviceType
+			constraint SidIsUniqueCheck on sid "设备编号必须唯一"{
+				entity.isUnique[
+					dao.findDeviceBySid(sid)
+				]
+			}
+		}
+		
+		csv-map DeviceCSVMapper{
+			binding{sid,name,specification,locationName,serviceLocationName,productor,supplier,deviceType,deviceIndicator,
+				usageType,acquireType,buyTime,buyPrice,outStockTime,netPrice,owner,depreciationYears,netLeaveRate,ownerDepartmentName,comment
+			}
+			item-mapper for productor{
+				@Inject supplierDAO : RCSupplierDAO
+				from-csv{
+					if(value.nullOrEmpty) return null;
+					val result = supplierDAO.findByName(value)?.toProxy
+					if(result==null)acceptor.accept("无效生产厂商:"+value)
+					return result
+				}
+			}
+			item-mapper for supplier{
+				@Inject supplierDAO : RCSupplierDAO
+				from-csv{
+					if(value.nullOrEmpty) return null;
+					val result = supplierDAO.findByName(value)?.toProxy
+					if(result==null)acceptor.accept("无效供应厂商:"+value)
+					return result
+				}
+			}
+			item-mapper for deviceType{
+				@Inject dao : RCDeviceTypeDAO
+				from-csv{
+					if(value.nullOrEmpty) return null;
+					val result = dao.findByCode(value)?.toProxy
+					if(result==null)acceptor.accept("无效设备类型")
+					return result
+				}
+			}
+			item-mapper for deviceIndicator{
+				@Inject codeService : CodeService
+				from-csv{
+					if(value.nullOrEmpty) return null
+					val result = codeService.getCodeByName(typeof(RCDeviceIndicator),value)
+					if(result==null)acceptor.accept("无效设备标识")
+					return result.toProxy
+				}
+			}
+			item-mapper for usageType{
+				@Inject codeService : CodeService
+				from-csv{
+					if(value.nullOrEmpty) return null
+					val result = codeService.getCodeByName(typeof(RCDeviceUsageType),value)
+					if(result==null)acceptor.accept("无效使用情况")
+					return result.toProxy
+				}
+			}
+			item-mapper for acquireType{
+				@Inject codeService : CodeService
+				from-csv{
+					if(value.nullOrEmpty) return null
+					val result = codeService.getCodeByName(typeof(RCAcquireType),value)
+					if(result==null)acceptor.accept("无效增置方式")
+					return result.toProxy
+				}
+			}
+			item-mapper for owner{
+				@Inject employeeDAO : RCEmployeeDAO
+				from-csv{
+					if(value.nullOrEmpty) return null
+					val result = employeeDAO.findByName(value)
+					if(result.isEmpty)acceptor.accept("无效保管人")
+					return result.head.toProxy
+				}
+			}
+		}
+	//location,serviceLocationName,outStockTime,comment
+		ui-component DeviceForm as GXTForm{
+			binding{
+				sid,name,specification,
+				location as SuggestionItem content from AllOnsitePositionAyncContentProvider,
+				locationName,serviceLocationName,outStockTime,comment as TextAreaItem,
+				productor as SuggestionItem content from client.organization.AllDeviceSupplierContentProvider,
+				supplier as SuggestionItem content from client.organization.AllDeviceSupplierContentProvider,
+				usageType as ComboBoxItem content from client.device.AllDeviceUsageTypeContentProvider,
+				deviceType as ComboBoxItem content from client.device.AllDeviceTypeContentProvider,
+				acquireType as ComboBoxItem content from client.device.AllAquireTypeContentProvider,
+				deviceIndicator as ComboBoxItem content from client.device.AllDeviceIndicatorContentProvider,
+				buyTime,buyPrice,netPrice,
+				owner as ComboBoxItem content from client.organization.AllEmployeesContentProvider,
+				depreciationYears,netLeaveRate,
+				ownerDepartmentName
+			}
+			con : Widget
+			factory organizationOutlinePresenter : OrganizationOutlinePresenter
+			factory onsiteLocationOutlinePresenter : OnsiteLocationOutlinePresenter
+			op asWidget() : Widget{
+				con = con.lazy[
+					TABLE=>[
+						tr=>[
+							td=>[it += deviceType.asWidget]
+							td=>[it += sid.asWidget]
+							td=>[it += name.asWidget]
+						]
+						tr=>[
+							td=>[it += specification.asWidget]
+							
+							td=>[
+							]
+						]
+						tr=>[
+							td=>[
+								it += TABLE=>[tr=>[
+									td=>[ 
+										it += location.asWidget
+									]
+									td=>[
+										it += widgets.TextButton("选择")=>[
+											addSelectHandler[
+												onsiteLocationOutlinePresenter.get=>[
+													it.setupAsSimpleTree[
+														asSelector("选择区域位置",300,500)[
+															selectLocation(it)
+														].show
+													]
+												]
+											]
+										]
+									]
+								]]
+							]
+							td=>[colSpan = 2 it += locationName.asWidget=>[it.width="550"]]
+						]
+						tr=>[
+							td=>[it += outStockTime.asWidget]
+							td=>[colSpan = 2 it += serviceLocationName.asWidget=>[it.width="550"]]
+						]
+						tr=>[
+							td=>[it += productor.asWidget]
+							td=>[it += supplier.asWidget]
+							td=>[it += deviceIndicator.asWidget]
+						]
+						tr=>[
+							td=>[it += acquireType.asWidget]
+							td=>[it += usageType.asWidget]
+							td=>[it += buyTime.asWidget]
+						]
+						tr=>[
+							td=>[it += buyPrice.asWidget]
+							td=>[it += netPrice.asWidget]
+							td=>[it += owner.asWidget]
+						]
+						tr=>[
+							td=>[it += depreciationYears.asWidget]
+							td=>[colSpan = 2 
+								it += TABLE=>[tr=>[
+									td=>[
+										it += ownerDepartmentName.asWidget=>[it.width="550"]
+									]
+									td=>[
+										it += widgets.TextButton("选择")=>[
+											addSelectHandler[
+												organizationOutlinePresenter.get=>[
+													it.setupAsSimpleTree[
+														asSelector("选择组织机构",300,500)[
+															ownerDepartmentName.value = it.fullPath
+														].show
+													]
+												]
+											]
+										]
+									]
+								]]
+							]
+						]
+						tr=>[
+							td=>[it += netLeaveRate.asWidget]
+						]
+						tr=>[
+							td=>[colSpan=3 it += comment.asWidget=>[it.height=50 it.width=750]]
+						]
+					]
+				]
+			}
+			
+			op selectLocation(selectedLocation : UIOnsitePosition):void{
+				if(selectedLocation==null) return;
+				location.value = selectedLocation.toProxy
+				locationName.value = selectedLocation.fullPath
+				serviceLocationName.value = selectedLocation.fullPath
+			}			
+		}
+	
+		ui-component DeviceListGrid as GXTGrid{
+			binding{
+				sid ,name,
+				specification,locationName ,usageType ,
+				location,serviceLocationName,outStockTime,
+				operator,buyTime,
+				productor,supplier,deviceType
+			}
+			op initializeComponent():void{
+				asWidget
+				this.unForceFit
+			}
+		}
+		
+		ui-component DeviceProperty as GXTPropertyView{
+			binding{
+				sid,name,specification,
+				locationName,productor,supplier,
+				location,serviceLocationName,outStockTime,				
+				deviceType,deviceIndicator,acquireType,
+				usageType,buyTime,buyPrice,
+				netPrice,owner,ownerDepartmentName,
+				depreciationYears,netLeaveRate as DoubleItem,
+				comment as PropertyItem(3)
+			}
+			op getCols() : Integer{
+				3
+			}
+		}
+	
+		ui-component DeviceListView as GXTListView{
+			template render(device : UIDevice){
+				"<div>
+					<div style='float:left'>
+						<span style='font-size:120%;font-weight:bold;'>{device.sid}</span><BR> 
+						名称:{device.name}
+					</div> 
+					<div style='width:50px;float:right'>{device.deviceType.name}</div>
+				</div>"
+			}
+		}
+	
+	}
+
+	signal DevicesChanged
+	
+	presenter CreateOrUpdateDevicePresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIDevice
+			op setValue(value : UIDevice) : void
+			op setDeviceType(deviceType : proxy of RCDeviceType) : void
+			op setLocation(location : UIOnsitePosition) : void
+			
+		}
+		
+		interaction{
+			used4Update : boolean
+			input prepare.setup4Create(deviceType : proxy of RCDeviceType, location : UIOnsitePosition){
+				used4Update = false
+				this.activate[
+					getView().setDeviceType(deviceType)
+					getView().setLocation(location)
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of RCDevice){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			input prepare.setup4Dupicate(value : proxy of RCDevice){
+				used4Update = false
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it=>[id=null sid="" name=""])
+						done
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.DevicesChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.DevicesChanged()
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : DeviceMapper
+			@Inject deviceDAO : RCDeviceDAO
+			op loadValue(pvalue : proxy of RCDevice) : UIDevice{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIDevice) : void{
+				deviceDAO.update((resolve uivalue))[
+					mapper.transform(uivalue,it)
+				]
+			}
+			op createValue(uivalue : UIDevice) : void{
+				deviceDAO.createDevice(uivalue.sid)[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateDeviceView for CreateOrUpdateDevicePresenter implements IHasSize, IHasTitle{
+		@Inject form : DeviceForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIDevice{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIDevice value) : void{
+			if(value.id!=null){
+				form.deviceType.asWidget.disable
+			}
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(920,460)
+		}
+		op getTitle():String{
+			'设备信息维护'
+		}
+		op setDeviceType(deviceType : proxy of RCDeviceType) : void{
+			form.deviceType.value = deviceType
+		}
+		op setLocation(location : UIOnsitePosition) : void{
+			form.selectLocation(location)
+		}			
+	}		
+
+	ui-criteria UIDeviceCriteria for RCDeviceCriteria{
+		sid : String "设备编号"
+		name : String "名称"
+		deviceType : proxy of RCDeviceType
+		category : String
+		location : proxy of RCOnsitePosition
+		map DeviceCriteriaMapper{
+			direct{sid,name,deviceType,category,location}
+		}
+		ui-component DeviceCriteriaForm as GXTForm{
+			binding{sid as EscapedTextItem,name as EscapedTextItem,deviceType as ReadonlyItem,category as ReadonlyItem, location as ReadonlyItem}
+		}
+	}
+	
+	ui-enum UIDeviceCategoryOrTypeType{
+		type,category
+		title{
+		}
+	}
+	
+	ui-entity UIDeviceCategoryAndType for RCDeviceTypeCategory{
+		name : String "名称"
+		type : UIDeviceCategoryOrTypeType
+		parent : UIDeviceCategoryAndType
+//		op toProxy():GWTNamedEntity{
+//			switch(type){
+//				case UIDeviceCategoryOrTypeType::type:{
+//					new RCDeviceTypeProxy()=>[
+//						it.id = this.id
+//						it.name = this.name
+//					]
+//				}
+//				case UIDeviceCategoryOrTypeType::category:{
+//					new RCDeviceTypeCategoryProxy()=>[
+//						it.id = this.id
+//						it.name = this.name
+//					]
+//				}
+//			}
+//		}
+		op hashCode():int{
+			(type.name+id).hashCode
+		}
+		op equals(o:Object):boolean{
+			if(o==null) return false;
+			val other = o as UIDeviceCategoryAndType
+			other.name == name && other.id ==id
+		}
+		ui-component UIDeviceCategoryAndTypeList as GXTTreeGrid{
+			binding{name}
+		}
+		
+	}
+	
+	presenter DeviceCategoryAndTypeListPresenter{
+		view interface{
+			signal in showCategories(results : Collection<UIDeviceCategoryAndType>)
+			signal out deviceCategoryOrTypeSelected(categoryOrType : UIDeviceCategoryAndType)
+			op getActionContext():ActionContext<UIDeviceCategoryAndType>
+			
+			
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					service.loadCategories(onSuccess[
+						fire view.showCategories(it)
+						done
+					])
+				]
+			}
+			
+			unselectedNotifier : (Void)=>void
+			input call.onUnselected(notifier:(Void)=>void){
+				this.unselectedNotifier = notifier
+			}
+			
+			deviceTypeNotifier : (RCDeviceTypeProxy)=>void
+			input call.onDeviceTypeSelected(notifier:(RCDeviceTypeProxy)=>void){
+				this.deviceTypeNotifier = notifier
+			}
+			
+			deviceTypeCategoryNotifier : (RCDeviceTypeCategoryProxy)=>void
+			input call.onDeviceTypeCategorySelected(notifier:(RCDeviceTypeCategoryProxy)=>void){
+				this.deviceTypeCategoryNotifier = notifier
+			}
+			
+			input view.deviceCategoryOrTypeSelected(categoryOrType : UIDeviceCategoryAndType){
+				if(categoryOrType==null) 
+					unselectedNotifier?.apply(null)
+				
+				else
+					service.loadCategoryOrType(categoryOrType,onSuccess[ct|
+						switch(categoryOrType.type){
+							case UIDeviceCategoryOrTypeType::type:{
+								deviceTypeNotifier?.apply(ct as RCDeviceTypeProxy)
+							}
+							case UIDeviceCategoryOrTypeType::category:{
+								deviceTypeCategoryNotifier?.apply(ct as RCDeviceTypeCategoryProxy)
+							}
+						}
+					])
+			}			
+		}
+		
+		service{
+			@Inject categoryDao : RCDeviceTypeCategoryDAO
+
+			op loadCategories():Collection<UIDeviceCategoryAndType>{
+				val results = <UIDeviceCategoryAndType>newArrayList
+				categoryDao.allRootCategories.forEach[category|
+					loadCategories(null,category.toProxy,results)
+				]
+				results
+			}
+			op loadCategoryOrType(categoryOrType : UIDeviceCategoryAndType) : GWTNamedEntity{
+				switch(categoryOrType.type){
+					case UIDeviceCategoryOrTypeType::type:{
+						entities.get(typeof(RCDeviceType),categoryOrType.id).toProxy
+					}
+					case UIDeviceCategoryOrTypeType::category:{
+						entities.get(typeof(RCDeviceTypeCategory),categoryOrType.id).toProxy
+					}
+				}
+			}			
+			op loadCategories(parent: UIDeviceCategoryAndType,pcategory : proxy of RCDeviceTypeCategory,results : Collection<UIDeviceCategoryAndType>) : void{
+				val category = resolve pcategory
+				val result = new UIDeviceCategoryAndType=>[categoryAndType|
+					categoryAndType.id = category.id
+					categoryAndType.type = UIDeviceCategoryOrTypeType::category
+					categoryAndType.name = category.entityName
+					categoryAndType.parent = parent
+					category.deviceTypes.forEach[deviceType|
+						results += new UIDeviceCategoryAndType=>[
+							it.id = deviceType.id
+							it.type = UIDeviceCategoryOrTypeType::type
+							it.name = deviceType.entityName
+							it.parent = categoryAndType
+						]
+					]
+				]
+				results += result
+				category.subCategories.forEach[
+					loadCategories(result,it.toProxy,results)
+				]				
+			}
+		}
+	}
+	
+	view DeviceCategoryAndTypeListView for DeviceCategoryAndTypeListPresenter{
+		@Inject categoryListGrid : UIDeviceCategoryAndTypeList
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		
+		layout{
+			con = 	categoryListGrid.asWidget		
+			categoryListGrid.createActionContext.addSelectionChangedListener[
+				fire view.deviceCategoryOrTypeSelected(head)
+			]
+			
+		}
+		interaction{
+			input view.showCategories(results : Collection<UIDeviceCategoryAndType>){
+				categoryListGrid.setContentProvider(new DeviceCategoryOrTypeTreeContentProvider(results))
+			}	
+		}	
+		op getActionContext():ActionContext<UIDeviceCategoryAndType>{
+			categoryListGrid.createActionContext
+		}
+	}
+	
+	presenter DeviceManagementPresenter provide proxy of RCDevice{
+		view interface{
+			signal in showResults(results : IPagedResult<UIDevice>)
+//			signal in showCategories(results : Collection<UIDeviceCategoryAndType>)
+			signal in refresh()
+	
+			signal out createRequest() @deviceManagementPresenter "新建设备"
+			signal out duplicateRequest(value : proxy of RCDevice) @deviceManagementPresenter "复制设备"
+			signal out deleteRequest(value : proxy of RCDevice) @deviceManagementPresenter "删除设备"
+			signal out modifyRequest(value : proxy of RCDevice) @deviceManagementPresenter "修改设备"
+			signal out filterRequest(c : UIDeviceCriteria)
+			
+			signal out deviceSelected(value : proxy of RCDevice)
+//			signal out deviceCategoryOrTypeSelected(categoryOrType : UIDeviceCategoryAndType)
+			
+//			signal in filterWithoutDeviceType()
+//			signal in filterWithDeviceType(deviceType : proxy of RCDeviceType)
+//			signal in filterWithDeviceTypeCategory(category : proxy of RCDeviceTypeCategory)
+			
+			signal out showPMEvaluateInfo(value : proxy of RCPMWorkItem)
+			signal out showPMWorkItemInfo(value : proxy of RCPMWorkItem)
+			
+			op getSelectedDeviceType(): RCDeviceTypeProxy
+			op getSelectedLocation():UIOnsitePosition
+			
+			op getActionContext():ActionContext<RCDeviceProxy>
+		}
+	
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateDevicePresenter
+			factory createPrimaryTypePresenter : CreatePrimaryTypePresenter
+			factory createCompositeTypePresenter  : CreateCompositeTypePresenter
+			factory workItemEvaluatePropertyViewPresenter  : PMWorkItemEvaluatePropertyViewPresenter
+			factory workItemPropertyPresenter : PMWorkItemPropertyPresenter
+			
+			part attributeSlotTreeListPresenter : AttributeSlotTreeListPresenter
+			part devicePropertyPresenter : DevicePropertyPresenter
+			part devicePMPlanList4DevicePresenter : DevicePMPlanList4DevicePresenter
+//			part workItemListPresenter : PMWorkItemListPresenter
+			part deviceDocumentStorageListPresenter : DocumentStorageListPresenter
+			part devicepictureListPresenter : PictureListPresenter
+			part onsiteLocationOutlinePresenter : OnsiteLocationOutlinePresenter
+			part deviceCategoryAndTypeListPresenter : DeviceCategoryAndTypeListPresenter
+			part devicePMPlanAssignmentListPresenter : DevicePMPlanAssignmentListPresenter
+			input prepare.setup(){
+				initPart(attributeSlotTreeListPresenter).setup[
+					initPart(devicePropertyPresenter).setup[
+						initPart(devicePMPlanList4DevicePresenter).setup[
+//						initPart(workItemListPresenter).setup[
+						initPart(deviceDocumentStorageListPresenter).setup[
+						initPart(devicepictureListPresenter).setup[
+						initPart(onsiteLocationOutlinePresenter).setupAsSimpleTree[
+						initPart(deviceCategoryAndTypeListPresenter).setup[
+						initPart(devicePMPlanAssignmentListPresenter).setup[
+					this.activate[
+						//getView().filterWithoutDeviceType()
+						//getView().filterWithDeviceType(ct as RCDeviceTypeProxy)
+						//getView().filterWithDeviceTypeCategory(ct as RCDeviceTypeCategoryProxy)
+//						deviceCategoryAndTypeListPresenter.onUnselected[
+//							getView().filterWithoutDeviceType()
+//						]
+//						deviceCategoryAndTypeListPresenter.onDeviceTypeSelected[
+//							getView().filterWithDeviceType(it)
+//						]
+//						deviceCategoryAndTypeListPresenter.onDeviceTypeCategorySelected[
+//							getView().filterWithDeviceTypeCategory(it)
+//						]
+						done
+					]
+				]]]]]]]]
+			}
+			
+			input view.createRequest(){
+				val deviceType = getView().getSelectedDeviceType()
+				val location = getView().getSelectedLocation()
+				createOrUpdatePresenter.get=>[
+					setup4Create(deviceType,location)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.duplicateRequest(value : proxy of RCDevice){
+				createOrUpdatePresenter.get=>[
+					setup4Dupicate(value)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]				
+			}
+			input view.modifyRequest(value : proxy of RCDevice){
+				createOrUpdatePresenter.get=>[
+					setup4Update(value)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]				
+			}
+			input view.showPMEvaluateInfo(value : proxy of RCPMWorkItem){
+				workItemEvaluatePropertyViewPresenter.get=>[
+					setup()[
+						fire eventbus.PopActivatedPresenter(it)
+						it.setPMWorkItem(value)
+					]
+				]				
+			}
+			input view.showPMWorkItemInfo(value : proxy of RCPMWorkItem){
+				workItemPropertyPresenter.get=>[
+					setup()[
+						fire eventbus.PopActivatedPresenter(it)
+						it.setValue(value)
+					]
+				]				
+			}
+			input view.deleteRequest(value : proxy of RCDevice){
+				service.delete(value,onSuccess[
+					fire eventbus.DevicesChanged
+				])
+			}
+			input view.filterRequest(c : UIDeviceCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			
+			input view.deviceSelected(value : proxy of RCDevice){
+				service.loadEntityExtension(value,onSuccess[
+					attributeSlotTreeListPresenter.setExtensiableEntity(it)
+				])
+				devicePropertyPresenter.setDevice(value)
+				devicePMPlanList4DevicePresenter.setDevice(value)
+//				workItemListPresenter.setDevice(value)
+				devicePMPlanAssignmentListPresenter.setDevice(value)
+				deviceDocumentStorageListPresenter.setDevice(new DeviceFileContainerProxy(value))
+				devicepictureListPresenter.setDevice(new DevicePictureContainerProxy(value))
+			}
+			
+//			input view.deviceCategoryOrTypeSelected(categoryOrType : UIDeviceCategoryAndType){
+//				if(categoryOrType==null) 
+//					getView().filterWithoutDeviceType()
+//				
+//				else
+//					service.loadCategoryOrType(categoryOrType,onSuccess[ct|
+//						
+//						switch(categoryOrType.type){
+//							case UIDeviceCategoryOrTypeType::type:{
+//								getView().filterWithDeviceType(ct as RCDeviceTypeProxy)
+//							}
+//							case UIDeviceCategoryOrTypeType::category:{
+//								getView().filterWithDeviceTypeCategory(ct as RCDeviceTypeCategoryProxy)
+//							}
+//						}
+//					])
+//			}
+			input eventbus.DevicesChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : DeviceCriteriaMapper
+			@Inject mapper : DeviceMapper
+			@Inject categoryDao : RCDeviceTypeCategoryDAO
+			@Inject deviceDao : RCDeviceDAO
+			op filter(uicriteria : UIDeviceCriteria) : IPagedResult<UIDevice>{
+				var c = uicriteria.createPagedCriteria(typeof(RCDeviceCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op delete(value : proxy of RCDevice) : void {
+				deviceDao.delete(resolve value)[]
+			}
+			op loadEntityExtension(device : proxy of RCDevice) : proxy of RCExtensiableEntity{
+				(resolve device).extension.toProxy
+			}
+			
+//			op loadCategoryOrType(categoryOrType : UIDeviceCategoryAndType) : GWTNamedEntity{
+//				switch(categoryOrType.type){
+//					case UIDeviceCategoryOrTypeType::type:{
+//						entities.get(typeof(RCDeviceType),categoryOrType.id).toProxy
+//					}
+//					case UIDeviceCategoryOrTypeType::category:{
+//						entities.get(typeof(RCDeviceTypeCategory),categoryOrType.id).toProxy
+//					}
+//				}
+//			}
+
+		}
+	}
+	
+	view DeviceManagementView for DeviceManagementPresenter{
+		@Inject listGrid : DeviceListGrid
+//		@Inject categoryListGrid : UIDeviceCategoryAndTypeList
+		@Inject criteriaForm : DeviceCriteriaForm
+		
+		@Inject createDeviceDocmentStorageCommand : CreateDeviceDocumentStorageCommand
+		@Inject updateDeviceDocmentStorageCommand : UpdateDeviceDocumentStorageCommand
+		@Inject deleteDeviceDocmentStorageCommand : DeleteDeviceDocumentStorageCommand
+		@Inject createDevicePictureCommand : CreateDevicePictureCommand
+		@Inject updateDevicePictureCommand : UpdateDevicePictureCommand
+		@Inject deleteDevicePictureCommand : DeleteDevicePictureCommand
+		@Inject uploadDeviceCommand : UploadDeviceCommand
+		@Inject exportDeviceCommand : ExportDeviceCommand
+		
+		pager : IPager 
+		locationAc : ActionContext<UIOnsitePosition>
+		deviceCategoryAndTypeAC : ActionContext<UIDeviceCategoryAndType>
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			val ac = listGrid.createActionContext
+			locationAc = onsiteLocationOutlinePresenter.getView().getActionContext
+			deviceCategoryAndTypeAC = deviceCategoryAndTypeListPresenter.getView().getActionContext()
+			
+			con = widgets.FramedPanel("设备管理")=>[
+				widget = widgets.HLayout=>[
+					add(
+						widgets.VLayout=>[
+							add(widgets.FieldSet("设备类型")=>[
+								widget = widgets.ContentPanel=>[widget= deviceCategoryAndTypeListPresenter.getView().asWidget]
+							
+							],widgets.VLayoutData(1,0.5))
+							add(widgets.FieldSet("区域位置")=>[
+								widget = widgets.ContentPanel=>[widget= onsiteLocationOutlinePresenter.getView().asWidget]
+							
+							],widgets.VLayoutData(1,0.5))
+						],widgets.HLayoutData(200,1,1)
+					)
+					locationAc.addSelectionChangedListener[selected|
+						criteriaForm.location.value = locationAc.selectedObjects.head?.toProxy
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = 1
+						])							
+					]
+					deviceCategoryAndTypeListPresenter.onUnselected[
+						criteriaForm.deviceType.value = null
+						criteriaForm.category.value = null
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = 1
+						])							
+					]
+					deviceCategoryAndTypeListPresenter.onDeviceTypeSelected[
+						criteriaForm.deviceType.value = it
+						criteriaForm.category.value = null
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = 1
+						])							
+					]
+					deviceCategoryAndTypeListPresenter.onDeviceTypeCategorySelected[
+						criteriaForm.deviceType.value = null
+						criteriaForm.category.value = '%[' + it.id + ']%'
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = 1
+						])							
+					]
+					
+					add(widgets.FieldSet("设备列表")=>[
+						
+						widget = widgets.VLayout=>[
+							add(
+								widgets.HTableLayout()=>[
+									add(<Widget>newArrayList(
+										criteriaForm.sid.asWidget,
+										criteriaForm.name.asWidget,
+										widgets.TextButton("筛选")=>[
+											setWidth("80px")
+											addSelectHandler[
+												fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+													page = 1
+												])							
+											]
+										]
+									)	
+								)]
+							)
+							pager = listGrid.createPager=>[
+								pagerHandler = [int pageNum, int recordsPerPage|
+									fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+										page = pageNum
+										pageSize = recordsPerPage
+									])							
+								]
+							]
+							add(widgets.ContentPanel=>[
+								widget = widgets.VLayout=>[
+									add(listGrid.asWidget,widgets.VLayoutData(1,1))
+									add(pager.asWidget)
+								]
+								securities.check(ui-requester.createRequest)[v|
+									addButton(widgets.TextButton("新建")=>[
+										addSelectHandler[
+											fire view.createRequest
+										]
+									])
+								]
+								securities.check(ui-requester.duplicateRequest)[v|
+									addButton(ac.onSingleObjectAction[
+										onExecute[UIDevice selectedValue |
+											fire view.duplicateRequest(selectedValue.toProxy)
+										]
+									].asButtonRequester("复制"))					
+								]					
+								securities.check(ui-requester.modifyRequest)[v|
+									addButton(ac.onSingleObjectAction[
+										onExecute[UIDevice selectedValue |
+											fire view.modifyRequest(selectedValue.toProxy)
+										]
+									].asButtonRequester("修改"))					
+								]					
+								securities.check(ui-requester.deleteRequest)[v|
+									addButton(ac.onSingleObjectAction[
+										onExecute[UIDevice selectedValue |
+											widgets.ConfirmMessageBox("确认","确认删除")[
+												fire view.deleteRequest(selectedValue.toProxy)
+											].show
+										]
+									].asButtonRequester("删除"))					
+								]
+								addSimpleCommand(uploadDeviceCommand)
+								addCommand([|criteriaForm.value],exportDeviceCommand)
+											
+							],widgets.VLayoutData(1,0.6))
+							
+							add(widgets.TabPanel=>[
+								add(devicePropertyPresenter.getView().asWidget,"基本信息")
+								add(attributeSlotTreeListPresenter.getView().asWidget,"扩展技术参数")
+								add(devicePMPlanList4DevicePresenter.getView().asWidget,"PM任务清单")
+								add(devicePMPlanAssignmentListPresenter.getView().asWidget,"PM记录")
+//								add(widgets.ContentPanel=>[
+//									widget = workItemListPresenter.getView().asWidget
+//									val workItemAc = workItemListPresenter.getView().actionContext 
+//									addButton(workItemAc.onSingleObjectAction[
+//										onExecute[UIPMWorkItem workItem|
+//											fire view.showPMWorkItemInfo(workItem.toProxy)
+//										]
+//									].asButtonRequester("任务单详情"))
+//									addButton(workItemAc.onSingleObjectAction[
+//										onExecute[UIPMWorkItem workItem|
+//											fire view.showPMEvaluateInfo(workItem.toProxy)
+//										]
+//									].asButtonRequester("服务评价"))
+//								],"PM记录")
+	
+								add(widgets.Label("维修记录"),"维修记录")
+								add(widgets.ContentPanel=>[
+									widget = deviceDocumentStorageListPresenter.getView().asWidget
+									addCommand(ac.adapt[new DeviceFileContainerProxy(toProxy)],createDeviceDocmentStorageCommand,"上传")
+									val deviceDocumentAc = deviceDocumentStorageListPresenter.getView().actionContext.adapt[toProxy]
+									addCommand(deviceDocumentAc,updateDeviceDocmentStorageCommand,"修改")
+									addCommand(deviceDocumentAc,deleteDeviceDocmentStorageCommand,"删除")
+								],"关联文档")
+								add(widgets.ContentPanel=>[
+									widget = devicepictureListPresenter.getView().asWidget
+									addCommand(ac.adapt[new DevicePictureContainerProxy(toProxy)],createDevicePictureCommand,"上传")
+									val deviceDocumentAc = devicepictureListPresenter.getView().actionContext.adapt[toProxy]
+									addCommand(deviceDocumentAc,updateDevicePictureCommand,"修改")
+									addCommand(deviceDocumentAc,deleteDevicePictureCommand,"删除")
+								],"设备图片")
+							],widgets.VLayoutData(1,0.4))
+						]
+						
+						listGrid.addSelectEntityListener[UIDevice device|
+							fire view.deviceSelected(device.toProxy)
+						]
+					],widgets.HLayoutData(1,1,1))		
+				]
+			]
+		}
+		
+		op showResults(results : IPagedResult<UIDevice>) : void{
+			pager.pageLoaded(results)
+		}
+	
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		
+		op getSelectedDeviceType():RCDeviceTypeProxy{
+			val s = deviceCategoryAndTypeAC.selectedObjects.head
+			if(s!=null && s.type==UIDeviceCategoryOrTypeType::type){
+				new RCDeviceTypeProxy()=>[
+					it.id = s.id
+					it.name = s.name
+				];
+			}
+		}
+		op getSelectedLocation():UIOnsitePosition{
+			locationAc.selectedObjects.head
+		}
+		op getActionContext():ActionContext<RCDeviceProxy>{
+			listGrid.createActionContext.adapt[toProxy]
+		}
+		
+	}	
+	
+	
+	presenter DevicePropertyPresenter{
+		view interface{
+			signal in setValue(value : UIDevice)
+		}
+		
+		interaction{
+			input prepare.setup(device : proxy of RCDevice){
+				this.activate[
+					service.loadDeviceInfo(device,onSuccess[
+						fire view.setValue(it)
+						done
+					])
+				]
+			}
+			
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			
+			input call.setDevice(device : proxy of RCDevice){
+				service.loadDeviceInfo(device,onSuccess[
+					fire view.setValue(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject mapper : DeviceMapper
+			op loadDeviceInfo(device : proxy of RCDevice) : UIDevice{
+				mapper.transform(resolve device)
+			}
+		}
+	}
+	
+	view DevicePropertyView for DevicePropertyPresenter{
+		con: Widget
+		required propertyView : DeviceProperty
+		asWidget() : Widget{
+			con
+		}		
+		
+		layout{
+			con = con.lazy[
+				propertyView.asWidget
+			]			
+		}
+		
+		interaction{
+			input view.setValue(device : UIDevice){
+				propertyView.value = device
+			}
+		}
+	}
+}

@@ -1,0 +1,154 @@
+package com.fudanmed.platform.core.web feature warehouse{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.GWTEntity
+	
+	ui-entity UIWorkItemStorage for RCWorkItemStorage{
+		workItem : proxy of RCWorkItemTask "工单编号"
+		productSpec : proxy of RCProductSpecification "物品名称"
+		
+		sid : String "入库批号"
+		quantity : Integer "数量"
+
+		productSid : String "条码"
+		materialId : String "物品编号"
+		typeDesc : String  "规格型号"
+		unit : proxy of RCProduceSpecificationUnit "计量单位"
+		amount : Double "金额"
+		price : Double "单价"
+		brand : proxy of RCMaterialBrand "品牌"
+	
+		map WorkItemStorageMapper validate by WorkItemStorageValidator{
+			direct{
+				workItem readonly,
+				amount readonly,
+				{productSpec,entity.productEntry.productSpec} readonly,
+				{sid,entity.productEntry.sid} readonly,
+				quantity readonly,
+				{productSid,entity.productEntry.productSpec.sid} readonly,
+				{typeDesc, entity.productEntry.productSpec.typeDesc} readonly,
+				{unit, entity.productEntry.productSpec.unit} readonly,
+				{materialId, entity.productEntry.productSpec.materialId} readonly,
+				{price, entity.productEntry.price} readonly,
+				{brand, entity.productEntry.productSpec.brandType} readonly
+				
+			}
+		}
+	
+		constraints WorkItemStorageValidator{
+		}
+	
+		ui-component WorkItemStorageListGrid as GXTGrid{
+			binding{
+				workItem as StringColumn(130),
+				sid as StringColumn(130),
+				productSid as StringColumn(130),
+				materialId,
+				productSpec as StringColumn(150),
+				typeDesc as StringColumn(130),
+				brand,
+				price,
+				quantity,
+				unit as StringColumn(87),amount
+			}
+			op initializeComponent() : void{
+				this.asWidget
+				this.unForceFit
+				createSummaryRow=>[
+					it += workItem.renderSummaryColumn[sb,state|
+						sb.appendHtmlConstant("合计")
+					]
+					it += amount.renderSummaryColumn[sb,state|
+						sb.appendHtmlConstant((objects.^map[it.amount].reduce[Double d1, Double d2|d1+d2]).nullsafe.toString)
+					]
+				]
+			}
+			
+		}
+			
+	}	
+	
+	presenter WorkItemStorageListPresenter{
+		view interface{
+			signal in setResults(results : UIWorkItemStorage[*])
+		}
+		
+		interaction{
+			input call.setup(postInit : (WorkItemStorageListPresenter)=>void){
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			input call.setGroupTask(context : proxy of RCGroupTask){
+				service.loadWorkItemStorageList4GroupTask(context,onSuccess[
+					fire view.setResults(it)
+				])
+			}
+			input call.setRepairTask(context : proxy of RCRepairTask){
+				service.loadWorkItemStorageList4RepairTask(context,onSuccess[
+					fire view.setResults(it)
+				])
+			}
+			input call.setWorkItemTask(context : proxy of RCWorkItemTask){
+				service.loadWorkItemStorageList4WorkItemTask(context,onSuccess[
+					fire view.setResults(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject mapper : WorkItemStorageMapper
+			
+			op loadWorkItemStorageList4GroupTask(context : proxy of RCGroupTask) : UIWorkItemStorage[*]{
+				(resolve context).storage.^map[mapper.transform(it)].unlazy
+			}
+			op loadWorkItemStorageList4RepairTask(context : proxy of RCRepairTask) : UIWorkItemStorage[*]{
+				(resolve context).storage.^map[mapper.transform(it)].unlazy
+			}
+			op loadWorkItemStorageList4WorkItemTask(context : proxy of RCWorkItemTask) : UIWorkItemStorage[*]{
+				(resolve context).storage.^map[mapper.transform(it)].unlazy
+			}
+		}
+	}
+	
+	view WorkItemStorageListView for WorkItemStorageListPresenter implements IHasTitle, IHasSize{
+		con : Widget
+		@Inject listGrid : WorkItemStorageListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		
+		op getTitle():String{
+			"物品信息"
+		}
+		
+		op getSize() : Size{
+			new Size(600,450)
+		}
+		
+		interaction{
+			input view.setResults(results : UIWorkItemStorage[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+}

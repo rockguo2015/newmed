@@ -1,0 +1,386 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import edu.fudan.langlab.uidl.domain.app.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.^proxy.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.device.pm.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.device.*
+	import edu.fudan.langlab.gxt.client.widget.ContentPanel
+	content-provider RCDevicePMTypeContentProvider for proxy of RCDevicePMType{
+		contents{
+			entities.all(typeof(RCDevicePMType)).sortBy[codeid]
+		}
+	}
+	
+	signal PMDefaultIntervalAssociationsChanged
+	ui-entity UIPMDefaultIntervalAssociation for RCPMDefaultIntervalAssociation{
+		type : proxy of RCDevicePMType "维保类别"
+		intervalInDays: Integer "默认维保周期"
+		description : String "维保内容"
+		map PMDefaultIntervalAssociationMapper validate by PMDefaultIntervalAssociationValidator{
+			direct{type,intervalInDays,description}
+			op create(UIPMDefaultIntervalAssociation assignment, Object context) : RCPMDefaultIntervalAssociation{
+				(context as RCPMDeviceTypeEntry).createAndAddtoIntervals
+			}
+		}
+	
+		constraints PMDefaultIntervalAssociationValidator{
+		}
+	
+		ui-component PMDefaultIntervalAssociationEditListGrid as GXTGrid{
+			binding{type,intervalInDays as EditableIntegerColumn,description as EditableStringColumn(250)}
+		}
+		
+		ui-component PMDefaultIntervalAssociationListGrid as GXTGrid{
+			binding{type,intervalInDays,description}
+			op initializeComponent():void{
+				this.withExpander[value,sb|
+					sb.appendEscapedLines(value.description.nullsafe)
+				]
+			}
+		}
+		
+		ui-component PMDefaultIntervalAssociationForm as GXTForm{
+			binding{type as ComboBoxItem content from RCDevicePMTypeContentProvider,intervalInDays,description as TextAreaItem}
+			createWidget():Widget{
+				
+				widgets.VLayout=>[
+					addFill(TABLE=>[tr=>[
+						td=>[it += type.asWidget]
+						td=>[it += intervalInDays.asWidget]
+					]])
+					addFill(description.asWidget=>[
+						height = 300
+					])
+				]
+			}
+		}
+			
+	
+	}
+	
+	ui-entity UIPMDeviceTypeEntry for RCPMDeviceTypeEntry{
+		part intervals : UIPMDefaultIntervalAssociation[*] "维修周期"
+		pmType : proxy of RCDevicePMType "选择维修类别"
+		map PMDeviceTypeEntryMapper validate by PMDeviceTypeEntryValidator{
+			direct{intervals}
+		}
+	
+		constraints PMDeviceTypeEntryValidator{
+		}
+	
+		ui-component PMDeviceTypeEntryForm as GXTForm{
+			required listGrid : PMDefaultIntervalAssociationEditListGrid
+			binding{
+				pmType as ComboBoxItem content from RCDevicePMTypeContentProvider,
+				intervals as ListGridBasedItem(listGrid)
+				
+			}
+			op createWidget() : Widget{
+				widgets.VLayout=>[
+					addFill(pmType.asWidget)
+					addFill(intervals.asWidget=>[
+						it.height = 100
+						intervals.objectCreater = [
+							new UIPMDefaultIntervalAssociation()=>[
+								type = pmType.value
+								intervalInDays = 0
+							]
+						]
+					])
+				]
+			}			
+		}
+	}
+	
+	signal PMDeviceTypeEntrysChanged
+	
+	presenter CreateOrUpdatePMDeviceTypeEntryPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIPMDeviceTypeEntry
+			op setValue(value : UIPMDeviceTypeEntry) : void
+		}
+		
+		interaction{
+			value : proxy of RCDeviceType
+			
+			input prepare.setup4Update(
+				value : proxy of RCDeviceType
+			){
+				this.value = value
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.updateValue(getView().value,onSuccess[
+					fire eventbus.PMDeviceTypeEntrysChanged()
+					fire eventbus.PMDefaultIntervalAssociationsChanged()
+					notifier.success
+				])
+			}			
+		}
+		
+		service{
+			@Inject mapper : PMDeviceTypeEntryMapper
+			@Inject dao : RCPMDeviceTypeEntryDAO
+			op loadValue(pvalue : proxy of RCDeviceType) : UIPMDeviceTypeEntry{
+				mapper.transform(dao.findByDeviceType(resolve pvalue))
+			}
+			op updateValue(uivalue : UIPMDeviceTypeEntry) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+		}
+	}
+	
+	view CreateOrUpdatePMDeviceTypeEntryView for CreateOrUpdatePMDeviceTypeEntryPresenter implements IHasSize, IHasTitle{
+		@Inject form : PMDeviceTypeEntryForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+			
+		}
+		op getValue() : UIPMDeviceTypeEntry{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIPMDeviceTypeEntry value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(650,300)
+		}
+		op getTitle():String{
+			'默认PM计划设置'
+		}
+	}
+	
+	presenter PMDefaultIntervalAssociationListPresenter{
+		view interface{
+			signal in setResults(results : UIPMDefaultIntervalAssociation[*])
+			signal out setPMSpecRequest() @productCategoryManagementPresenter "设置默认PM计划"
+			op setActionContext(dac : ActionContext<RCDeviceTypeProxy>):void
+			op clear():void
+			
+		}
+		
+		interaction{
+			context : proxy of RCDeviceType
+			factory createOrUpdatePMDeviceTypeEntryPresenter : CreateOrUpdatePMDeviceTypeEntryPresenter
+			
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(context : proxy of RCDeviceType){
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.setDeviceType(context : proxy of RCDeviceType){
+				this.context = context
+				refresh
+			}
+			input call.setActionContext(ac : ActionContext<RCDeviceTypeProxy>){
+				getView().setActionContext(ac)
+				ac.addSelectionChangedListener[Iterable<RCDeviceTypeProxy> selections|
+					if(selections.size==1){
+						setDeviceType(selections.head)
+					}else{
+						getView().clear
+					}
+				]
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadPMDefaultIntervalAssociationList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			input view.setPMSpecRequest(){
+				createOrUpdatePMDeviceTypeEntryPresenter.get=>[setup4Update(context)[
+					fire eventbus.PopActivatedPresenter(it)
+				]]
+			}
+			
+			input eventbus.PMDefaultIntervalAssociationsChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : PMDefaultIntervalAssociationMapper
+			@Inject dao : RCPMDeviceTypeEntryDAO
+			op loadPMDefaultIntervalAssociationList(context : proxy of RCDeviceType) : UIPMDefaultIntervalAssociation[*]{
+				dao.findByDeviceType(resolve context).intervals.^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view PMDefaultIntervalAssociationListView for PMDefaultIntervalAssociationListPresenter{
+		con : Widget
+		@Inject listGrid : PMDefaultIntervalAssociationListGrid
+		@Inject createPMDefaultIntervalAssociationCommand:CreatePMDefaultIntervalAssociationCommand
+		@Inject updatePMDefaultIntervalAssociationCommand : UpdatePMDefaultIntervalAssociationCommand
+		@Inject deletePMDefaultIntervalAssociationCommand : DeletePMDefaultIntervalAssociationCommand
+		deviceTypeContext : ActionContext<RCDeviceTypeProxy>
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = widgets.ContentPanel=>[
+				widget = listGrid.asWidget
+//				securities.check(ui-requester.setPMSpecRequest)[v|
+//					addButton(widgets.TextButton("设置默认PM计划")[
+//						fire view.setPMSpecRequest()
+//					])
+//				]
+			]
+			
+		}
+		op setActionContext(dac : ActionContext<RCDeviceTypeProxy>):void{
+			val ac = listGrid.createActionContext.adapt[toProxy]
+			(con as ContentPanel)=>[
+				addCommand(dac,createPMDefaultIntervalAssociationCommand,"新建")
+				addCommand(ac,updatePMDefaultIntervalAssociationCommand,"修改")
+				addCommand(ac,deletePMDefaultIntervalAssociationCommand,"删除")
+				
+			]
+		}
+		op clear():void{
+			listGrid.objects = newArrayList
+		}
+		interaction{
+			input view.setResults(results : UIPMDefaultIntervalAssociation[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+	
+	signal PMDefaultIntervalAssociationsChanged
+	
+	ui-command CreatePMDefaultIntervalAssociationCommand require proxy of RCDeviceType "新建PM计划"  @deviceTypeCategoryManagementPresenter{
+		factory createOrUpdatePMDefaultIntervalAssociationPresenter : CreateOrUpdatePMDefaultIntervalAssociationPresenter
+		
+		execute{
+			service.getRCPMDeviceTypeEntry(value,onSuccess[
+				
+			createOrUpdatePMDefaultIntervalAssociationPresenter.get.setup4Create(it)[
+				popup(it)
+			]
+			])
+		}
+		service{
+			@Inject dao : RCPMDeviceTypeEntryDAO
+			op getRCPMDeviceTypeEntry(deviceType : proxy of RCDeviceType):RCPMDeviceTypeEntryProxy{
+				dao.findByDeviceType(resolve deviceType).toProxy
+			}
+		}
+	}
+	ui-command UpdatePMDefaultIntervalAssociationCommand require proxy of RCPMDefaultIntervalAssociation "修改PM计划"  @deviceTypeCategoryManagementPresenter{
+		factory createOrUpdatePMDefaultIntervalAssociationPresenter : CreateOrUpdatePMDefaultIntervalAssociationPresenter
+		execute{
+			createOrUpdatePMDefaultIntervalAssociationPresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeletePMDefaultIntervalAssociationCommand require proxy of RCPMDefaultIntervalAssociation "删除PM计划"  @deviceTypeCategoryManagementPresenter{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.PMDefaultIntervalAssociationsChanged
+				])
+			].show
+		}
+		service{
+			op delete(value : proxy of RCPMDefaultIntervalAssociation):void{
+				(resolve value).entry.removeFromIntervals(resolve value)
+			}
+		}
+	}
+
+	presenter CreateOrUpdatePMDefaultIntervalAssociationPresenter for UIPMDefaultIntervalAssociation{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : proxy of RCPMDeviceTypeEntry){
+				commiter=[notifier|
+					service.createValue(getView().value,parent,onSuccess[
+						fire eventbus.PMDefaultIntervalAssociationsChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of RCPMDefaultIntervalAssociation){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.PMDefaultIntervalAssociationsChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : PMDefaultIntervalAssociationMapper
+			op loadValue(pvalue : proxy of RCPMDefaultIntervalAssociation) : UIPMDefaultIntervalAssociation{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIPMDefaultIntervalAssociation) : void{
+				(resolve uivalue).update[
+					mapper.transform(uivalue,it)
+				]
+			}
+			op createValue(uivalue : UIPMDefaultIntervalAssociation,parent : proxy of RCPMDeviceTypeEntry) : void{
+				(resolve parent).createInterval[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdatePMDefaultIntervalAssociationView<PMDefaultIntervalAssociationForm> for CreateOrUpdatePMDefaultIntervalAssociationPresenter ui-size:(600,500) ui-title:"PM计划维护"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}
+	
+	
+}

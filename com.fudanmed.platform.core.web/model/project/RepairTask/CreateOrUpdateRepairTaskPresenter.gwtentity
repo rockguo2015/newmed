@@ -1,0 +1,248 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import edu.fudan.langlab.domain.security.*
+
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.server.^service.organization.*
+	import com.sencha.gxt.core.client.util.Margins
+	import com.fudanmed.platform.core.web.client.common.*
+	
+	ui-datatype OrgRelatedInfoData{
+		pos : UIOnsitePosition[*]
+		workers : UIEmployee[*] 
+		historyTasks: UIRepairTask[*]
+	}
+	
+	
+	presenter CreateOrUpdateRepairTaskPresenter for UIRepairTask{
+		view interface{
+			
+			signal out organizationSelected(org : proxy of RCOrganization)
+			signal out locationSelected(loc : proxy of RCOnsitePosition)
+
+			signal in showOrgRelatedInfo(pos : UIOnsitePosition[*], workers : UIEmployee[*], historyTasks: UIRepairTask[*])
+			signal in setLocation(loc : String)
+			signal in setDefaultValues(operator : proxy of RCEmployee)
+			
+		}
+		
+		interaction{
+			used4Update : boolean
+			part organizationOutlinePresenter : OrganizationOutlinePresenter
+			
+			input prepare.setup4Create(){
+				used4Update = false
+				initPart(organizationOutlinePresenter).setupAsSimpleTree[
+					this.activate[
+						service.getSystemUser(onSuccess[
+							fire view.setDefaultValues(it)
+							done
+						])
+					]
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of RCRepairTask){
+				used4Update = true
+				initPart(organizationOutlinePresenter).setupAsSimpleTree[
+					this.activate[
+						service.loadValue(value,onSuccess[v|
+							service.loadOrgRelatedInfoData4Task(value,onSuccess[
+								fire view.showOrgRelatedInfo(it.pos,it.workers,it.historyTasks)
+								getView().setValue(v)
+								done
+							])
+						])
+					]
+				
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.RepairTasksChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.RepairTaskCreated(it)
+						notifier.success
+					])
+				}
+			}
+			input view.organizationSelected(org : proxy of RCOrganization){
+				service.loadOrgRelatedInfoData(org,onSuccess[
+					fire view.showOrgRelatedInfo(it.pos,it.workers,it.historyTasks)
+				])
+			}
+			
+			input view.locationSelected(loc : proxy of RCOnsitePosition){
+				service.getFullPath(loc,onSuccess[
+					fire view.setLocation(it)
+				])
+			}
+		}
+	
+		service{
+			@Inject mapper : RepairTaskMapper
+			@Inject positionMapper : OnsitePositionMapper
+			@Inject employeeMapper : EmployeeMapper
+			@Inject simpleEmployeeMapper : SimpleEmployeeMapper
+			
+			@Inject systemUserService : ISystemUserService
+			@Inject sequenceService : RCSequenceService
+			@Inject repairTaskValidator : RepairTaskValidator
+			op loadValue(pvalue : proxy of RCRepairTask) : UIRepairTask{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIRepairTask) : void{
+				uivalue.validateWith(repairTaskValidator)
+				val v = (resolve uivalue)
+				mapper.transform(uivalue,v)
+				v.operator = (systemUserService.currentUser as RCEmployeeUser).employee
+				v.updated
+				if(uivalue.saveOnly){
+					v.createGroupTask(entities.get(typeof(RCMaintenanceTeam),uivalue.activeTeam.id))
+				}
+			}
+			op createValue(uivalue : UIRepairTask) : proxy of RCRepairTask{
+				uivalue.validateWith(repairTaskValidator)
+				val report = entities.create(typeof(RCRepairTask))=>[
+					mapper.transform(uivalue,it)
+					it.reportSid = sequenceService.nextRepairTaskSequence
+					it.operator = (systemUserService.currentUser as RCEmployeeUser).employee
+					^start(false)
+				]
+				if(uivalue.saveOnly){
+					report.createGroupTask(entities.get(typeof(RCMaintenanceTeam),uivalue.activeTeam.id))
+				}
+				report.toProxy
+			}
+			
+			op loadOrgRelatedInfoData(org : proxy of RCOrganization) : OrgRelatedInfoData{
+				val organization = resolve org
+				new OrgRelatedInfoData()=>[
+					it.pos = organization.positions.^map[positionMapper.transform(it)].unlazy
+					it.workers = organization.onJobEmployees.^map[simpleEmployeeMapper.transform(it)].unlazy
+					it.historyTasks = (entities.createQueryCriteria(typeof(RCRepairTaskCriteria))=>[
+						it.limit=20
+						it.reportOrg = organization
+						it.includeFinishedTask = true
+						shared::project::WorkflowEnumWorkAround::initRepairTaskCriteria(it)
+					]).list.^map[mapper.transform(it)].unlazy
+				]
+			}
+			op loadOrgRelatedInfoData4Task(uivalue : proxy of RCRepairTask) : OrgRelatedInfoData{
+				loadOrgRelatedInfoData((resolve uivalue).reportOrg.toProxy)
+			}
+	
+			op getFullPath(loc : proxy of RCOnsitePosition) : String{
+				(resolve loc).fullPath
+			}
+		
+			op getSystemUser() : proxy of RCEmployee{
+				(systemUserService.currentUser as RCEmployeeUser).employee.toProxy
+			}
+		}
+	}
+	
+	view CreateOrUpdateRepairTaskView<RepairTaskForm> for CreateOrUpdateRepairTaskPresenter
+		ui-size:(920,650) ui-title: "报修单"
+	{
+		required historyTasksListGrid : RepairTaskSimpleListGrid
+		required positionsListGrid : OnsitePositionSimpleListGrid
+		required workersListGrid : EmployeeSimpleListGrid
+		required timeService : ServerSideTimeServiceAsync
+		initializer{
+			historyTasksListGrid.asWidget
+			positionsListGrid.asWidget
+			positionsListGrid.keepSelection
+			workersListGrid.asWidget
+			workersListGrid.keepSelection
+			
+			organizationOutlinePresenter.getView().actionContext.addSelectionChangedListener[
+				form.reporterName.value =  null
+				form.reporterPhone.value = null
+				form.location.value = null
+				
+				forOnlySelected[selected|
+					form.reportOrg.value = selected.toProxy
+					fire view.organizationSelected(selected.toProxy)
+				]
+			]
+			positionsListGrid.createActionContext.addSelectionChangedListener[
+				forOnlySelected[
+					fire view.locationSelected(it.toProxy)
+				]
+			]
+			workersListGrid.createActionContext.addSelectionChangedListener[
+				forOnlySelected[selected|
+					form.reporterName.value = selected.toProxy.name
+					form.reporterPhone.value = selected.workTel
+				]
+			]			
+
+			this += widgets.HLayout=>[
+				add(widgets.VLayout=>[
+					add(organizationOutlinePresenter.getView().asWidget.withFieldSet("报修部门"),widgets.VLayoutData(1,360))
+					add(widgets.HLayout=>[
+						add(
+							positionsListGrid.asWidget.withBorder.withFieldSet("位置信息"),
+							widgets.HLayoutData(0.5,1)=>[margins = new Margins(0,1,0,0)]
+						)
+						add(
+							workersListGrid.asWidget.withBorder.withFieldSet("报修人信息"),
+							widgets.HLayoutData(0.5,1)=>[margins = new Margins(0,0,0,1)]
+						)
+					],
+					widgets.VLayoutData(1,1))
+				],widgets.HLayoutData(300,560,2))
+
+				add(widgets.VLayout=>[
+					add(
+						(form.asWidget=>[
+							width = "600"
+							timeService.getTime(onSuccess[
+								form.reportDate.value = it.trimDate
+								form.reportTime.value = it
+								form.reserveDate.value = it.trimDate
+								form.reserveTime.value = it
+							])
+						]).withFieldSet("报修信息"),
+						widgets.VLayoutData(1,360))
+					add(historyTasksListGrid.asWidget.withBorder.withFieldSet("历史报修信息"),widgets.VLayoutData(1,1))
+				],widgets.HLayoutData(600,560,2))
+			]
+		}
+		
+		op setValue(taskReport : UIRepairTask):void{
+			super.setValue(taskReport)
+			form.activeTeam.asWidget.enable
+			form.saveOnly.value = true
+		}
+		interaction{
+			
+			input view.setDefaultValues(employee : proxy of RCEmployee){
+				form.faultEmergencyLevel.selectFirst
+				form.faultLevel.selectFirst
+				form.faultReportSource.selectFirst
+			}
+			
+			input view.showOrgRelatedInfo(positions : UIOnsitePosition[*], workers : UIEmployee[*], historyTasks: UIRepairTask[*]){
+				positionsListGrid.objects = positions
+				workersListGrid.objects = workers
+				historyTasksListGrid.objects = historyTasks
+			}
+			
+			input view.setLocation(loc : String){
+				form.location.value = loc
+			}
+		}
+	}
+	
+}

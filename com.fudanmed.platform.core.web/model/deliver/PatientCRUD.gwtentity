@@ -1,0 +1,250 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.uniquesoft.gwt.client.common.selector.IHasObjectSelectionProvider
+	import com.uniquesoft.gwt.shared.command.IContextConsumer
+	
+	ui-entity UIInHospitalPatient for DLInHospitalPatient{
+		name : String "姓名"
+		sid  : String "住院号"
+		age : Integer "年龄"
+		gender : UIGender "性别" 
+		location : proxy of DLInHospitalLocation "位置"
+		bedNumber : String "床号"
+		
+		map InHospitalPatientMapper validate by InHospitalPatientValidator{
+			direct{name, sid, age, gender, location, bedNumber}
+		}
+	
+		constraints InHospitalPatientValidator{
+			rule Required on name
+			rule Required on location
+		}
+	
+		ui-component InHospitalPatientForm as GXTForm{
+			binding{
+				name, sid, age, gender as ComboBoxItem,
+				location as ComboBoxItem content from PatientLocationContentProvider,
+				bedNumber
+			}
+
+			op createWidget() : Widget{
+					widgets.VLayout=>[
+						addFill(name.asWidget)
+						addFill(sid.asWidget)
+						addFill(age.asWidget)
+						addFill(gender.asWidget)
+						addFill(location.asWidget)
+						addFill(bedNumber.asWidget)
+					]
+			}					
+		}
+	
+		ui-component InHospitalPatientListGrid as GXTGrid{
+			binding{name,sid,age, gender, location,bedNumber}
+		}
+		
+		ui-component InHospitalPatientProperty as GXTPropertyView{
+			binding{name,sid,age, gender, location,bedNumber}
+			op getCols():Integer{
+				3
+			}			
+		}
+	}
+	
+	presenter InHospitalPatientPropertyPresenter implements IContextConsumer<DLInHospitalPatientProxy>{
+		
+		view interface{
+			signal in setValue(value : UIInHospitalPatient)
+			signal in clear()
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input call.setContext(ac : ActionContext<DLInHospitalPatientProxy>){
+				ac.addSelectionChangedListener[Iterable<DLInHospitalPatientProxy> selections|
+					if(selections.size==1){
+						setValue(selections.head)
+					}else{
+						getView().clear
+					}
+				]
+			}
+			input call.setValue(value : proxy of DLInHospitalPatient){
+				service.loadValue(value,onSuccess[
+					fire view.setValue(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject mapper : InHospitalPatientMapper
+			op loadValue(value : proxy of DLInHospitalPatient): UIInHospitalPatient{
+				mapper.transform(resolve value)
+			}
+		}
+	}
+	
+	view InHospitalPatientPropertyView for InHospitalPatientPropertyPresenter{
+		con : Widget
+		@Inject propertyView : InHospitalPatientProperty
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = con.lazy[
+				propertyView.asWidget
+			]
+		}
+		interaction{
+			input view.setValue(value : UIInHospitalPatient){
+				propertyView.value = value
+			}
+			input view.clear(){
+				propertyView.value = new UIInHospitalPatient
+			}
+		}
+	}
+	signal InHospitalPatientsChanged
+	
+	ui-command CreateInHospitalPatientCommand "新建"{
+		factory createOrUpdateInHospitalPatientPresenter : CreateOrUpdateInHospitalPatientPresenter
+		execute{
+			createOrUpdateInHospitalPatientPresenter.get.setup4Create([])[
+				popup(it)
+			]
+		}
+	}
+	ui-command UpdateInHospitalPatientCommand require proxy of DLInHospitalPatient "修改"{
+		factory createOrUpdateInHospitalPatientPresenter : CreateOrUpdateInHospitalPatientPresenter
+		execute{
+			createOrUpdateInHospitalPatientPresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeleteInHospitalPatientCommand require proxy of DLInHospitalPatient "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.InHospitalPatientsChanged
+				])
+			].show
+		}
+		service{
+			@Inject dao : DLInHospitalPatientDAO
+			op delete(value : proxy of DLInHospitalPatient):void{
+				dao.delete(resolve value)
+			}
+		}
+	}
+
+	presenter CreateOrUpdateInHospitalPatientPresenter implements IHasObjectSelectionProvider<UIInHospitalPatient> for UIInHospitalPatient{
+		view interface{
+			op getActionContext():ActionContext<UIInHospitalPatient>
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(createdNotifier:(DLInHospitalPatientProxy)=>void){
+				commiter=[notifier|
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.InHospitalPatientsChanged()
+						createdNotifier.apply(it)
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of DLInHospitalPatient){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.InHospitalPatientsChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			input prepare.setup4Cxt(value : proxy of DLInHospitalPatient){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.InHospitalPatientsChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+//						getView().setValue(it)
+						done
+					])
+				]
+			}		
+			input form-commit {
+				commiter.apply(notifier)
+			}	
+			input call.getSelectionProvider():ObjectSelectionProvider<UIInHospitalPatient>{
+				getView().getActionContext
+			}		
+		}
+		
+		service{
+			@Inject mapper : InHospitalPatientMapper
+			@Inject dao : DLInHospitalPatientDAO
+			op loadValue(pvalue : proxy of DLInHospitalPatient) : UIInHospitalPatient{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIInHospitalPatient) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIInHospitalPatient) : DLInHospitalPatientProxy{
+				dao.create[
+					mapper.transform(uivalue,it)
+				].toProxy
+			}
+		}
+	}
+	
+	view CreateOrUpdateInHospitalPatientView<InHospitalPatientForm> for CreateOrUpdateInHospitalPatientPresenter ui-size:(400,300) ui-title:"新增病人"{
+		@Inject  patientform: InHospitalPatientForm
+		@Inject listGrid : InHospitalPatientListGrid
+		
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+		op getActionContext():ActionContext<UIInHospitalPatient>{
+			listGrid.createActionContext
+		}
+	}
+
+}

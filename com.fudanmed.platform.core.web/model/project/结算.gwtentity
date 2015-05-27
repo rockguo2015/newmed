@@ -1,0 +1,720 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.Date
+	import java.util.Collection
+	import edu.fudan.langlab.uidl.domain.app.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.domain.^proxy.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.client.common.print.Print
+	import com.fudanmed.platform.core.web.server.^service.^template.*
+	
+	ui-entity UIWorkItemStorage4Settlement for RCWorkItemStorage{
+		repairTaskInfo : String 
+		repairTaskSid : String "报修单号"
+		sid : String "入库批号"
+		productSid : String "条码"
+		materialId : String "物品编号"
+		productSpec : proxy of RCProductSpecification "物品名称"
+		typeDesc : String  "规格型号"
+		brand : proxy of RCMaterialBrand "品牌"
+		price : Double "单价"
+		quantity : Integer "数量"
+
+		unit : proxy of RCProduceSpecificationUnit "计量单位"
+		amount : Double "金额"
+	
+		map WorkItemStorage4SettlementMapper {
+			direct{
+				amount readonly,
+				{productSpec,entity.productEntry.productSpec} readonly,
+				{sid,entity.productEntry.sid} readonly,
+				quantity readonly,
+				{productSid,entity.productEntry.productSpec.sid} readonly,
+				{typeDesc, entity.productEntry.productSpec.typeDesc} readonly,
+				{unit, entity.productEntry.productSpec.unit} readonly,
+				{materialId, entity.productEntry.productSpec.materialId} readonly,
+				{price, entity.productEntry.price} readonly,
+				{brand, entity.productEntry.productSpec.brandType} readonly
+				
+			}
+			
+			from entity{
+				var repairTask = entity.workItem.groupTask.repairTask
+				ui.repairTaskSid =  repairTask.reportSid
+				ui.repairTaskInfo = repairTask.reportSid + "[小计:" +repairTask.amount +"元]"
+			}
+		}
+		csv-map WorkItemStorage4SettlementCSVMapper {
+			binding{repairTaskSid,productSpec,sid,productSid,typeDesc,brand,price,quantity,unit,amount}
+			item-mapper for unit{
+				to-csv{
+					value.name
+				}
+				from-csv{
+				}
+			}
+			item-mapper for brand{
+				to-csv{
+					value.name
+				}
+				from-csv{
+				}
+			}
+			item-mapper for productSpec{
+				to-csv{
+					value.name
+				}
+				from-csv{
+				}
+			}
+			
+		}
+	
+	
+		ui-component WorkItemStorage4SettlementListGrid as GXTGrid{
+			binding{repairTaskInfo,sid,productSid,materialId,productSpec,typeDesc,brand,price,quantity,unit,amount}
+			op initializeComponent() : void{
+				createSummaryRow=>[
+					it += productSpec.renderSummaryColumn[sb,state|
+						sb.appendHtmlConstant("合计")
+					]
+					it += amount.renderSummaryColumn[sb,state|
+						sb.appendHtmlConstant((objects.^map[it.amount].reduce[Double d1, Double d2|d1+d2]).nullsafe.toString)
+					]
+				]
+				asWidget.groupBy(repairTaskInfo,false)
+			}
+			
+		}
+			
+	}	
+	
+	presenter WorkItemStorage4SettlementListPresenter{
+		view interface{
+			signal in setResults(results : UIWorkItemStorage4Settlement[*])
+			signal out materialExportRequest() 
+			
+		}
+		
+		interaction{
+			settlement : proxy of RCSettlement
+			input call.setup(postInit : (WorkItemStorage4SettlementListPresenter)=>void){
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			input call.setSettlement(context : proxy of RCSettlement){
+				this.settlement = context
+				service.loadWorkItemStorageList4Settlement(context,onSuccess[
+					fire view.setResults(it)
+				])
+			}
+			input view.materialExportRequest(){
+				service.prepareExport(settlement,onSuccess[
+					doDownload(it)
+				])
+				
+			}
+		}
+		
+		service{
+			@Inject mapper : WorkItemStorage4SettlementMapper
+			
+			op loadWorkItemStorageList4Settlement(context : proxy of RCSettlement) : UIWorkItemStorage4Settlement[*]{
+				(resolve context).allMaterialItems.^map[mapper.transform(it)].unlazy
+			}
+			
+			op prepareExport(context : proxy of RCSettlement) : String{
+				csvPrepare("settlement",typeof(WorkItemStorage4SettlementCSVMapper),(resolve context).allMaterialItems.^map[mapper.transform(it)].unlazy)
+			}
+		}
+	}
+	
+	view WorkItemStorage4SettlementListView for WorkItemStorage4SettlementListPresenter{
+		con : Widget
+		@Inject listGrid : WorkItemStorage4SettlementListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = widgets.ContentPanel=>[
+				widget = listGrid.asWidget
+				addButton(widgets.TextButton("导出")[
+					fire view.materialExportRequest()
+				])
+			]
+		}
+		
+		interaction{
+			input view.setResults(results : UIWorkItemStorage4Settlement[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+	
+
+	ui-entity UISettlement for RCSettlement{
+		sid : String "结算单号"
+		date : Date "结算时间"
+		fromDate : Date "起始时间"
+		toDate : Date "结束时间"
+		description : String "说明"
+		totalAmount : Double "结算金额"
+		
+	
+		map SettlementMapper validate by SettlementValidator{
+			direct{sid readonly, date readonly,fromDate,toDate,description,totalAmount readonly}
+		}
+	
+		constraints SettlementValidator{
+			rule Required on fromDate
+			rule Required on toDate
+			
+		}
+	
+		ui-component SettlementForm as GXTForm{
+			binding{fromDate,toDate,description as TextAreaItem}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						add(
+							TABLE=>[
+								tr=>[
+									td=>[it += fromDate.asWidget]
+									td=>[it += toDate.asWidget]
+								]
+							],widgets.VLayoutData(1,-1))
+						add(description.asWidget,widgets.VLayoutData(518,60))				
+					]
+				]
+			}			
+		}
+	
+		ui-component SettlementListGrid as GXTGrid{
+			binding{sid,date,fromDate,toDate,description as StringColumn(100),totalAmount}
+		}
+	
+	}	
+	
+	signal SettlementsChanged
+	
+	presenter CreateOrUpdateSettlementPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UISettlement
+			op setValue(value : UISettlement) : void
+		}
+		
+		interaction{
+			used4Update : boolean
+			input call.setup4Create(
+				(CreateOrUpdateSettlementPresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.activate[postInitializer.apply(this)]
+			}
+			
+			input call.setup4Update(
+				value : proxy of RCSettlement,
+				(CreateOrUpdateSettlementPresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						postInitializer.apply(this)
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.SettlementsChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.SettlementsChanged()
+						notifier.success
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : SettlementMapper
+			@Inject settlementService : RCSettlementService
+			op loadValue(pvalue : proxy of RCSettlement) : UISettlement{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UISettlement) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UISettlement) : void{
+				settlementService.createSettlement[mapper.transform(uivalue,it)]
+			}
+		}
+	}
+	
+	view CreateOrUpdateSettlementView for CreateOrUpdateSettlementPresenter implements IHasSize, IHasTitle{
+		@Inject form : SettlementForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UISettlement{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		op getSize():Size{
+			new Size(560,200)
+		}
+		op getTitle():String{
+			'结算信息'
+		}
+		
+		op setValue(UISettlement value) : void{
+			form.value = value
+		}
+	}	
+	
+	ui-criteria UISettlementCriteria for RCSettlementCriteria{
+		map SettlementCriteriaMapper{
+		}
+		ui-component SettlementCriteriaForm as GXTForm{
+		}
+	}
+	
+	presenter SettlementListPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UISettlement>)
+			signal in showDetails(details : UIRepairTask[*])
+			signal in refresh()
+	
+			signal out filterRequest(c : UISettlementCriteria)
+			signal out showDetailRequest(value : proxy of RCSettlement)
+			
+			signal out createSettlementRequest() @settlementListPresenter "新建结算单"
+			signal out modifySettlementRequest(settlement : proxy of RCSettlement) @settlementListPresenter "修改结算单"
+			signal out cancelSettlementRequest(settlement : proxy of RCSettlement) @settlementListPresenter "取消结算"
+			signal out addRepairTaskItemsRequest(settlement : proxy of RCSettlement) @settlementListPresenter "添加结算报修单"
+			signal out cancelSettlementItemRequest(settlement : Collection<RCRepairTaskProxy>) @settlementListPresenter "移除结算报修单"
+//			signal out exportSettlementItems(settlement : proxy of RCSettlement) @settlementListPresenter "导出结算数据"
+			signal out showRepairTaskDetail(repairTask : proxy of RCRepairTask)
+			signal out printSettlementRequest(settlement : proxy of RCSettlement) @settlementListPresenter "打印结算单"
+		}
+	
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateSettlementPresenter
+			factory settlementSelectorPresenter : SettlementSelectorPresenter
+			
+			factory repairTaskInfoPresenter : RepairTaskTreeInfoPresenter
+			part workItemStorage4SettlementListPresenter : WorkItemStorage4SettlementListPresenter
+			
+			input call.setup(postInit : (SettlementListPresenter)=>void ){
+				initPart(workItemStorage4SettlementListPresenter).setup[
+					this.activate[
+						fire view.refresh
+						postInit.apply(this)
+					]
+				]
+			}
+			
+			input view.filterRequest(c : UISettlementCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input view.showDetailRequest(value : proxy of RCSettlement){
+				service.loadDetails(value,onSuccess[
+					fire view.showDetails(it)
+					workItemStorage4SettlementListPresenter.setSettlement(value)
+				])
+			}
+			input eventbus.SettlementsChanged(){
+				fire view.refresh
+			}
+			input view.createSettlementRequest(){
+				createOrUpdatePresenter.get.setup4Create[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			input view.modifySettlementRequest(settlement : proxy of RCSettlement){
+				createOrUpdatePresenter.get.setup4Update(settlement)[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			input view.addRepairTaskItemsRequest(settlement : proxy of RCSettlement){
+				settlementSelectorPresenter.get.setup(settlement)[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			input view.printSettlementRequest(settlement : proxy of RCSettlement){
+				service.generatePrintContents(settlement,onSuccess[html|
+					Print::it(html)
+				])
+				
+			}
+			
+			input view.cancelSettlementItemRequest(repairTasks : Collection<RCRepairTaskProxy>){
+				service.cancelSettlementItems(repairTasks,onSuccess[
+					fire view.refresh
+				])
+			}
+			input view.showRepairTaskDetail(repairTask : proxy of RCRepairTask){
+				repairTaskInfoPresenter.get.setup()[
+					fire eventbus.PopActivatedPresenter(it)
+					it.setRepairTask(repairTask)
+				]
+			}
+			input view.cancelSettlementRequest(settlement : proxy of RCSettlement){
+				service.delete(settlement,onSuccess[
+					fire view.refresh
+				])
+			}
+		}
+		service{
+			@Inject criteriaMapper : SettlementCriteriaMapper
+			@Inject mapper : SettlementMapper
+			@Inject itemMapper : RepairTaskMapper
+			@Inject settlementService : RCSettlementService
+			@Inject systemParameter : RCSystemParameterService
+			op filter(uicriteria : UISettlementCriteria) : IPagedResult<UISettlement>{
+				var c = uicriteria.createPagedCriteria(typeof(RCSettlementCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op delete(value : proxy of RCSettlement) : void {
+				settlementService.cancelSettlement(resolve value)
+			}
+			op loadDetails(parent : proxy of RCSettlement) : UIRepairTask[*]{
+				(resolve parent).allItems.^map[itemMapper.transform(it)].unlazy
+			}
+			op cancelSettlementItems(repairTasks :  Collection<RCRepairTaskProxy>):void{
+				repairTasks.forEach[repairTask|
+					val task = resolve repairTask
+					settlementService.detachSettlementItem(task.settlement,task)
+				]
+			}
+			
+			op generatePrintContents(value : proxy of RCSettlement):String{
+				SettlementTemplate::settlementTemplate(resolve value,systemParameter.systemParameter)
+			}
+			
+			op prepareExport(parent : proxy of RCSettlement) : String{
+				
+			}
+		}
+	}
+	
+	view SettlementListView for SettlementListPresenter{
+		@Inject listGrid : SettlementListGrid
+		@Inject criteriaForm : SettlementCriteriaForm
+		@Inject detailsListGrid : RepairTask4SettlementListGrid
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			listGrid.keepSelection
+			con = widgets.FramedPanel("结算信息")=>[
+				setWidget(widgets.VLayout=>[
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]
+					add(widgets.ContentPanel=>[
+						widget=widgets.VLayout=>[
+							add(listGrid.asWidget,widgets.VLayoutData(1,1))
+							add(pager.asWidget)
+						]
+						securities.check(ui-requester.createSettlementRequest)[v|
+							addButton(widgets.TextButton("新建结算")[
+								fire view.createSettlementRequest()
+							])
+						]
+						val ac = listGrid.createActionContext
+						securities.check(ui-requester.modifySettlementRequest)[v|
+							addButton(ac.onSingleObjectAction[
+								onExecute[UISettlement settlement|
+									fire view.modifySettlementRequest(settlement.toProxy)
+								]
+							].asButtonRequester("修改结算"))
+						]
+						securities.check(ui-requester.cancelSettlementRequest)[v|
+							addButton(ac.onSingleObjectAction[
+								onExecute[UISettlement settlement|
+									widgets.ConfirmMessageBox("确认","确认取消结算")[
+										fire view.cancelSettlementRequest(settlement.toProxy)
+									].show
+								]
+							].asButtonRequester("取消结算"))
+						]
+						securities.check(ui-requester.addRepairTaskItemsRequest)[v|
+							addButton(ac.onSingleObjectAction[
+								onExecute[UISettlement settlement|
+									fire view.addRepairTaskItemsRequest(settlement.toProxy)
+								]
+							].asButtonRequester("添加报修单"))
+						]
+						securities.check(ui-requester.printSettlementRequest)[v|
+							addButton(ac.onSingleObjectAction[
+								onExecute[UISettlement settlement|
+									fire view.printSettlementRequest(settlement.toProxy)
+								]
+							].asButtonRequester("打印"))
+						]
+					],widgets.VLayoutData(1,0.45))	
+					
+					listGrid.addSelectEntityListener[
+						if(it!=null)
+							fire view.showDetailRequest(it.toProxy)
+					]
+					listGrid.addSelectionChangedListener[
+						if(it.isNullOrEmpty)
+							detailsListGrid.objects = newArrayList
+					]
+					add(widgets.TabPanel()=>[
+						add(widgets.ContentPanel=>[
+							widget= detailsListGrid.asWidget
+							val detailAc = detailsListGrid.createActionContext
+							securities.check(ui-requester.cancelSettlementItemRequest)[v|
+								addButton(detailAc.onMultiObjectAction[
+									onExecute[Iterable<UIRepairTask> repairTasks|
+										widgets.ConfirmMessageBox("确认移除","确认移除")[
+											display("",repairTasks.size.toString)
+											fire view.cancelSettlementItemRequest(repairTasks.^map[toProxy].unlazy)
+										].show
+									]
+								].asButtonRequester("移除"))
+							]
+							addButton(detailAc.onSingleObjectAction[
+								onExecute[UIRepairTask repairTask|
+									fire view.showRepairTaskDetail(repairTask.toProxy)
+								]
+							].asButtonRequester("报修单详情"))
+						],"报修单")	
+						
+						add(workItemStorage4SettlementListPresenter.getView().asWidget(),"材料清单")					
+					],widgets.VLayoutData(1,0.55))
+					
+				])
+			]					
+		}
+		
+		op showResults(results : IPagedResult<UISettlement>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op showDetails(details : UIRepairTask[*]):void{
+			detailsListGrid.objects = details
+		}
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+	}	
+	
+	ui-criteria UIRepairTask4SettlementCriteria for RCRepairTask4SettlementCriteria{
+		hasMadeSettlement : Boolean 
+		closeStatus : UIRepairTaskStatus
+		finishDateFrom : Date "完工起始日期"
+		finishDateTo : Date "完工结束日期"
+		team : proxy of RCMaintenanceTeam "维修班组"
+		reportOrg : proxy of RCOrganization "报修部门"
+		
+		
+		map RepairTask4SettlementCriteriaMapper{
+			direct{finishDateFrom,finishDateTo,team,reportOrg}
+			to entity{
+				ui.hasMadeSettlement = false
+			}
+		}
+		ui-component RepairTask4SettlementCriteriaForm as GXTForm{
+			binding{
+				finishDateFrom,finishDateTo,team as ComboBoxItem content from client.organization.AllMaintenanceTeamContentProvider,
+				reportOrg as ComboBoxItem content from client.organization.AllOrganizationContentProvider
+			}
+		}
+	}
+	
+	presenter SettlementSelectorPresenter  with-validation implements CommitablePresenter{
+		view interface{
+			signal in showResults(results : UIRepairTask[*])
+			signal in refresh()
+			op setInitialDateRange(fromDate : Date, toDate : Date):void
+			op getSelectedRepairTasks() : Iterable<UIRepairTask>
+	
+			signal out filterRequest(c : UIRepairTask4SettlementCriteria)
+			signal out showTaskDetailRequest(repairTask : proxy of RCRepairTask)
+		}
+	
+		interaction{
+			part repairTaskInfoPresenter : RepairTaskTreeInfoPresenter
+			settlement : proxy of RCSettlement
+			input call.setup(settlement : proxy of RCSettlement, postInit : (SettlementSelectorPresenter)=>void ){
+				this.settlement = settlement
+				initPart(repairTaskInfoPresenter).setup[
+					this.activate[
+						service.loadSettlement(settlement,onSuccess[
+							getView().setInitialDateRange(it.fromDate,it.toDate)
+							getView().refresh
+							postInit.apply(this)
+						])
+					]
+				]
+			}
+			
+			input view.filterRequest(c : UIRepairTask4SettlementCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.RepairTasksChanged(){
+				fire view.refresh
+			}
+			input view.showTaskDetailRequest(repairTask : proxy of RCRepairTask){
+				repairTaskInfoPresenter.setRepairTask(repairTask)
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.performSettlement(settlement,getView().getSelectedRepairTasks().^map[toProxy].unlazy,onSuccess[
+					notifier.success
+					fire eventbus.SettlementsChanged
+				])
+			}			
+		}
+		service{
+			@Inject criteriaMapper : RepairTask4SettlementCriteriaMapper
+			@Inject mapper : RepairTaskMapper
+			@Inject settlementService : RCSettlementService
+			@Inject settlementMapper : SettlementMapper
+			op filter(uicriteria : UIRepairTask4SettlementCriteria) : IPagedResult<UIRepairTask>{
+				var c = uicriteria.createPagedCriteria(typeof(RCRepairTask4SettlementCriteria),criteriaMapper,entities)
+				WorkflowEnumWorkAround::initRepairTask4SettlementCriteria(c)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			
+			op performSettlement(settlement : proxy of RCSettlement, repairTasks : proxy of RCRepairTask[*]) : void{
+				settlementService.attachSettlementItems(
+					resolve settlement, 
+					repairTasks.^map[
+						entities.get(typeof(RCRepairTask),it.id)
+					]
+				)
+			}
+			op loadSettlement(settlement : proxy of RCSettlement):UISettlement{
+				settlementMapper.transform(resolve settlement)
+			}
+		}
+	}
+
+	view SettlementSelectorView for SettlementSelectorPresenter implements IHasSize, IHasTitle{
+		@Inject listGrid : RepairTask4SettlementListGrid
+		@Inject criteriaForm : RepairTask4SettlementCriteriaForm
+		factory organizationOutlinePresenter : OrganizationOutlinePresenter		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asMultiSelectGrid
+			con = widgets.ContentPanel=>[
+				setBodyBorder(false)
+				setBorders(false)
+				setWidget(widgets.VLayout=>[
+					add(TABLE=>[
+						tr=>[
+							td=>[it+=criteriaForm.finishDateFrom.asWidget]
+							td=>[it+=criteriaForm.finishDateTo.asWidget]
+							td=>[]
+						]
+						tr=>[
+							td=>[
+								it += TABLE=>[tr=>[
+									td=>[
+										it += criteriaForm.reportOrg.asWidget
+									]
+									td=>[
+										it += widgets.TextButton("选择")=>[
+											addSelectHandler[
+												organizationOutlinePresenter.get=>[
+													it.setupAsSimpleTree[
+														asSelector("选择组织机构",300,500)[
+															criteriaForm.reportOrg.value = it.toProxy
+														].show
+													]
+												]
+											]
+										]
+									]
+								]
+							]]
+							td=>[it+=criteriaForm.team.asWidget]
+							td=>[
+								it+=widgets.TextButton("筛选")=>[
+									setWidth("80px")
+									addSelectHandler[
+										fire view.filterRequest(criteriaForm.value=>[
+											page = 1
+										])
+									]
+								]								
+							]
+						]
+					],widgets.VLayoutData(1,-1,1))
+					add(widgets.ContentPanel=>[setWidget(listGrid.asWidget)],widgets.VLayoutData(1,0.6))
+					add(repairTaskInfoPresenter.getView().asWidget,widgets.VLayoutData(1,0.4))
+					listGrid.asWidget.addRowClickHandler[event|
+						fire view.showTaskDetailRequest(listGrid.asWidget.store.get(event.rowIndex).toProxy)
+					]
+				])
+				
+//				val ac = listGrid.createActionContext
+			
+			]					
+		}
+		op getSelectedRepairTasks() : Iterable<UIRepairTask>{
+			listGrid.selectedObjects
+		}
+		op showResults(results : UIRepairTask[*]) : void{
+			listGrid.objects = results
+		}
+		
+		op refresh():void{
+			fire view.filterRequest(criteriaForm.value=>[
+				page = 1
+			])
+		}
+		op setInitialDateRange(fromDate : Date, toDate : Date):void{
+			criteriaForm.finishDateFrom.value = fromDate
+			criteriaForm.finishDateTo.value = toDate
+		}		
+		op mapField(String errorKey): HasEditorErrors {
+		}
+		op clearErrors():void{
+		}
+		op getSize():Size{
+			new Size(1024,630)
+		}
+		op getTitle():String{
+			'结算:添加报修单'
+		}
+		
+	}	
+	
+}

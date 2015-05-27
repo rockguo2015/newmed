@@ -1,0 +1,696 @@
+package com.fudanmed.platform.core.web feature organization{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import edu.fudan.langlab.uidl.domain.app.client.security.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.fudanmed.platform.core.web.*
+	import edu.fudan.langlab.uidl.domain.app.shared.security.*
+
+	import com.uniquesoft.gwt.shared.datatype.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.uniquesoft.uidl.validation.*
+	import com.fudanmed.platform.core.domain.^proxy.*
+	import com.fudanmed.platform.core.web.client.*
+	
+	signal EmployeesChanged
+	signal InputNextEmployee(parent : proxy of RCOrganization)
+	
+	ui-enum UIEmployeeStatus for RCEmployeeStatus{
+		title{}
+	}
+
+	ui-entity UIEmployee for RCEmployee{
+		eid : String	"工号"
+		name : String "姓名"		
+		mobil : String "手机"
+		tel : String "宅电"
+		workTel : String "工作电话"
+		cardNumber : String "工牌号"
+		email : String	"电子邮件"
+		address : String	"地址"
+		organization : proxy of RCOrganization "所属机构"
+		roles : proxy of Role[*] "系统角色"
+		isLeaveJob : Boolean "已离职"
+		inputNext : Boolean "继续输入"
+		status : UIEmployeeStatus
+		
+		op validFor(action:RCEmployeeAction):Boolean{
+			RCEmployeeManager::isActionValid(action,status)
+		}
+		
+		ui-component EmployeeForm as GXTForm{
+			binding{eid,cardNumber,name,mobil,tel,workTel,email,address,organization as ReadonlyItem,inputNext}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(organization.asWidget)
+						addFill(eid.asWidget)
+						addFill(cardNumber.asWidget)
+						addFill(name.asWidget)
+						addFill(mobil.asWidget)
+						addFill(tel.asWidget)
+						addFill(workTel.asWidget)
+						addFill(email.asWidget)
+						addFill(address.asWidget)
+						add(inputNext.asWidget=>[inputNext.value=true])
+						
+					]
+				]
+			}			
+		}
+		
+		csv-map EmployeeCSVMapper{
+			binding{eid,name,mobil,tel,workTel,email,address,organization}
+			item-mapper for organization{
+				@Inject organizationDAO : RCOrganizationDAO
+				from-csv{
+					if(value.isNullOrEmpty) null
+					else{
+						val result = organizationDAO.findByCode(value)
+						if(result==null)
+							acceptor.accept("无效所属机构代码:"+value)
+						result.toProxy
+					}
+				}
+			}
+		}
+		
+		map Employee4CSVMapper validate by EmployeeValidator{
+			direct{eid,name,mobil,tel,workTel,email,address,organization}
+			to entity{
+				var orgp = ""
+				var curOrg = entity.organization
+				while(curOrg!=null){
+					orgp = orgp + '['+curOrg.id.toString+']'
+					curOrg = curOrg.parent
+				}
+				entity.orgPath = orgp
+			}
+			from entity{
+				ui.roles = entity.roles.^map[toProxy].unlazy
+				
+			}
+		}
+		
+		
+		map SimpleEmployeeMapper validate by EmployeeValidator{
+			direct{eid,cardNumber,name,mobil,tel,workTel,email,address}
+		}
+		
+		map EmployeeMapper validate by EmployeeValidator{
+			direct{eid,cardNumber,name,mobil,tel,workTel,email,address,organization readonly,status readonly,isLeaveJob readonly}
+			to entity{
+				var orgp = ""
+				var curOrg = entity.organization
+				while(curOrg!=null){
+					orgp = orgp + '['+curOrg.id.toString+']'
+					curOrg = curOrg.parent
+				}
+				entity.orgPath = orgp
+			}
+			from entity{
+				ui.roles = entity.roles.^map[toProxy].unlazy
+				
+			}
+		}
+		
+		ui-component EmployeeListGrid as GXTGrid{
+			binding{
+				eid as StringColumn(90),name,organization,roles as StringColumn(120),cardNumber,mobil as StringColumn(130),
+				tel as StringColumn(120),workTel  as StringColumn(120),email  as StringColumn(140),
+				address  as StringColumn(150), isLeaveJob
+			}
+			
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+			}			
+		}
+		ui-component EmployeeSimpleListGrid as GXTGrid{
+			binding{name}
+		}
+		
+		constraints EmployeeValidator{
+			@Inject employeeDAO : RCEmployeeDAO
+			rule Required on eid
+			rule Required on name
+			rule Required on organization
+			constraint UniqueCheck on eid "员工工号必须唯一"{
+				entity.isUnique[newValue|
+					employeeDAO.findByEid(newValue.eid)
+				]
+			}
+		}
+		ui-component EmployeeListView as GXTListView{
+			template render(value : proxy of RCEmployee) {
+				"<div>{value.name}</div>"
+			}
+		}
+		
+	}
+	
+	
+	presenter CreateOrUpdateEmployeePresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIEmployee
+			op setValue(value : UIEmployee) : void
+			op setOrganization(org : proxy of RCOrganization) : void
+		}
+		
+		interaction{
+			used4Update : boolean
+			org : proxy of RCOrganization
+			input call.setup4Create(org : proxy of RCOrganization, postInit : (CreateOrUpdateEmployeePresenter)=>void){
+				used4Update = false
+				this.org = org
+				this.activate[
+					getView().setOrganization(org)
+					postInit.apply(this)
+				]
+			}
+			
+			input call.setup4Update(value : proxy of RCEmployee, postInit:(CreateOrUpdateEmployeePresenter)=>void ){
+				used4Update = true
+				activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.EmployeesChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(org,getView().value,onSuccess[
+						fire eventbus.EmployeesChanged()
+						notifier.success
+						if(getView().value.inputNext.isLogicTrue){
+							fire eventbus.InputNextEmployee(org)
+						}
+						
+					])
+				}
+			}			
+		}
+	
+		service{
+			@Inject mapper : EmployeeMapper
+			@Inject employeeDAO : RCEmployeeDAO
+			op loadValue(pvalue : proxy of RCEmployee) : UIEmployee{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIEmployee) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(org : proxy of RCOrganization,uivalue : UIEmployee) : void{
+				employeeDAO.^create(uivalue.eid)[
+					it.organization = resolve org
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateEmployeeView for CreateOrUpdateEmployeePresenter implements IHasTitle{
+		@Inject form : EmployeeForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIEmployee{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op setValue(UIEmployee value) : void{
+			form.value = value
+			form.inputNext.asWidget.hide
+		}		
+		op getTitle():String{
+			"员工信息维护"
+		}	
+		op setOrganization(org : proxy of RCOrganization) : void{
+			form.organization.value = org
+		}
+	}		
+	
+	ui-criteria UIEmployeeCriteria for RCEmployeeCriteria{
+		info : String "员工信息关键字"
+		orgPath : String
+		organization : proxy of RCOrganization
+		includeLeaveEmployees : Boolean "含离职员工"
+		map EmployeeCriteriaMapper{
+			direct{info,organization,orgPath,includeLeaveEmployees}
+		}
+		ui-component EmployeeCriteriaForm as GXTForm{
+			binding{info as EscapedTextItem,includeLeaveEmployees}
+		}
+	}
+	
+	presenter EmployeeManagementPresenter{
+		view interface{
+			signal in showResults(results : IPagedResult<UIEmployee>)
+			signal in showOutlineDatas(outlineDatas : UIOrganization[*])
+			signal in refresh()
+
+			signal out createRequest(org : proxy of RCOrganization) @employeeManagementPresenter "新建"
+			signal out importRequest() @employeeManagementPresenter "导入"
+			signal out organizationSelected(org : proxy of RCOrganization,c : UIEmployeeCriteria)
+			signal out deleteRequest(value : proxy of RCEmployee) @employeeManagementPresenter "删除"
+			signal out modifyRequest(value : proxy of RCEmployee) @employeeManagementPresenter "修改"
+			signal out modifyDepartment(value : proxy of RCEmployee) @employeeManagementPresenter "部门变动"
+			signal out assignRolesRequest(value : proxy of RCEmployee) @employeeManagementPresenter "分配角色"
+			signal out resetPasswdRequest(value : proxy of RCEmployee) @employeeManagementPresenter "重置密码"
+			signal out leaveJobRequest(value : proxy of RCEmployee) @employeeManagementPresenter "员工离职"
+			signal out resumeJobRequest(value : proxy of RCEmployee) @employeeManagementPresenter "员工复职"
+			signal out filterRequest(c : UIEmployeeCriteria)
+		}
+
+		interaction{
+			
+			factory createOrUpdatePresenter : CreateOrUpdateEmployeePresenter
+			factory selectRoles4UserPresenter : SelectRoles4UserPresenter
+			factory employeeUploaderPresenter : EmployeeUploaderPresenter
+			factory resetPasswdPresenter : ResetPasswdPresenter
+			factory modifyDepartment : ChangeEmployeeDepartmentPresenter
+			
+			start{
+				service.getAllOrganization(onSuccess[
+					fire view.showOutlineDatas(it)
+					fire view.refresh
+				])
+			}
+			input view.createRequest(org : proxy of RCOrganization){
+				(createOrUpdatePresenter.get=>[
+					setup4Create(org)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				])
+			}
+			input eventbus.InputNextEmployee(org : proxy of RCOrganization){
+				(createOrUpdatePresenter.get=>[
+					setup4Create(org)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				])
+			}
+			input view.modifyRequest(value : proxy of RCEmployee){
+				createOrUpdatePresenter.get=>[
+					setup4Update(value)[
+						fire eventbus.PopActivatedPresenter(it)					
+					]
+				]
+			}
+			input view.modifyDepartment(value : proxy of RCEmployee){
+				modifyDepartment.get=>[
+					setup(value)[
+						fire eventbus.PopActivatedPresenter(it)					
+					]
+				]
+			}
+			input view.resetPasswdRequest(value : proxy of RCEmployee){
+				service.asUser(value,onSuccess[user|
+					resetPasswdPresenter.get.setup(user)[popup(it)]
+				])
+			}
+			input view.deleteRequest(value : proxy of RCEmployee){
+				service.delete(value,onSuccess[
+					fire eventbus.EmployeesChanged
+				])
+			}
+			input view.assignRolesRequest(value : proxy of RCEmployee){
+				service.asUser(value,onSuccess[user|
+					selectRoles4UserPresenter.get=>[
+						setup(user)[
+							fire eventbus.PopActivatedPresenter(it)
+						]
+					]
+				])
+			}
+			input view.filterRequest(c : UIEmployeeCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.EmployeesChanged(){
+				fire view.refresh
+			}
+			input view.organizationSelected(org : proxy of RCOrganization,c : UIEmployeeCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input view.leaveJobRequest(value : proxy of RCEmployee){
+				service.leaveJob(value,onSuccess[
+					fire eventbus.EmployeesChanged
+				])
+			} 
+			input view.resumeJobRequest(value : proxy of RCEmployee){
+				service.resumeJob(value,onSuccess[
+					fire eventbus.EmployeesChanged
+				])
+			} 
+			input view.importRequest(){
+				employeeUploaderPresenter.get.asDialog("员工信息导入")
+			}			
+		}
+		service{
+			@Inject criteriaMapper : EmployeeCriteriaMapper
+			@Inject mapper : EmployeeMapper
+			@Inject organizationMapper : OrganizationMapper
+			@Inject organizationService : RCOrganizationService
+			@Inject dao : RCEmployeeDAO
+			op filter(uicriteria : UIEmployeeCriteria) : IPagedResult<UIEmployee>{
+				var c = uicriteria.createPagedCriteria(typeof(RCEmployeeCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+			op delete(value : proxy of RCEmployee) : void {
+				dao.^delete(resolve value)
+			}
+			op getAllOrganization():UIOrganization[*]{
+				organizationService.getALlOrganization().^map[organizationMapper.transform(it)].unlazy
+			}
+			op asUser(employee:proxy of RCEmployee) : proxy of User{
+				(resolve employee).asUser.toProxy
+			}
+			op leaveJob(value : proxy of RCEmployee):void{
+				(resolve value).leaveJob
+			}
+			op resumeJob(value : proxy of RCEmployee):void{
+				(resolve value).returnJob
+			}
+		}
+	}
+	
+	view EmployeeManagementView for EmployeeManagementPresenter{
+		
+		@Inject listGrid : EmployeeListGrid
+		@Inject criteriaForm : EmployeeCriteriaForm
+		@Inject outlineTreeList : OrganizationOutlineTreeGrid
+//		@Inject testAction : UpdateEmployeeCommand
+//		@Inject importCommand : ImportEmployeeCommand
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			
+			listGrid.asWidget
+			outlineTreeList.asWidget
+			
+			con = widgets.FramedPanel("员工维护")=>[
+				setWidget(widgets.VLayout=>[
+					add(widgets.HTableLayout()=>[
+							add(<Widget>newArrayList(
+								criteriaForm.info.asWidget,
+								criteriaForm.includeLeaveEmployees.asWidget,
+								widgets.TextButton("查询")=>[
+									setWidth("80px")
+									addSelectHandler[
+										fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+											outlineTreeList.deselect
+											organization = null
+											page = 1
+										])
+									]
+								])	
+							)
+					],widgets.VLayoutData(1,-1))
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]
+					add(widgets.HLayout=>[
+						add(
+							widgets.FieldSet("所属机构")=>[
+								widget = widgets.VLayout=>[
+										add(
+											outlineTreeList.createFilter[item,filter|
+												item.name.contains(filter) || (item.simplePy!=null && item.simplePy.contains(filter))
+											]
+											,widgets.VLayoutData(1,-1)
+										)
+										add(widgets.ContentPanel=>[widget= outlineTreeList.asWidget], widgets.VLayoutData(1,1))
+									]
+							],widgets.HLayoutData(300,1,1)
+						)						
+						add(widgets.FieldSet("员工列表")=>[
+							widget = widgets.ContentPanel()=>[
+								widget = widgets.VLayout=>[
+									add(listGrid.asWidget,widgets.VLayoutData(1,1))
+									add(pager.asWidget,widgets.VLayoutData(1,-1))
+								]
+								]
+							],widgets.HLayoutData(1,1,1))
+						
+					],widgets.VLayoutData(1,1))
+				])
+				
+				val ac = listGrid.createActionContext
+
+				securities.check(ui-requester.createRequest)[v|
+					addButton(outlineTreeList.createActionContext().onSingleObjectAction[
+						onExecute[UIOrganization parent|
+							fire view.createRequest(parent.toProxy)
+						]						
+					].asButtonRequester("新建"))
+				]
+				securities.check(ui-requester.importRequest)[v|
+					addButton(widgets.TextButton("导入")=>[
+						addSelectHandler[
+							fire view.importRequest
+						]
+					])
+				]
+				
+				securities.check(ui-requester.modifyRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIEmployee selectedValue |
+							fire view.modifyRequest(selectedValue.toProxy)
+						]
+					].asButtonRequester("修改"))					
+				]					
+				securities.check(ui-requester.modifyDepartment)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIEmployee selectedValue |
+							fire view.modifyDepartment(selectedValue.toProxy)
+						]
+					].asButtonRequester("部门变动"))					
+				]					
+				securities.check(ui-requester.leaveJobRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIEmployee selectedValue |
+							widgets.ConfirmMessageBox("确认","确认员工离职")[
+								fire view.leaveJobRequest(selectedValue.toProxy)
+							].show
+						]
+						onCheckEnable[
+							ac.singleSelectedAnd[
+								it.validFor(RCEmployeeAction::leaveJob)
+							]
+						]
+					].asButtonRequester("离职"))			
+				]					
+				securities.check(ui-requester.resumeJobRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIEmployee selectedValue |
+							widgets.ConfirmMessageBox("确认","确认员工复职")[
+								fire view.resumeJobRequest(selectedValue.toProxy)
+							].show
+						]
+						onCheckEnable[
+							ac.singleSelectedAnd[
+								it.validFor(RCEmployeeAction::returnJob)
+							]
+						]
+					].asButtonRequester("复职"))					
+				]					
+				securities.check(ui-requester.deleteRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIEmployee selectedValue |
+							widgets.ConfirmMessageBox("确认","确认删除")[
+								fire view.deleteRequest(selectedValue.toProxy)
+							].show
+						]
+					].asButtonRequester("删除"))					
+				]
+				securities.check(ui-requester.assignRolesRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIEmployee selectedValue |
+							fire view.assignRolesRequest(selectedValue.toProxy)
+						]
+					].asButtonRequester("分配角色"))					
+				]
+				securities.check(ui-requester.resetPasswdRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIEmployee selectedValue |
+							fire view.resetPasswdRequest(selectedValue.toProxy)
+						]
+					].asButtonRequester("重置密码"))					
+				]
+				outlineTreeList.addSelectEntityListener[org|
+					fire view.organizationSelected(org.toProxy,
+						criteriaForm.value.withPagerInfo(pager)=>[
+							orgPath = '%[' + org.id.toString + ']%'
+							page = 1
+					])
+				]
+			]					
+		}
+	
+		op showResults(results : IPagedResult<UIEmployee>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op showOutlineDatas(organizations : UIOrganization[*]):void{
+			outlineTreeList.setContentProvider(new OrganizationTreeContentProvider(organizations))
+		}
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+	}
+	
+	presenter EmployeeUploaderPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getFile() : File
+		}
+		
+		interaction{
+			input call.performCommit(CommitResultNotifier notifier){
+				service.doUpload(getView().getFile,callback[
+					onSuccessDo[
+						notifier.success
+						fire eventbus.EmployeesChanged()
+					]
+					onFailureDo[caught|
+						caught.showErrors
+					]					
+				])
+			}
+		}
+
+		service{
+			@Inject csvMapper : EmployeeCSVMapper
+			@Inject mapper : Employee4CSVMapper
+			@Inject employeeDAO : RCEmployeeDAO
+			op doUpload(file : File) throws CSVValidationException : void{
+				file.importWith(csvMapper)[
+					onCommitEach[uivalue|
+						employeeDAO.create(uivalue.eid)[
+							mapper.transform(uivalue,it)
+						]
+					]
+				]
+			}
+		}
+	}
+	
+	view EmployeeUploaderView for EmployeeUploaderPresenter implements IHasSize, IHasTitle{
+		@Inject uploadForm : CommonUploadForm
+		initializer{
+			this += uploadForm.asWidget
+		}
+		
+		op getFile() : File{
+			uploadForm.file.value
+		}
+		
+		op mapField( errorKey:String ): HasEditorErrors {
+			uploadForm.mapToErrorEditor(errorKey)
+		}
+		
+		op getSize():Size{
+			new Size(400,150)
+		}
+		
+		op getTitle():String{
+			"员工信息导入"
+		}
+	}
+	
+	presenter ChangeEmployeeDepartmentPresenter with-validation implements CommitablePresenter{
+		view interface{
+			
+			//TODO support proxy as return type
+			op getNewOrganization() : RCOrganizationProxy
+			op setOldOrganization(oldOrg : UIOrganization) : void
+		}
+		
+		interaction{
+			value : proxy of RCEmployee
+			part organizationOutlinePresenter : OrganizationOutlinePresenter
+			input prepare.setup(value : proxy of RCEmployee){
+				this.value = value
+				initPart(organizationOutlinePresenter).setupAsSimpleTree[
+					this.activate[
+						service.getOrganization4Employee(value,onSuccess[
+							getView().setOldOrganization(it)
+							done
+						])
+					]
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier){
+				service.changeOrganization(value,getView().getNewOrganization(),onSuccess[
+					fire eventbus.EmployeesChanged
+					notifier.success
+				])
+			}
+		}
+		
+		service{
+			@Inject organizationMapper : OrganizationMapper
+			op changeOrganization(employee:proxy of RCEmployee, newOrg : proxy of RCOrganization):void{
+				if(newOrg!=null){
+					var e = resolve employee;
+					e.setOrganization(resolve newOrg)
+					e.updateOrgPath
+				}
+			}
+			op getOrganization4Employee(employee : proxy of RCEmployee) : UIOrganization{
+				organizationMapper.transform((resolve employee).organization)
+			}
+		}
+	}
+	view ChangeEmployeeDepartmentView for ChangeEmployeeDepartmentPresenter ui-size:(300,400) ui-title:'部门变动'{
+		actionContext : ActionContext<UIOrganization>
+		oldDepartmentMsg : com.google.gwt.user.client.^ui.Label
+		initializer{
+			this += widgets.VLayout=>[
+				add(oldDepartmentMsg = widgets.Label(""))
+				add(organizationOutlinePresenter.getView().asWidget, widgets.VLayoutData(1,300))
+			]
+			actionContext = organizationOutlinePresenter.getView().getActionContext
+		}
+		
+		op getNewOrganization() : RCOrganizationProxy{
+			actionContext.onlySelected?.toProxy
+		}
+		op setOldOrganization(oldOrg : UIOrganization) : void{
+			oldDepartmentMsg.text = "当前部门:"+oldOrg.name
+		}
+	}
+	
+}

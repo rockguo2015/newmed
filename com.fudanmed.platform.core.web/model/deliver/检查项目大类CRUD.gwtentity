@@ -1,0 +1,224 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	
+	ui-entity UIDeliverPatientCheckCategory for DLDeliverPatientCheckCategory{
+		code : String "代码"
+		name : String "名称"
+		parentCategory : proxy of DLDeliverPatientCheckCategory "父类别"
+	
+		map DeliverPatientCheckCategoryMapper validate by DeliverPatientCheckCategoryValidator{
+			direct{code,name,parentCategory readonly}
+		}
+	
+		constraints DeliverPatientCheckCategoryValidator{
+			rule Required on code
+			rule Required on name
+		}
+	
+		ui-component DeliverPatientCheckCategoryForm as GXTForm{
+			binding{code,name,parentCategory as ReadonlyItem}
+			op createWidget() : Widget{
+				widgets.VLayout=>[
+					addFill(parentCategory.asWidget)
+					addFill(code.asWidget)
+					addFill(name.asWidget)
+				]
+			}			
+		}
+	
+		ui-component DeliverPatientCheckCategoryListGrid as GXTTreeGrid{
+			binding{name,code}
+//			op getChildrenCalculator():(Iterable<UIDeliverPatientCheckCategory>,UIDeliverPatientCheckCategory)=>Iterable<UIDeliverPatientCheckCategory>{
+//				val result = [Iterable<UIDeliverPatientCheckCategory> objects,UIDeliverPatientCheckCategory parent|
+//				 	objects.filter[it.parentCategory==parent]
+//				];
+//				result
+//			}
+		}
+	}
+	
+	signal DeliverPatientCheckCategorysChanged
+	
+	ui-command CreateDeliverPatientCheckCategoryCommand require proxy of DLDeliverPatientCheckCategory"新建"{
+		factory createOrUpdateDeliverPatientCheckCategoryPresenter : CreateOrUpdateDeliverPatientCheckCategoryPresenter
+		execute{
+			println("value==>"+value)
+			createOrUpdateDeliverPatientCheckCategoryPresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command UpdateDeliverPatientCheckCategoryCommand require proxy of DLDeliverPatientCheckCategory "修改"{
+		factory createOrUpdateDeliverPatientCheckCategoryPresenter : CreateOrUpdateDeliverPatientCheckCategoryPresenter
+		execute{
+			createOrUpdateDeliverPatientCheckCategoryPresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeleteDeliverPatientCheckCategoryCommand require proxy of DLDeliverPatientCheckCategory "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.DeliverPatientCheckCategorysChanged
+				])
+			].show
+		}
+		service{
+			@Inject dao : DLDeliverPatientCheckCategoryDAO
+			op delete(value : proxy of DLDeliverPatientCheckCategory):void{
+				dao.delete(resolve value)
+			}
+		}
+	}
+
+	presenter CreateOrUpdateDeliverPatientCheckCategoryPresenter for UIDeliverPatientCheckCategory{
+		view interface{
+			op setParent(parent : proxy of DLDeliverPatientCheckCategory):void
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : proxy of DLDeliverPatientCheckCategory){
+				commiter=[notifier|
+					service.createValue(parent,getView().value,onSuccess[ 
+						fire eventbus.DeliverPatientCheckCategorysChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					getView().setParent(parent)
+					done
+				]
+			}
+			 
+			input prepare.setup4Update(value : proxy of DLDeliverPatientCheckCategory){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.DeliverPatientCheckCategorysChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : DeliverPatientCheckCategoryMapper
+			@Inject dao : DLDeliverPatientCheckCategoryDAO
+			op loadValue(pvalue : proxy of DLDeliverPatientCheckCategory) : UIDeliverPatientCheckCategory{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIDeliverPatientCheckCategory) : void{
+				val value = resolve uivalue;
+				value.update[
+					mapper.transform(uivalue,value)
+				]
+			}
+			op createValue(parent:proxy of DLDeliverPatientCheckCategory, uivalue : UIDeliverPatientCheckCategory) : void{
+				dao.create(resolve parent)[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateDeliverPatientCheckCategoryView<DeliverPatientCheckCategoryForm> for CreateOrUpdateDeliverPatientCheckCategoryPresenter ui-size:(300,200) ui-title:"检查项目大类维护"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+		op setParent(parent : proxy of DLDeliverPatientCheckCategory):void{
+			form.parentCategory.value = parent
+		}
+	}
+	
+	presenter DeliverPatientCheckCategoryListPresenter {
+		view interface{
+			signal in setResults(results : UIDeliverPatientCheckCategory[*])
+			op getActionContext() : ActionContext< UIDeliverPatientCheckCategory>		
+			op clear():void
+		}
+		
+		interaction{
+			input prepare.setup(){
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.refresh(){
+					service.loadDeliverPatientCheckCategoryList(onSuccess[items|
+						fire view.setResults(items)
+					])
+			}
+			
+			input eventbus.DeliverPatientCheckCategorysChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : DeliverPatientCheckCategoryMapper
+			@Inject dao : DLDeliverPatientCheckCategoryDAO
+			op loadDeliverPatientCheckCategoryList() : UIDeliverPatientCheckCategory[*]{
+				dao.findAll().^map[mapper.transform(it)].toList
+			}
+			
+		}
+	}
+	
+	view DeliverPatientCheckCategoryListView for DeliverPatientCheckCategoryListPresenter{
+		con : Widget
+		@Inject listGrid : DeliverPatientCheckCategoryListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget
+		}
+		
+		interaction{
+			input view.setResults(results : UIDeliverPatientCheckCategory[*]){
+				listGrid.setContentProvider(new DeliverPatientCheckCategoryTreeContentProvider(results))
+			}
+		}
+		op getActionContext() : ActionContext< UIDeliverPatientCheckCategory>{
+				listGrid.createActionContext
+		}
+		op clear():void{
+			listGrid.objects = newArrayList
+		}
+		
+	}		
+		
+}

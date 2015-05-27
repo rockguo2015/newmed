@@ -1,0 +1,476 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.Collection
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.domain.^proxy.*
+
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	
+	content-provider FaultReportSourceContentProvider for proxy of RCFaultReportSource{
+		contents{
+			entities.all(typeof(RCFaultReportSource)).sortBy[codeid]
+		}
+	}
+	
+	ui-entity UIRepairTask for RCRepairTask{
+		
+		reportSid : String "报修单号"
+		faultReportSource : proxy of RCFaultReportSource "报修来源"
+	
+		reportDate : Date "接报日期"
+		reportTime : Date "接报时间"
+		reportDateTime : Date "接报时间"
+		
+		reserveDate : Date "预约日期"
+		reserveTime : Date "预约时间"
+	
+		planFinishDate : Date "计划完成日期"
+		planFinishTime : Date "计划完成时间"
+		
+		planFinishDateTime : Date "计划完成时间"
+		isTimeOut : Boolean
+		
+		finishDate : Date "完成日期"
+		finishTime : Date "完成时间"
+		
+		operator : proxy of RCEmployee "接报人"
+		location : String "报修地点"
+		comment : String "报修内容"
+		reporterName : String "报修人"
+		reporterPhone : String "报修人电话"
+		reportOrg : proxy of RCOrganization "报修部门"
+		status : UIRepairTaskStatus "状态"
+		faultLevel : proxy of RCFaultLevel "风险等级"
+		faultEmergencyLevel : proxy of RCFaultEmergencyLevel "紧急度"
+		faultType : UIFaultType "维修类别"
+		actualFaultType : proxy of RCFaultType 
+		saveOnly : Boolean "直接下发班组"
+		activeTeam : proxy of RCMaintenanceTeam "维修班组"
+		abbtActiveWorkers : String "维修人员"
+		amount : Double "材料费"
+		evaluateState : UIEvaluateState "用户评价状态"
+		settlementState : Boolean "结算状态"
+	
+		teams : proxy of RCMaintenanceTeam[*] "班组"
+		isFromReporter : Boolean
+	
+		isDelayed : Boolean 
+		faultLevelColor : String
+		
+		needAudit : Boolean "需要审批"
+		
+		map RepairTaskMapper{
+			@Inject dao: RCFaultLevelColorAdaptorDao
+			direct{
+				reportSid readonly,faultReportSource,
+				reportDate,reportTime,reserveDate, reserveTime,planFinishDate, planFinishTime,finishDate readonly,finishTime readonly,
+				location,comment,reporterName,reporterPhone,reportOrg,faultLevel,
+				faultType readonly,{needAudit,entity.faultType.needAudit}readonly,
+				faultEmergencyLevel,{status,entity.status} readonly, operator, amount readonly, 
+				{evaluateState,entity.repairEvaluate.evaluateState} readonly,isFromReporter readonly
+			}
+			from entity{
+				if(entity.activeGroupTask!=null){
+					ui.activeTeam = entity.activeGroupTask.team.toProxy
+					val workerNames = entity.activeGroupTask.tasks.^map[it.workers].flatten.toSet.^map[name]
+					ui.abbtActiveWorkers = if(workerNames.size==0) "" else if(workerNames.size==1) workerNames.head else workerNames.head + '等'
+				}
+				ui.settlementState = (entity.settlement!=null)
+				
+				ui.reportDateTime = entity.reportDate.appendTime(entity.reportTime)
+				ui.planFinishDateTime = entity.planFinishDate.appendTime(entity.planFinishTime)
+				ui.faultLevelColor = dao.getColor(entity.faultLevel)
+				ui.teams = entity.groupTasks.^map[team.toProxy].unlazy
+				if(ui.planFinishDateTime!=null)
+					ui.isTimeOut = ui.planFinishDateTime < now
+				else ui.isTimeOut = false  
+				
+			}
+			to entity{
+				if(ui.faultType!=null)
+					entity.faultType = entities.get(typeof(RCFaultType),ui.faultType.id)
+				
+			}
+		}
+
+		constraints RepairTaskValidator{
+			rule Required on faultReportSource
+			rule Required on reportDate
+			rule Required on reportTime
+			rule Required on location
+			rule Required on comment
+			rule Required on reporterName
+			rule Required on reportOrg 
+			rule Required on faultType
+			rule Required on faultLevel
+			rule Required on faultEmergencyLevel
+			constraint TeamIsRequired on activeTeam nullable "请选择班组"{
+				if(entity.saveOnly){
+					entity.activeTeam!=null
+				}else{
+					true
+				}
+			}
+		}
+		
+		constraints ReportValidator{
+			rule Required on reportDate
+			rule Required on reportTime
+			rule Required on location
+			rule Required on comment
+			rule Required on reporterName
+			rule Required on reportOrg 
+			rule Required on faultEmergencyLevel
+			
+		}
+	
+	
+		ui-component RepairTaskForm as GXTForm{
+			factory maintenamceTypeManagementPresenter : MaintenamceTypeManagementPresenter
+			required faultTypeListView : FaultTypeListView
+			required ^eventBus :com.google.gwt.event.shared.EventBus
+			
+			binding{
+				faultReportSource as ComboBoxItem content from FaultReportSourceContentProvider,
+				saveOnly,
+				reportDate,reportTime as TimeItem,
+				reserveDate,reserveTime as TimeItem,
+				planFinishDate,planFinishTime as TimeItem,
+				location as RequiredTextItem, comment as TextAreaItem, 
+//				operator as ReadonlyItem,
+				reporterName as RequiredTextItem,
+				reporterPhone,
+				reportOrg as RequiredSuggestionItem content from AllOrganizationAsyncContentProvider,
+				activeTeam as ComboBoxItem content from AllMaintenanceTeamContentProvider,
+				faultLevel as ComboBoxItem content from AllFaultLevelContentProvider,
+				faultType as RequiredSuggestionItem(faultTypeListView) content from AllFaultTypeSContentProvider,
+				faultEmergencyLevel as ComboBoxItem content from AllFaultEmergencyLevelContentProvider
+			}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(TABLE=>[
+							tr=>[
+								td=>[it+=faultReportSource.asWidget]
+								td=>[]
+							]
+							tr=>[
+								td=>[colSpan=2 it+=reportOrg.asWidget=>[width="97%"]]
+							]
+							tr=>[
+								td=>[it+=reportDate.asWidget]
+								td=>[it+=reportTime.asWidget]
+							]
+							tr=>[
+								td=>[it+=reporterName.asWidget]
+								td=>[it+=reporterPhone.asWidget]
+							]
+							tr=>[
+								td=>[colSpan=2 it+=location.asWidget=>[it.width="97%"]]
+							]
+							tr=>[
+
+								td=>[
+									it+=TABLE=>[tr=>[
+										td=>[
+											it += faultType.asWidget
+											faultType.addSelectionChangedListener[
+												faultTypeSelected( it.onlySelected)
+											]
+											faultType.renderer=[ft|
+												ft.name + ft.standardCostTime.toString
+											]
+											
+										]
+										td=>[it += widgets.TextButton("选择")=>[
+											addSelectHandler[
+												maintenamceTypeManagementPresenter.get=>[
+													it.setup4Selector[
+														asSelector("选择维修类别",800,400)[
+															faultTypeSelected(it)
+														].show
+													]
+												]										
+											]
+										]]
+									]
+								]]
+								td=>[it+=activeTeam.asWidget]
+							]
+							tr=>[
+								td=>[it+=comment.asWidget=>[ height=50]]
+								td=>[
+									it+=saveOnly.asWidget=>[
+									saveOnly.addValueChangedListener[dispatch|
+										if(dispatch){
+											activeTeam.asWidget.enable
+										}else{
+											activeTeam.asWidget.disable
+										}
+									]
+									width=120
+								] saveOnly.value = true									
+									
+								]
+							]
+							tr=>[
+								td=>[it+=faultLevel.asWidget]
+								td=>[it+=faultEmergencyLevel.asWidget]
+							]
+							tr=>[
+								td=>[it+=reserveDate.asWidget]
+								td=>[it+=reserveTime.asWidget]
+							]
+							tr=>[
+								td=>[it+=planFinishDate.asWidget]
+								td=>[it+=planFinishTime.asWidget]
+							]
+						])
+					]
+				]
+			}
+		
+			op faultTypeSelected(selectedValue : UIFaultType):void{
+				if(selectedValue!=null){
+					faultType.value = selectedValue
+					activeTeam.value = selectedValue.team
+					if(comment.value.nullOrEmpty)
+						comment.value = selectedValue.name
+					faultLevel.value = selectedValue.faultRiskLevel
+					planFinishDate.value = reserveDate.value
+					planFinishTime.value = reserveTime.value.addHoursToDate(selectedValue.standardCostTime)
+				}
+			}		
+		}
+		ui-component ReportForm as GXTForm{
+			factory maintenamceTypeManagementPresenter : MaintenamceTypeManagementPresenter
+			required ^eventBus :com.google.gwt.event.shared.EventBus
+			required faultTypeListView : FaultTypeListView
+			
+			binding{
+				reportSid as ReadonlyItem,
+				reportDate as ReadonlyItem,reportTime as TimeReadonlyItem,
+				reserveDate,reserveTime as TimeItem,
+				location as RequiredTextItem, comment as RequiredTextAreaItem, 
+				reporterName as ReadonlyItem,
+				reporterPhone,
+				reportOrg as ReadonlyItem,
+				faultType as SuggestionItem(faultTypeListView) content from AllFaultTypeSContentProvider,
+				faultEmergencyLevel as ComboBoxItem content from AllFaultEmergencyLevelContentProvider
+			}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(TABLE=>[
+							tr=>[
+								td=>[it+=reportOrg.asWidget]
+								td=>[it+=faultEmergencyLevel.asWidget]
+							]
+							tr=>[
+								td=>[it+=reporterName.asWidget]
+								td=>[it+=reporterPhone.asWidget]
+								
+							]
+							tr=>[
+								td=>[it+=reportDate.asWidget=>[it.text = "报修日期"]]
+								td=>[it+=reportTime.asWidget=>[it.text = "报修时间"]]
+							]
+							tr=>[
+								td=>[colSpan=2 it+=location.asWidget=>[it.width="94%"]]
+							]
+							tr=>[
+								td=>[
+									it+=TABLE=>[tr=>[
+										td=>[
+											it += faultType.asWidget
+											faultType.addSelectionChangedListener[
+												faultTypeSelected( it.onlySelected)
+											]
+											faultType.renderer=[ft|
+												ft.name + ft.standardCostTime.toString
+											]
+											
+										]
+										td=>[it += widgets.TextButton("选择")=>[
+											addSelectHandler[
+												maintenamceTypeManagementPresenter.get=>[
+													it.setup4Selector[
+														asSelector("选择维修类别",800,400)[
+															faultTypeSelected(it)
+														].show
+													]
+												]										
+											]
+										]]
+									]
+								]]							]
+							tr=>[
+								td=>[colSpan=2 it+=comment.asWidget=>[it.width="93%" it.height=55]]
+							]
+							tr=>[
+								td=>[it+=reserveDate.asWidget]
+								td=>[it+=reserveTime.asWidget]
+							]														
+						])
+
+		
+					]
+				]
+			}
+			op faultTypeSelected(selectedValue : UIFaultType):void{
+				if(selectedValue!=null){
+					faultType.value = selectedValue
+					if(comment.value.nullOrEmpty)
+						comment.value = selectedValue.name
+				}
+			}		
+			
+			op reportContentSelected(reportContent : String) : void{
+				comment.value = reportContent
+			}
+		}
+	
+	ui-component RepairTaskPropertyView as GXTPropertyView{
+		binding{
+			reportSid as PropertyItem(2),
+			needAudit,faultReportSource,
+			reportDate, reportTime as TimeItem,
+			reporterName,reporterPhone,
+			reserveDate,reserveTime as TimeItem,
+			planFinishDate,planFinishTime as TimeItem,
+			finishDate,finishTime as TimeItem,
+			location as PropertyItem(2),
+			comment as PropertyItem(2),
+			operator,reportOrg,
+			activeTeam, faultLevel,
+			faultType,faultEmergencyLevel,
+			evaluateState,settlementState
+		}
+		op getCols() : Integer{
+			2
+		}
+	}		
+
+
+		ui-component RepairTaskListGrid as GXTGrid{
+			
+			binding{
+				needAudit as BooleanColumn,
+				reportSid as StringColumn(130),
+				faultReportSource as DefaultColumn(80),
+				status as DefaultColumn(80),
+				faultLevel as DefaultColumn(80),
+				reportDateTime as DateTimeColumn(120),
+				activeTeam as DefaultColumn(160),
+				reportOrg,				
+				comment as StringColumn(200),
+				planFinishDateTime as DateTimeColumn(120),
+				location as StringColumn(207),
+				reporterName
+			}
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+				needAudit.render=[context,value,sb|
+					if(value==null)return;
+					if(value)
+						sb.appendHtmlConstant("<SPAN style='color:red;'>"+'是'+'</SPAN>')
+					else
+						sb.appendHtmlConstant("<SPAN>"+'否'+'</SPAN>')
+					
+				]
+				faultLevel.render=[context,value,sb|
+					if(value==null)return;
+					val m = this.grid.store.get(context.index)
+					sb.appendHtmlConstant("<SPAN style='color:"+m.faultLevelColor+";'>"+value.toString+"</SPAN>")
+					
+				]
+				status.render=[context,value,sb|
+					if(value==null)return;
+					if(value == UIRepairTaskStatus::newCreated || value == UIRepairTaskStatus::wait4Close || value==UIRepairTaskStatus::wait4SchedulerProcess){
+						sb.appendHtmlConstant("<SPAN style='color:red;'>"+value.toString+"</SPAN>")
+					}else{
+						sb.appendHtmlConstant(value.toString)
+					}
+				]
+				planFinishDateTime.render=[context,value,sb|
+					if(value==null)return;
+					val m = this.grid.store.get(context.index)
+					if(m.status != UIRepairTaskStatus::closed && now > value){
+						sb.appendHtmlConstant("<SPAN style='color:red;'>"+value.formatDateTime+"</SPAN>")
+					}else
+						sb.appendHtmlConstant(value.formatDateTime)
+				]
+			}
+		}
+		
+		ui-component ReportListGrid as GXTGrid{
+			
+			binding{
+				reportSid as StringColumn(150),
+				status as DefaultColumn(80),
+				reportDateTime as DateTimeColumn,
+				planFinishDateTime as DateTimeColumn,
+				location as StringColumn(150),comment as StringColumn(174),
+				reporterName,
+				reportOrg,
+				evaluateState
+			}
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+				evaluateState.render=[context,value,sb|
+					if(value!=null)
+						if(value == UIEvaluateState::waiting){
+							sb.appendHtmlConstant("<SPAN style='color:red;'>"+value.toString+"</SPAN>")
+						}else{
+							sb.appendHtmlConstant(value.toString)
+						}
+				]
+			}
+		}
+		
+		ui-component RepairTaskSimpleListGrid as GXTGrid{
+			binding{
+				status as DefaultColumn(80),
+				reportDateTime as DateTimeColumn(120),
+				location as StringColumn(150),comment as StringColumn(150),
+				reporterName 
+			}
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+			}
+			
+		}
+		
+		ui-component RepairTask4SettlementListGrid as GXTGrid{
+			binding{
+				reportSid as StringColumn(150),
+				reportTime as DateTimeColumn,
+				finishTime as DateTimeColumn,
+				location as StringColumn(150),comment as StringColumn(150),
+				reporterName,
+				reportOrg,
+				teams,
+				amount
+			}
+			op initializeComponent():void{
+				this.asMultiSelectGrid
+				//this.unForceFit
+			}
+			
+		}
+	}	
+	
+	signal RepairTasksChanged
+	signal RepairTaskCreated(value : proxy of RCRepairTask)
+
+}

@@ -1,0 +1,235 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.Date
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.security.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	
+	 
+	ui-enum UIArrivalTime for RCArrivalTime{
+		title{
+			bad = "不及时"
+			normal = "较及时"
+			good = "非常及时"
+		}
+	}
+	
+	ui-enum UIServiceAttitude for RCServiceAttitude{
+		title{
+			bad = "不满意"
+			normal = "较满意"
+			good = "非常满意"
+		}
+	}
+	
+	ui-enum UIFrequencyProblem for RCFrequencyProblem{
+		title{
+			bad = "较低"
+			normal = "一般"
+			good = "高"
+		}
+	}
+	
+	ui-enum UIRepairQuality for RCRepairQuality{
+		title{
+			bad = "较差"
+			normal = "较好"
+			good = "好"
+		}
+	}
+
+	ui-enum UIEvaluateState for RCEvaluateState{
+		title{
+			autoCommitted = "已自动评价"
+			finished = "已评价"
+			notReady = ""
+			waiting = "待评价"
+		}
+	}	
+	ui-entity UIRepairEvaluate for RCRepairEvaluate{
+		evaluateState : UIEvaluateState "评价状态"
+		arrivalTimeValue : Integer  "到达及时性"
+		serviceAttitudeValue : Integer "服务态度"
+		frequencyProblemValue : Integer "同一问题频率"
+		repairQualityValue : Integer "维修质量"
+		comment : String "评语"
+
+		evaluator : proxy of RCEmployee "评价人"
+		evaluateDate : Date "评价日期"
+	
+	
+		map RepairEvaluateMapper validate by RepairEvaluateValidator{
+			@Inject systemUserService : ISystemUserService
+			direct{evaluateState,arrivalTimeValue,serviceAttitudeValue,frequencyProblemValue,repairQualityValue,comment, evaluator readonly, evaluateDate readonly}
+			to entity{
+				entity.evaluator = systemUserService.currentUserAsParty as RCEmployee
+				entity.evaluateDate = today
+			}
+		}
+	
+		constraints RepairEvaluateValidator{
+			rule Required on arrivalTimeValue
+			rule Required on serviceAttitudeValue
+			rule Required on frequencyProblemValue
+			rule Required on repairQualityValue
+		}
+	
+		ui-component RepairEvaluateForm as GXTForm{
+			binding{
+				arrivalTimeValue as ScoreItem(5),
+				serviceAttitudeValue as ScoreItem(5),
+				frequencyProblemValue as ScoreItem(5),
+				repairQualityValue as ScoreItem(5),
+				comment as TextAreaItem
+			}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						arrivalTimeValue.value = 4
+						serviceAttitudeValue.value = 5
+						frequencyProblemValue.value = 5
+						repairQualityValue.value = 5
+						add(arrivalTimeValue.asWidget,widgets.VLayoutData(300,-1))
+						add(serviceAttitudeValue.asWidget,widgets.VLayoutData(300,-1))
+						add(frequencyProblemValue.asWidget,widgets.VLayoutData(300,-1))
+						add(repairQualityValue.asWidget,widgets.VLayoutData(300,-1))
+						add(comment.asWidget,widgets.VLayoutData(1,160))
+						
+					]
+				]
+			}			
+		}
+	
+		ui-component RepairEvaluatePropertyView as GXTPropertyView{
+			binding{evaluateState as PropertyItem(2),evaluator,evaluateDate,arrivalTimeValue,serviceAttitudeValue,frequencyProblemValue,repairQualityValue,comment as PropertyItem(2)}
+			op getCols():Integer{
+				2
+			}
+		}
+	
+	}
+	
+	signal RepairEvaluatesChanged
+	
+	presenter CreateOrUpdateRepairEvaluatePresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIRepairEvaluate
+			op setValue(value : UIRepairEvaluate) : void
+		}
+		
+		interaction{
+			
+			input call.setup4Update(
+				value : proxy of RCRepairEvaluate,
+				(CreateOrUpdateRepairEvaluatePresenter)=>void postInitializer
+			){
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						postInitializer.apply(this)
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.updateValue(getView().value,onSuccess[
+					fire eventbus.RepairEvaluatesChanged()
+					notifier.success
+				])
+			}			
+		}
+		
+		service{
+			@Inject mapper : RepairEvaluateMapper
+			op loadValue(pvalue : proxy of RCRepairEvaluate) : UIRepairEvaluate{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIRepairEvaluate) : void{
+				val evaluate = resolve uivalue
+				mapper.transform(uivalue,evaluate)
+				evaluate.commit()
+			}
+		}
+	}
+	
+	view CreateOrUpdateRepairEvaluateView for CreateOrUpdateRepairEvaluatePresenter implements IHasSize, IHasTitle{
+		@Inject form : RepairEvaluateForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIRepairEvaluate{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIRepairEvaluate value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(350,380)
+		}
+		op getTitle():String{
+			'维修评价'
+		}
+	}	
+	
+	presenter ShowRepairEvaluatePresenter{
+		view interface{
+			signal in setValue(value : UIRepairEvaluate)
+		}
+		interaction{
+			input call.setup(postInit:(ShowRepairEvaluatePresenter)=>void){
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			input call.setup(repairTask : proxy of RCRepairTask, postInit:(ShowRepairEvaluatePresenter)=>void){
+				this.activate[
+					service.loadEvaluate(repairTask,onSuccess[
+						fire view.setValue(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			input call.setRepairTask(repairTask : proxy of RCRepairTask){
+				service.loadEvaluate(repairTask,onSuccess[
+					fire view.setValue(it)
+				])
+			}
+		}
+		
+		service{
+			@Inject repairEvaluateMapper : RepairEvaluateMapper
+			op loadEvaluate(repairTask : proxy of RCRepairTask):UIRepairEvaluate{
+				repairEvaluateMapper.transform((resolve repairTask).repairEvaluate)
+			}
+		}
+		
+	}	
+	
+	view ShowRepairEvaluateView for ShowRepairEvaluatePresenter{
+		con : Widget
+		@Inject repairEvaluatePropertyView : RepairEvaluatePropertyView
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = con.lazy[
+				repairEvaluatePropertyView.asWidget
+			]
+		}
+		
+		interaction{
+			input view.setValue(evaluate : UIRepairEvaluate){
+				repairEvaluatePropertyView.value = evaluate
+			}
+		}
+	}
+}

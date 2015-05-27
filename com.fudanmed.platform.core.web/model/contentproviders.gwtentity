@@ -1,0 +1,177 @@
+package com.fudanmed.platform.core.web feature organization{
+	
+	import java.util.*
+	import edu.fudan.langlab.domain.organization.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.uniquesoft.gwt.client.common.widgets.contentprovider.*
+	import com.fudanmed.platform.core.web.shared.project.*
+	import com.fudanmed.platform.core.web.server.^service.project.*
+	content-provider AllEmployeesContentProvider for proxy of RCEmployee{
+		@Inject dao : RCEmployeeDAO
+		contents{
+			dao.allOnJobEmployees
+		}
+	}
+	
+	content-provider AllEmployeesAsyncContentProvider for proxy of RCEmployee{
+		criteria extends ObjectNameFilter{
+		}
+		contents{
+			(entities.createQueryCriteria(typeof(RCEmployeeByNameCriteria))=>[
+				it.name = filter.name
+			]).list
+		}
+	}
+
+	content-provider AllMaintenanceTeamContentProvider for proxy of RCMaintenanceTeam{
+		contents{
+			entities.all(typeof(RCMaintenanceTeam))
+		}
+	}
+	
+	content-provider AllOnsitePositionAyncContentProvider for proxy of RCOnsitePosition{
+		criteria extends ObjectNameFilter{
+		}
+		contents{
+			(filter.createPagedCriteria(typeof(RCOnsitePositionCriteria),entities)=>[
+				info = filter.name
+			]).listAndTransform[it]
+			
+//			(entities.createQueryCriteria(typeof(RCOnsitePositionCriteria))=>[
+//				println(filter.name)
+//				it.info = filter.name
+//			]).list
+		}
+	}
+	
+	content-provider AllOrganizationContentProvider for proxy of RCOrganization{
+		contents{
+			entities.all(typeof(RCOrganization))
+		}
+	}
+	
+	content-provider AllOrganizationAsyncContentProvider for proxy of RCOrganization{
+		criteria extends ObjectNameFilter{
+		}
+		contents{
+			(filter.createPagedCriteria(typeof(RCOrganizationCriteria),entities)=>[
+				info = filter.name
+			]).listAndTransform[it]
+		}
+	}
+	
+	content-provider AllFaultLevelContentProvider for proxy of RCFaultLevel{
+		contents{
+			entities.all(typeof(RCFaultLevel))
+		}
+	}
+	
+	content-provider AllWorkers4OrgContentProvider for UIWorker{
+		@Inject dao : RCEmployeeDAO
+		@Inject mapper : WorkerMapper
+		criteria{
+			org : proxy of RCOrganization
+		}
+		contents{
+			(if(filter.org==null)
+				dao.allOnJobEmployees
+			else
+				entities.get(typeof(RCOrganization),filter.org.id).onJobEmployees
+			).^map[mapper.transform(it)].unlazy
+		}
+	}
+	
+	
+	content-provider AllOrgEmployeeContentProvider for proxy of RCEmployee{
+		@Inject dao : RCEmployeeDAO
+		
+		criteria{
+			org : proxy of RCOrganization
+		}
+		contents{
+			if(filter.org==null)
+				dao.allOnJobEmployees
+			else
+				entities.get(typeof(RCOrganization),filter.org.id).onJobEmployees
+		}
+	}
+	
+	content-provider AllFaultEmergencyLevelContentProvider for proxy of RCFaultEmergencyLevel{
+		contents{
+			entities.all(typeof(RCFaultEmergencyLevel))
+		}
+	}
+//	content-provider AllSupplierTypeContentProvider for proxy of RCSupplierType{
+//		contents{
+//			entities.all(typeof(RCSupplierType))
+//		}
+//	}
+	
+	content-provider AllSupplierContentProvider for proxy of RCSupplier{
+		criteria extends ObjectNameFilter{
+		}
+		contents{
+			(entities.createQueryCriteria(typeof(RCSupplierCriteria))=>[
+				it.info = filter.name
+				it.type = RCSupplierType::materialSupplier
+			]).list
+		}
+		
+	}
+	content-provider AllDeviceSupplierContentProvider for proxy of RCSupplier{
+		criteria extends ObjectNameFilter{
+		}
+		contents{
+			(entities.createQueryCriteria(typeof(RCSupplierCriteria))=>[
+				it.info = filter.name
+				it.type = RCSupplierType::maintenanceProvider
+			]).list
+		}
+		
+	}
+
+	
+	
+}
+
+package com.fudanmed.platform.core.web feature project{
+	
+	import com.uniquesoft.gwt.shared.common.pager.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.uniquesoft.gwt.client.common.widgets.contentprovider.IObjectNameFilter
+	
+	import com.fudanmed.platform.core.web.shared.project.*
+	import com.fudanmed.platform.core.web.client.project.*
+	import com.fudanmed.platform.core.web.server.^service.project.*
+	import com.uniquesoft.gwt.client.common.widgets.contentprovider.*
+	
+	content-provider AllWorkTypeContentProvider for proxy of RCWorkType{
+		contents{
+			entities.all(typeof(RCWorkType)).sortBy[codeid]
+		}
+	}
+
+	content-provider AllFaultTypeContentProvider for proxy of RCFaultType{
+		
+		contents{
+			entities.all(typeof(RCFaultType)).sortBy[name]
+		}
+	}
+	content-provider AllFaultTypeSContentProvider for UIFaultType{
+		@Inject mapper : FaultTypeMapper
+		criteria extends PagedObjectNameFilter{}
+		
+		contents{
+			(filter.createPagedCriteria(typeof(RCFaultTypeContentProviderCriteria),entities)=>[
+				name = filter.name
+			]).listAndTransform[mapper.transform(it)]
+		}
+	}
+	
+
+}

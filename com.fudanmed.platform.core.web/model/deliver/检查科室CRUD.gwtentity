@@ -1,0 +1,340 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	
+	content-provider CheckOrganizationContentProvider for proxy of DLCheckOrganization{
+		contents{
+			//TODO 
+			entities.all(typeof(DLCheckOrganization))
+		}
+	}
+	
+	ui-entity UICheckOrganization for DLCheckOrganization{
+		code : String "科室代码"
+		name : String "科室名称"
+		organization : proxy of RCOrganization "关联组织机构"
+
+		map CheckOrganizationMapper validate by CheckOrganizationValidator{
+			direct{code,name,organization}
+		}
+	
+		constraints CheckOrganizationValidator{
+			rule Required on code
+			rule Required on name
+		}
+	
+		ui-component CheckOrganizationForm as GXTForm{
+			binding{code, name, organization as SuggestionItem content from client.organization.AllOrganizationAsyncContentProvider}
+//			con : Widget
+//			op asWidget() : Widget{
+//				con = con.lazy[
+//					widgets.VLayout=>[
+//					]
+//				]
+//			}			
+		}
+	
+		ui-component CheckOrganizationListGrid as GXTGrid{
+			binding{code,name,organization}
+		}
+			
+	
+	}
+	signal CheckOrganizationsChanged
+	
+	ui-command CreateCheckOrganizationCommand "新建"{
+		factory createOrUpdateCheckOrganizationPresenter : CreateOrUpdateCheckOrganizationPresenter
+		execute{
+			createOrUpdateCheckOrganizationPresenter.get.setup4Create()[
+				popup(it)
+			]
+		}
+	}
+	ui-command UpdateCheckOrganizationCommand require proxy of DLCheckOrganization "修改"{
+		factory createOrUpdateCheckOrganizationPresenter : CreateOrUpdateCheckOrganizationPresenter
+		execute{
+			createOrUpdateCheckOrganizationPresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeleteCheckOrganizationCommand require proxy of DLCheckOrganization "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.CheckOrganizationsChanged
+				])
+			].show
+		}
+		service{
+			@Inject dao : DLCheckOrganizationDAO
+			op delete(value : proxy of DLCheckOrganization):void{
+				dao.delete(resolve value)
+			}
+		}
+	}
+
+	presenter CreateOrUpdateCheckOrganizationPresenter for UICheckOrganization{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(){
+				commiter=[notifier|
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.CheckOrganizationsChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of DLCheckOrganization){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.CheckOrganizationsChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : CheckOrganizationMapper
+			@Inject dao : DLCheckOrganizationDAO
+			op loadValue(pvalue : proxy of DLCheckOrganization) : UICheckOrganization{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UICheckOrganization) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UICheckOrganization) : void{
+				dao.create[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateCheckOrganizationView<CheckOrganizationForm> for CreateOrUpdateCheckOrganizationPresenter ui-size:(300,200) ui-title:"??维护"{
+		factory organizationOutlinePresenter : OrganizationOutlinePresenter
+		initializer{
+			this += widgets.DialogContent(
+				TABLE=>[
+					tr=>[
+						td=>[it += form.code.asWidget]
+					]
+					tr=>[
+						td=>[it += form.name.asWidget]
+					]
+					tr=>[
+						td=>[
+								it += TABLE=>[tr=>[
+									td=>[ 
+										it += form.organization.asWidget
+									]
+									td=>[
+										it += widgets.TextButton("选择")=>[
+											addSelectHandler[
+												organizationOutlinePresenter.get.setupAsSimpleTree[
+														asSelector("选择区域位置",300,500)[
+															form.organization.value = it.toProxy
+														].show
+													]
+												]
+											]
+										]
+									]
+								]
+							
+							
+						]
+					]
+				]
+			)
+		}
+		
+	}
+
+
+
+	ui-criteria UICheckOrganizationCriteria for DLCheckOrganizationCriteria{
+		info : String "科室信息"
+		map CheckOrganizationCriteriaMapper{
+			direct{info}
+		}
+		ui-component CheckOrganizationCriteriaForm as GXTForm{
+			binding{info}
+		}
+	}
+	
+	presenter CheckOrganizationQueryListPresenter provide UICheckOrganization{
+		view interface{
+			signal in showResults(results : IPagedResult<UICheckOrganization>)
+			signal in refresh()
+
+			signal out filterRequest(c : UICheckOrganizationCriteria)
+			op getActionContext():ActionContext<UICheckOrganization>
+		}
+
+		interaction{
+			
+			input prepare.setup(){
+				this.activate[
+					fire view.refresh
+					done
+				]
+			}
+			input view.filterRequest(c : UICheckOrganizationCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.CheckOrganizationsChanged(){
+				fire view.refresh
+			}
+		}
+		
+		service{
+			@Inject criteriaMapper : CheckOrganizationCriteriaMapper
+			@Inject mapper : CheckOrganizationMapper
+			op filter(uicriteria : UICheckOrganizationCriteria) : IPagedResult<UICheckOrganization>{
+				var c = uicriteria.createPagedCriteria(typeof(DLCheckOrganizationCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+		}
+	}
+	
+	view CheckOrganizationQueryListView for CheckOrganizationQueryListPresenter{
+		@Inject listGrid : CheckOrganizationListGrid
+		@Inject criteriaForm : CheckOrganizationCriteriaForm
+		
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.VLayout=>[
+				add(
+					TABLE=>[
+						tr=>[
+							td=>[it += criteriaForm.info.asWidget]
+							td=>[it += widgets.TextButton("查找")=>[
+								setWidth("80px")
+								addSelectHandler[
+									fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+										page = 1
+									])
+								]
+							]]
+						]
+					]
+				)
+
+				pager = listGrid.createPager=>[
+					pagerHandler = [int pageNum, int recordsPerPage|
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = pageNum
+							pageSize = recordsPerPage
+						])							
+					]
+				]
+				
+				add(listGrid.asWidget,widgets.VLayoutData(1,1))
+				add(pager.asWidget)
+			]
+		}
+		
+		op showResults(results : IPagedResult<UICheckOrganization>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		
+		op getActionContext():ActionContext<UICheckOrganization>{
+			listGrid.createActionContext
+		}
+	}	
+
+	
+	ui-command ShowCheckOrganizationManagementCommand "检查科室维护"{
+		factory managementPresenter : CheckOrganizationManagementPresenter
+		execute{
+			managementPresenter.get.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}	
+	presenter CheckOrganizationManagementPresenter{
+		view interface{
+		}
+		interaction{
+			part queryListPresenter : CheckOrganizationQueryListPresenter
+			input prepare.setup(){
+				initPart(queryListPresenter).setup[
+					this.activate[
+						done
+					]
+				]
+			}
+		}
+	}
+	
+	view CheckOrganizationManagementView for CheckOrganizationManagementPresenter{
+		@Inject createCheckOrganizationCommand : CreateCheckOrganizationCommand
+		@Inject updateCheckOrganizationCommand : UpdateCheckOrganizationCommand
+		@Inject deleteCheckOrganizationCommand : DeleteCheckOrganizationCommand
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}	
+		layout{
+			val ac = queryListPresenter.getView().actionContext.adapt[toProxy]
+			con = widgets.FramedPanel("检查科室维护")=>[
+				widget = queryListPresenter.getView().asWidget
+				addCommand(createCheckOrganizationCommand)
+				addCommand(ac,updateCheckOrganizationCommand)
+				addCommand(ac,deleteCheckOrganizationCommand)
+			]
+		}
+		
+	}
+ 
+}

@@ -1,0 +1,68 @@
+package com.fudanmed.platform.core.web feature project{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.shared.common.pager.*
+	import com.uniquesoft.gwt.client.common.widgets.pager.IPager
+	import com.uniquesoft.gwt.client.common.widgets.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.web.client.tree.*
+	import com.sencha.gxt.data.shared.TreeStore
+	import com.sencha.gxt.widget.core.client.treegrid.TreeGrid
+	import com.sencha.gxt.widget.core.client.grid.*
+	import com.uniquesoft.gwt.client.common.action.ActionContext
+	import com.uniquesoft.uidl.transform.IConvertService
+	import com.sencha.gxt.widget.core.client.form.TextArea
+	
+	presenter RepairTaskDetailInfoPresenter{
+		view interface{
+			signal in setValue(repairTask : UIRepairTask)
+		}
+		interaction{
+			input call.setup(postInit : (RepairTaskDetailInfoPresenter)=>void){
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			
+			input call.setRepairTask(repairTask : proxy of RCRepairTask){
+				service.loadRepairTask(repairTask,onSuccess[
+					fire view.setValue(it)
+				])
+			}
+		}
+		service{
+			@Inject mapper : RepairTaskMapper
+			op loadRepairTask(repairTask : proxy of RCRepairTask):UIRepairTask{
+				mapper.transform((resolve repairTask))
+			}
+		}
+	}
+	
+	view RepairTaskDetailInfoView for RepairTaskDetailInfoPresenter{
+		required repairTaskDetailForm : RepairTaskPropertyView
+		con : Widget
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = con.lazy[
+				repairTaskDetailForm.asWidget
+			]
+		}
+		interaction{
+			input view.setValue(repairTask : UIRepairTask){
+				repairTaskDetailForm.value = repairTask
+			}
+		}
+	}
+	
+}

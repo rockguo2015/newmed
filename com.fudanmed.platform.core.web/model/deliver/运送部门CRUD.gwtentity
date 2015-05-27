@@ -1,0 +1,303 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.client.tree.*
+
+	ui-entity UIDeliverOrganization for DLDeliverOrganization{
+		code:String "代码"
+		name:String "名称"
+		organization : proxy of RCOrganization "父类别"
+		
+		map DeliverOrganizationMapper validate by DeliverOrganizationValidator{
+			direct{organization, code, name}
+		}
+	
+		constraints DeliverOrganizationValidator{
+			rule Required on code
+			rule Required on name
+			rule Required on organization
+		}
+	
+		ui-component DeliverOrganizationForm as GXTForm{
+			binding{name, code, organization as SuggestionItem content from client.organization.AllOrganizationAsyncContentProvider}
+			op asWidget() : Widget{
+				widgets.VLayout=>[
+					addFill(code.asWidget)
+					addFill(name.asWidget)
+					addFill(organization.asWidget)
+				]
+			}			
+		}
+	
+		ui-component DeliverOrganizationListGrid as GXTGrid{
+			binding{code, name , organization}
+		}
+	}
+
+
+	signal DeliverOrganizationsChanged
+	
+	ui-command CreateDeliverOrganizationCommand "新建"{
+		factory createOrUpdateDeliverOrganizationPresenter : CreateOrUpdateDeliverOrganizationPresenter
+		execute{
+			createOrUpdateDeliverOrganizationPresenter.get.setup4Create()[
+				popup(it)
+			]
+		}
+	}
+	ui-command UpdateDeliverOrganizationCommand require proxy of DLDeliverOrganization "修改"{
+		factory createOrUpdateDeliverOrganizationPresenter : CreateOrUpdateDeliverOrganizationPresenter
+		execute{
+			createOrUpdateDeliverOrganizationPresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeleteDeliverOrganizationCommand require proxy of DLDeliverOrganization "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.DeliverOrganizationsChanged
+				])
+			].show
+		}
+		service{
+			@Inject dao : DLDeliverOrganizationDAO
+			op delete(value : proxy of DLDeliverOrganization):void{
+				dao.delete(resolve value)
+			}
+		}
+	}
+
+	presenter CreateOrUpdateDeliverOrganizationPresenter for UIDeliverOrganization{
+		view interface{
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(){
+				commiter=[notifier|
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.DeliverOrganizationsChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of DLDeliverOrganization){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.DeliverOrganizationsChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : DeliverOrganizationMapper
+			@Inject dao : DLDeliverOrganizationDAO
+			op loadValue(pvalue : proxy of DLDeliverOrganization) : UIDeliverOrganization{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIDeliverOrganization) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIDeliverOrganization) : void{
+				dao.create[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateDeliverOrganizationView<DeliverOrganizationForm> for CreateOrUpdateDeliverOrganizationPresenter ui-size:(350,200) ui-title:"运送部门维护"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+	}
+
+
+	ui-criteria UIDeliverOrganizationCriteria for DLDeliverOrganizationCriteria{
+
+		info : String "运送部门信息"
+		
+		map DeliverOrganizationCriteriaMapper{
+			direct{info}
+		}
+		ui-component DeliverOrganizationCriteriaForm as GXTForm{
+			binding{info as EscapedTextItem}
+		}
+	}
+	
+	presenter DeliverOrganizationQueryListPresenter provide UIDeliverOrganization{
+		view interface{
+			signal in showResults(results : IPagedResult<UIDeliverOrganization>)
+			signal in refresh()
+
+			signal out filterRequest(c : UIDeliverOrganizationCriteria)
+			op getActionContext():ActionContext<UIDeliverOrganization>
+		}
+
+		interaction{
+			
+			input prepare.setup(){
+				this.activate[
+					fire view.refresh
+					done
+				]
+			}
+			input view.filterRequest(c : UIDeliverOrganizationCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.DeliverOrganizationsChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : DeliverOrganizationCriteriaMapper
+			@Inject mapper : DeliverOrganizationMapper
+			op filter(uicriteria : UIDeliverOrganizationCriteria) : IPagedResult<UIDeliverOrganization>{
+				var c = uicriteria.createPagedCriteria(typeof(DLDeliverOrganizationCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+		}
+	}
+	
+	view DeliverOrganizationQueryListView for DeliverOrganizationQueryListPresenter{
+		@Inject listGrid : DeliverOrganizationListGrid
+		@Inject criteriaForm : DeliverOrganizationCriteriaForm
+		
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.VLayout=>[
+				add(
+					TABLE=>[
+						tr=>[
+							td=>[it += criteriaForm.info.asWidget]
+							td=>[it += widgets.TextButton("查找")=>[
+								setWidth("80px")
+								addSelectHandler[
+									fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+										page = 1
+									])
+								]
+							]]
+						]
+					]
+				)
+
+				pager = listGrid.createPager=>[
+					pagerHandler = [int pageNum, int recordsPerPage|
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							page = pageNum
+							pageSize = recordsPerPage
+						])							
+					]
+				]
+				
+				add(listGrid.asWidget,widgets.VLayoutData(1,1))
+				add(pager.asWidget)
+			]
+		}
+		
+		op showResults(results : IPagedResult<UIDeliverOrganization>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		
+		op getActionContext():ActionContext<UIDeliverOrganization>{
+			listGrid.createActionContext
+		}
+	}	
+
+ 	
+	ui-command ShowDeliverOrganizationManagementCommand "运送部门维护"{
+		factory managementPresenter : DeliverOrganizationManagementPresenter
+		execute{
+			managementPresenter.get.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}	
+	presenter DeliverOrganizationManagementPresenter{
+		view interface{
+		}
+		interaction{
+			part queryListPresenter : DeliverOrganizationQueryListPresenter
+			input prepare.setup(){
+				initPart(queryListPresenter).setup[
+					this.activate[
+						done
+					]
+				]
+			}
+		}
+	}
+	
+	view DeliverOrganizationManagementView for DeliverOrganizationManagementPresenter{
+		
+		@Inject createDeliverOrganizationCommand : CreateDeliverOrganizationCommand
+		@Inject updateDeliverOrganizationCommand : UpdateDeliverOrganizationCommand
+		@Inject deleteDeliverOrganizationCommand : DeleteDeliverOrganizationCommand
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}	
+		layout{
+			val ac = queryListPresenter.getView().actionContext.adapt[toProxy]
+			con = widgets.FramedPanel("运送部门维护")=>[
+				widget = queryListPresenter.getView().asWidget
+				addCommand(createDeliverOrganizationCommand)
+				addCommand(ac,updateDeliverOrganizationCommand)
+				addCommand(ac,deleteDeliverOrganizationCommand)
+				
+			]
+		}
+		
+	}
+	
+}

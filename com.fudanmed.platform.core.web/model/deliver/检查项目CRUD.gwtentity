@@ -1,0 +1,286 @@
+package com.fudanmed.platform.core.web feature deliver{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.deliver.*
+	import com.fudanmed.platform.core.web.client.deliver.*
+	import com.fudanmed.platform.core.web.client.organization.*
+	
+	
+	ui-entity UIDeliverPatientCheckType for DLDeliverPatientCheckType{
+			category : proxy of DLDeliverPatientCheckCategory "类别"
+			code : String "代码"
+			name : String "名称"
+			performence : Integer "绩效系数"
+			timeLimitation : Integer "时间限制(分钟)"
+			checkOrganization : proxy of DLCheckOrganization[*] "检查科室"
+			comment : String "特殊要求"
+	
+		map DeliverPatientCheckTypeMapper validate by DeliverPatientCheckTypeValidator{
+			direct{category readonly,code,name,performence,timeLimitation,checkOrganization,comment}
+		}
+	
+		constraints DeliverPatientCheckTypeValidator{
+			rule Required on code
+			rule Required on name
+//			rule Required on checkOrganization
+		}
+	
+		ui-component DeliverPatientCheckTypeForm as GXTForm{
+			binding{category as ReadonlyItem, code,name,performence,timeLimitation,checkOrganization as DualListItem content from CheckOrganizationContentProvider,comment as TextAreaItem}
+			op createWidget() : Widget{
+				widgets.VLayout=>[
+					addFill(category.asWidget)
+					addFill(code.asWidget)
+					addFill(name.asWidget)
+					addFill(performence.asWidget)
+					addFill(timeLimitation.asWidget)
+					addFill(checkOrganization.asWidget)
+					addFill(comment.asWidget=>[height = 80])
+				]
+			}			
+		}
+	
+		ui-component DeliverPatientCheckTypeListGrid as GXTGrid{
+			binding{code,name,performence,timeLimitation,checkOrganization,comment}
+		}
+	}
+	
+	signal DeliverPatientCheckTypesChanged
+	ui-command CreateDeliverPatientCheckTypeCommand require proxy of DLDeliverPatientCheckCategory "新建"{
+		factory createOrUpdateDeliverPatientCheckTypePresenter : CreateOrUpdateDeliverPatientCheckTypePresenter
+		execute{
+			createOrUpdateDeliverPatientCheckTypePresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command UpdateDeliverPatientCheckTypeCommand require proxy of DLDeliverPatientCheckType "修改"{
+		factory createOrUpdateDeliverPatientCheckTypePresenter : CreateOrUpdateDeliverPatientCheckTypePresenter
+		execute{
+			createOrUpdateDeliverPatientCheckTypePresenter.get.setup4Update(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-command DeleteDeliverPatientCheckTypeCommand require proxy of DLDeliverPatientCheckType "删除"{
+		execute{
+			widgets.ConfirmMessageBox("确认删除","确认删除:"+value.name)[
+				service.delete(value,onSuccess[
+					fire eventbus.DeliverPatientCheckTypesChanged
+				])
+			].show
+		}
+		service{
+			op delete(value : proxy of DLDeliverPatientCheckType):void{
+				val delTarget = resolve value
+				delTarget.category.deleteCheckType(delTarget)
+			}
+		}
+	}
+
+	presenter CreateOrUpdateDeliverPatientCheckTypePresenter for UIDeliverPatientCheckType{
+		view interface{
+			op setCategory(category: proxy of DLDeliverPatientCheckCategory):void
+		}
+		
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input prepare.setup4Create(parent : proxy of DLDeliverPatientCheckCategory){
+				commiter=[notifier|
+					service.createValue(getView().value,parent,onSuccess[
+						fire eventbus.DeliverPatientCheckTypesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					getView().setCategory(parent)
+					done
+				]
+			}
+			
+			input prepare.setup4Update(value : proxy of DLDeliverPatientCheckType){
+				commiter=[notifier|
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.DeliverPatientCheckTypesChanged()
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						done
+					])
+				]
+			}
+			
+			input form-commit {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject mapper : DeliverPatientCheckTypeMapper
+			op loadValue(pvalue : proxy of DLDeliverPatientCheckType) : UIDeliverPatientCheckType{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIDeliverPatientCheckType) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIDeliverPatientCheckType,parent : proxy of DLDeliverPatientCheckCategory) : void{
+				(resolve parent).createCheckType[
+					mapper.transform(uivalue,it)
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateDeliverPatientCheckTypeView<DeliverPatientCheckTypeForm> for CreateOrUpdateDeliverPatientCheckTypePresenter ui-size:(500,450) ui-title:"检查项目维护"{
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+		op setCategory(category: proxy of DLDeliverPatientCheckCategory):void{
+			form.category.value = category 
+		}		
+	}
+	
+
+	ui-criteria UIDeliverPatientCheckTypeCriteria for DLDeliverPatientCheckTypeCriteria{
+		info : String "检查项目信息"
+		
+		category : proxy of DLDeliverPatientCheckCategory "检查项目大类" 
+		
+		map DeliverPatientCheckTypeCriteriaMapper{
+			direct{info ,category}
+		}
+		ui-component DeliverPatientCheckTypeCriteriaForm as GXTForm{
+			binding{info as EscapedTextItem,category as ReadonlyItem}
+		}
+	}
+	
+	presenter DeliverPatientCheckTypeQueryListPresenter provide UIDeliverPatientCheckType{
+		view interface{
+			signal in showResults(results : IPagedResult<UIDeliverPatientCheckType>)
+			signal in refresh()
+
+			signal out filterRequest(c : UIDeliverPatientCheckTypeCriteria)
+			op getActionContext():ActionContext<UIDeliverPatientCheckType>
+			op setCategoryAC(categoryAC : ActionContext<DLDeliverPatientCheckCategoryProxy>):void
+		}
+
+		interaction{
+			
+			input prepare.setup(categoryAC : ActionContext<DLDeliverPatientCheckCategoryProxy>){
+				getView().setCategoryAC(categoryAC)
+				this.activate[
+					fire view.refresh
+					done
+				]
+			}
+			input view.filterRequest(c : UIDeliverPatientCheckTypeCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.DeliverPatientCheckTypesChanged(){
+				fire view.refresh
+			}
+		}
+		service{
+			@Inject criteriaMapper : DeliverPatientCheckTypeCriteriaMapper
+			@Inject mapper : DeliverPatientCheckTypeMapper
+			op filter(uicriteria : UIDeliverPatientCheckTypeCriteria) : IPagedResult<UIDeliverPatientCheckType>{
+				var c = uicriteria.createPagedCriteria(typeof(DLDeliverPatientCheckTypeCriteria),criteriaMapper,entities)
+				c.listAndTransform[mapper.apply(it)]
+			}
+		}
+	}
+	
+	view DeliverPatientCheckTypeQueryListView for DeliverPatientCheckTypeQueryListPresenter{
+		@Inject listGrid : DeliverPatientCheckTypeListGrid
+		@Inject criteriaForm : DeliverPatientCheckTypeCriteriaForm
+		categoryAC : ActionContext<DLDeliverPatientCheckCategoryProxy>
+		pager : IPager 
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			categoryAC.addSelectionChangedListener[
+				criteriaForm.category.value = categoryAC.onlySelected				
+				refresh
+//				fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+//					it.category = categoryAC.onlySelected
+//					it.info = criteriaForm.info.value
+//					page = 1
+//				])
+			]
+			
+			con = widgets.VLayout=>[
+				add(
+					TABLE=>[
+						tr=>[
+							td=>[it += criteriaForm.info.asWidget]
+							td=>[it += widgets.TextButton("查找")=>[
+								setWidth("80px")
+								addSelectHandler[
+									fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+										it.category = categoryAC.onlySelected
+										page = 1
+									])
+								]
+							]]
+						]
+					]
+				)
+
+				pager = listGrid.createPager=>[
+					pagerHandler = [int pageNum, int recordsPerPage|
+						fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+							it.category = categoryAC.onlySelected
+							page = pageNum
+							pageSize = recordsPerPage
+						])							
+					]
+				]
+				
+				add(listGrid.asWidget,widgets.VLayoutData(1,1))
+				add(pager.asWidget)
+			]
+		}
+		
+		op showResults(results : IPagedResult<UIDeliverPatientCheckType>) : void{
+			pager.pageLoaded(results)
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		
+		op getActionContext():ActionContext<UIDeliverPatientCheckType>{
+			listGrid.createActionContext
+		}
+		op setCategoryAC(categoryAC : ActionContext<DLDeliverPatientCheckCategoryProxy>):void{
+			this.categoryAC = categoryAC
+		}
+	}	
+
+ 
+		
+}

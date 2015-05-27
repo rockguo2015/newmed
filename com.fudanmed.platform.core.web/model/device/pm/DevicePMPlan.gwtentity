@@ -1,0 +1,449 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.uniquesoft.gwt.client.common.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.device.pm.^proxy.*
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.web.*
+	
+	ui-datatype InitializePMPlanData{
+		year : Integer "截止年份"
+		fromDate : Date "起始日期"
+		
+		ui-component InitializePMPlanDataForm as GXTForm{
+			binding{year,fromDate}
+		}
+		
+		constraints InitializePMPlanDataValidator{
+			rule Required on year
+			rule Required on fromDate
+		}
+	}
+	ui-datatype BatchInitializePMPlanData{
+		fromDate : Date "开始日期"
+		year : Integer "截止年份"
+		
+		ui-component BatchInitializePMPlanDataForm as GXTForm{
+			binding{year,fromDate}
+		}
+		
+		constraints BatchInitializePMPlanDataValidator{
+			rule Required on year
+		}
+	}
+
+	presenter InitializePMPlanPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue():InitializePMPlanData
+			op setDefaultFromDate(date : Date) : void
+		}
+		interaction{
+			devicePMSpec : proxy of RCDevicePMSpecification
+			input prepare.setup4SingleDevice(devicePMSpec : proxy of RCDevicePMSpecification){
+				this.devicePMSpec = devicePMSpec
+				this.activate[
+					service.loadDefaultFromDate(devicePMSpec,onSuccess[
+						getView().setDefaultFromDate(it)
+						done
+					])
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier){
+				if(devicePMSpec!=null){
+					service.init4Device(getView().value,devicePMSpec,onSuccess[
+						fire eventbus.DevicePMPlansChanged
+						notifier.success
+					])
+				}
+			}
+		}
+		
+		service{
+			@Inject ^validator : InitializePMPlanDataValidator
+			op init4Device(data : InitializePMPlanData, devicePMSpec : proxy of RCDevicePMSpecification) : void{
+				data.validateWith(^validator)
+				(resolve devicePMSpec).initializePMPlanUptoYear(data.fromDate,data.year)
+			}
+			op loadDefaultFromDate(devicePMSpec : proxy of RCDevicePMSpecification):Date{
+				val lastPMPlanDate = (resolve devicePMSpec).lastPMPlanDate;
+				if(lastPMPlanDate==null) today else lastPMPlanDate
+			}
+		}
+	} 
+	
+	view InitializePMPlanView for InitializePMPlanPresenter implements IHasSize, IHasTitle{
+		required form : InitializePMPlanDataForm
+		initializer{
+			this += widgets.VLayout=>[
+				add(form.fromDate.asWidget,widgets.VLayoutData(1,-1,10))
+				add(form.year.asWidget, widgets.VLayoutData(1,-1,10))
+			]
+
+		}
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op getSize():Size{
+			new Size(300,200)
+		}
+		op getTitle():String{
+			'生成PM计划'
+		}
+		op getValue():InitializePMPlanData{
+			form.value
+		}
+		op setDefaultFromDate(date : Date) : void{
+			form.fromDate.value = date
+		}
+		
+	}
+	ui-command BatchInitializePMPlanPresenterCommand for UIDeviceCriteria "批量生成PM计划" @devicePMSpecificationManagementPresenter{
+		factory batchInitializePMPlanPresenter : BatchInitializePMPlanPresenter
+		execute{
+			batchInitializePMPlanPresenter.get.setup(value)[
+				popup(it)
+			]
+		}
+	}
+	presenter BatchInitializePMPlanPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue():BatchInitializePMPlanData
+		}
+		interaction{
+			devicePMSpec : proxy of RCDevicePMSpecification
+			deviceCriteria:UIDeviceCriteria
+			input prepare.setup(deviceCriteria:UIDeviceCriteria){
+				this.deviceCriteria = deviceCriteria
+				this.activate[
+					done
+				]
+			}
+			
+			input call.performCommit(CommitResultNotifier notifier){
+				service.init4Device(deviceCriteria,getView().value,onSuccess[
+					display("success","批量生成PM计划")
+					fire eventbus.DevicePMSpecificationsChanged
+					notifier.success
+				])						
+			}
+		}
+		
+		service{
+			@Inject ^validator : BatchInitializePMPlanDataValidator
+			@Inject dao : RCDevicePMSpecificationDAO
+			@Inject criteriaMapper : DeviceCriteriaMapper
+			
+			op init4Device(deviceCriteria:UIDeviceCriteria,data : BatchInitializePMPlanData) : void{
+				data.validateWith(^validator)
+				var c = deviceCriteria.createPagedCriteria(typeof(RCDeviceCriteria),criteriaMapper,entities)
+				c.list.forEach[
+					dao.batchInitializePMPlanUptoYear(it,data.fromDate,data.year)
+				]
+			}
+		}
+	} 
+	
+	view BatchInitializePMPlanView for BatchInitializePMPlanPresenter implements IHasSize, IHasTitle{
+		required form : BatchInitializePMPlanDataForm
+		initializer{
+			this += widgets.VLayout=>[
+				add(form.fromDate.asWidget, widgets.VLayoutData(1,-1,10))
+				add(form.year.asWidget, widgets.VLayoutData(1,-1,10))
+			]
+
+		}
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op getSize():Size{
+			new Size(300,200)
+		}
+		op getTitle():String{
+			'生成PM计划'
+		}
+		op getValue():BatchInitializePMPlanData{
+			form.value
+		}
+		
+	}	
+	
+	ui-enum UIDevicePMPlanStatus for RCDevicePMPlanStatus{
+		title{
+			assigned = "待派工"
+			planed = "待安排"
+			finished = "已维保"
+			workerAssigned = "执行中"
+			
+		}
+	}
+	
+	ui-command DeleteDevicePMPlanCommand require UIDevicePMPlan[*] '删除PM计划' @devicePMSpecificationManagementPresenter{
+		execute{
+			widgets.ConfirmMessageBox("确认","确认删除选中计划",[
+				service.doDelete(value.^map[toProxy].toList,onSuccess[
+					fire eventbus.DevicePMPlansChanged
+				])
+			]).show
+		}
+		check-enable{
+			value.forall[
+				it.status == UIDevicePMPlanStatus::planed
+			]
+		}
+		service{
+			op doDelete(plans : Collection<RCDevicePMPlanProxy>):void{
+				if(!plans.empty){
+					val spec = (resolve plans.head).spec
+					plans.forEach[
+						spec.removePlan(resolve it)
+					]
+				}
+			}
+		}
+	}
+	ui-entity UIDevicePMPlan for RCDevicePMPlan{
+		sid : String "设备编号"
+		name : String "设备名称"
+		specification : String "规格型号"
+		location : proxy of RCOnsitePosition "安装地点"
+		deviceType : proxy of RCDeviceType "设备类型"
+		pmType : proxy of RCDevicePMType "维保类型"
+		description : String "维保内容"
+	
+		planDate : Date "PM计划日期"
+		status : UIDevicePMPlanStatus "状态"
+		comment : String "维保记录"
+	
+		map DevicePMPlanMapper{
+			direct{
+				planDate,status readonly,
+				{description,entity.spec.description} readonly,
+				{sid,entity.spec.device.sid} readonly,
+				{name,entity.spec.device.name} readonly,
+				{specification,entity.spec.device.specification} readonly,
+				{location,entity.spec.device.location} readonly,
+				{pmType,entity.spec.pmType} readonly,
+				{deviceType,entity.spec.device.deviceType} readonly,
+				{comment,entity.comment} readonly
+			}
+		}
+		ui-component DeivcePMPlanForm as GXTForm{
+			binding{planDate}
+			op createWidget():Widget{
+				widgets.VLayout=>[
+					addFill(planDate.asWidget)
+				]
+			}
+		}
+		ui-component DevicePMPlanListGrid as GXTGrid{
+			binding{planDate,status}
+		}
+		
+		ui-component DevicePMPlan4SelectListGrid as GXTGrid{
+			binding{planDate,status as DefaultColumn(80),sid,name,deviceType,specification,pmType,location as DefaultColumn(200),description as StringColumn(200)}
+		}
+		ui-component DevicePMPlan4ConfirmListGrid as GXTGrid{
+			binding{planDate,status as DefaultColumn(80),sid,name,deviceType,specification,pmType,location as DefaultColumn(200),description as StringColumn(200)}
+			op initializeComponent():void{
+				this.asWidget
+				this.unForceFit
+			}
+		}
+		ui-component DevicePMPlan4DeviceInfoListGrid as GXTGrid{
+			binding{pmType,planDate,status,description,comment}
+//			op initializeComponent():void{
+//				this.asWidget.groupBy(pmType,false)
+//			}
+		}
+			
+	}
+
+	
+
+	
+	signal DevicePMPlansChanged
+	
+	presenter DevicePMPlanListPresenter{
+		view interface{
+			signal in setResults(results : UIDevicePMPlan[*])
+			op getActionContext():ActionContext<UIDevicePMPlan>
+		}
+		
+		interaction{
+			loader : (Void)=>void
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(context : proxy of RCDevicePMSpecification){
+				loader=[
+					service.loadDevicePMPlanList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				]
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.setDevicePMSpecification(context : proxy of RCDevicePMSpecification){
+				loader=[
+					service.loadDevicePMPlanList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				]
+				refresh
+			}
+			
+			input call.setDevice(context : proxy of RCDevice){
+				loader=[
+					service.loadDevicePMPlanList4Device(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				]
+				refresh
+			}
+			
+			input call.refresh(){
+				loader.apply(null)
+			}
+			
+			input eventbus.DevicePMPlansChanged(){
+				println('input eventbus.DevicePMPlansChanged()')
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : DevicePMPlanMapper
+			@Inject dao : RCDevicePMPlanDAO
+			op loadDevicePMPlanList(context : proxy of RCDevicePMSpecification) : UIDevicePMPlan[*]{
+				(resolve context).plans.^map[mapper.transform(it)].unlazy
+			}
+			op loadDevicePMPlanList4Device(context : proxy of RCDevice) : UIDevicePMPlan[*]{
+				dao.findByDevice(resolve context).^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view DevicePMPlanListView for DevicePMPlanListPresenter{
+		con : Widget
+		@Inject listGrid : DevicePMPlan4DeviceInfoListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asMultiSelectGrid
+		}
+		op getActionContext():ActionContext<UIDevicePMPlan>{
+			listGrid.createActionContext
+		}
+		interaction{
+			input view.setResults(results : UIDevicePMPlan[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+	
+	ui-criteria UIDevicePMPlanCriteria for RCDevicePMPlanCriteria{
+		planDateFrom : Date "计划日(开始)"
+		planDateTo : Date "计划日(结束)"
+		deviceType : proxy of RCDeviceType "设备类型"
+		category : String
+		pmType : proxy of RCDevicePMType "维保类型"
+		location:proxy of RCOnsitePosition "安装位置"
+		
+		status : UIDevicePMPlanStatus
+		map DevicePMPlanCriteriaMapper{
+			direct{planDateFrom,planDateTo,deviceType,pmType,status,location,category}
+		}
+		ui-component DevicePMPlanCriteriaForm as GXTForm{
+			binding{planDateFrom,planDateTo,deviceType as ReadonlyItem,category as ReadonlyItem,pmType as ComboBoxItem content from RCDevicePMTypeContentProvider}
+		}
+	}
+	
+	presenter DevicePMPlanList4DevicePresenter{
+		view interface{
+			signal in setResults(results : UIDevicePMPlan[*])
+		}
+		
+		interaction{
+			context : proxy of RCDevice
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			input prepare.setup(context : proxy of RCDevice){
+				this.context = context
+				this.activate[
+					refresh
+					done
+				]
+			}
+			
+			input call.setDevice(context : proxy of RCDevice){
+				this.context = context
+				refresh
+			}
+			
+			input call.refresh(){
+				if(context!=null){
+					service.loadDevicePMPlanList(context,onSuccess[items|
+						fire view.setResults(items)
+					])
+				}
+			}
+			
+			input eventbus.DevicePMPlansChanged(){
+				refresh
+			}
+		}
+		
+		service{
+			@Inject mapper : DevicePMPlanMapper
+			@Inject dao : RCDevicePMPlanDAO
+			op loadDevicePMPlanList(device : proxy of RCDevice) : UIDevicePMPlan[*]{
+				dao.findByDevice(resolve device).^map[mapper.transform(it)].unlazy
+			}
+			
+		}
+	}
+	
+	view DevicePMPlanList4DeviceView for DevicePMPlanList4DevicePresenter{
+		con : Widget
+		@Inject listGrid : DevicePMPlan4DeviceInfoListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con =listGrid.asWidget=>[groupBy(listGrid.pmType,false)]
+		}
+		
+		interaction{
+			input view.setResults(results : UIDevicePMPlan[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+	
+	
+}

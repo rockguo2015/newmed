@@ -1,0 +1,622 @@
+package com.fudanmed.platform.core.web feature project{
+	
+
+	import com.google.gwt.user.client.^ui.HTML
+
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.fudanmed.platform.core.web.client.score.ScoreField
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.domain.impl.*
+	import com.fudanmed.platform.core.web.shared.project.*
+	import com.fudanmed.platform.core.web.server.^service.^template.*
+	import com.uniquesoft.gwt.client.common.print.Print
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.client.device.*
+	import com.fudanmed.platform.core.web.client.warehouse.*
+	import edu.fudan.langlab.gxt.client.widget.SoundWidget
+	import edu.fudan.langlab.domain.document.*
+	import edu.fudan.langlab.domain.document.^proxy.*
+	
+
+	ui-criteria UIGroupTaskCriteria for RCGroupTaskCriteria{
+		dateFrom : Date "开始日期"
+		dateTo : Date "结束日期"
+		includeFinishedTask : Boolean "含已完工任务"
+		teams : Collection<Long> 		
+		status : UIGroupTaskStatus "状态"
+		reportOrg : proxy of RCOrganization "报修部门"
+		faultReportSource : proxy of RCFaultReportSource "报修来源"
+		month : String 
+		map GroupTaskCriteriaMapper{
+			@Inject workflowService : RCWorkflowService
+			direct{dateFrom,dateTo,includeFinishedTask,status,reportOrg,faultReportSource,month}
+			to entity{
+				WorkflowEnumWorkAround::initGroupTaskCriteria(entity)
+				workflowService.loadMaintenanceTeams4SystemUser.forEach[
+					entity.teams.add(it.id)
+				]
+			}
+		}
+		ui-component GroupTaskCriteriaForm as GXTForm{
+			binding{dateFrom,dateTo,includeFinishedTask,status as ComboBoxItem,reportOrg as ComboBoxItem content from AllOrganizationContentProvider}
+		}
+	}
+	ui-command CreateWorkItemPictureCommand require proxy of IDocumentContainer "图片上传" @groupTaskManagementPresenter{
+		factory createOrUpdateDocumentStoragePresenter : CreateOrUpdateDocumentStoragePresenter
+		execute{
+			createOrUpdateDocumentStoragePresenter.get.setup4Create(value)[
+				popup(it)
+			]
+		}
+	}
+	ui-datatype HasDocumentsWithAdditionalInfo{
+		value : proxy of IHasDocuments
+		hasDocuments : Boolean
+	}
+	ui-command ViewWorkItemPictureCommand require HasDocumentsWithAdditionalInfo "查看图片" @groupTaskManagementPresenter{
+		factory createOrUpdateDocumentStoragePresenter : PictureBrowsePresenter
+		execute{
+			createOrUpdateDocumentStoragePresenter.get.setup(value.value)[
+				popup(it)
+			]
+		}
+		check-enable{
+			value.hasDocuments
+		}
+	}
+
+	presenter GroupTaskManagementPresenter{
+		view interface{
+			op getActionContext():ActionContext<UIGroupTask>
+			signal in showResults(results : IPagedResult<UIGroupTask>)
+			signal in refresh()
+			signal in markAsDirty()
+			signal in resetDirty()
+			signal in setTeamName(name : String)
+			
+			signal out filterRequest(c : UIGroupTaskCriteria)
+			signal out showGroupTaskDetailRequest(groupTask : proxy of RCGroupTask)
+			
+			signal out createWorkItemTaskRequest(groupTask : proxy of RCGroupTask) @groupTaskManagementPresenter "工单派工"
+			signal out finishGroupTaskRequest(groupTask :proxy of RCGroupTask) @groupTaskManagementPresenter "完工上报"
+			signal out misDispatchGroupTaskRequest(groupTask :proxy of RCGroupTask) @groupTaskManagementPresenter "串单上报"
+			signal out pendWorkItemTaskRequest(workItemTask : proxy of RCWorkItemTask) @groupTaskManagementPresenter "工单挂起"
+			signal out cancelPendWorkItemTaskRequest(workItemTask : proxy of RCWorkItemTask) @groupTaskManagementPresenter "结束挂起"
+			signal out outsourceWorkItemTaskRequest(workItemTask : proxy of RCWorkItemTask) @groupTaskManagementPresenter "外协"
+			signal out finishOutsourceWorkItemTaskRequest(workItemTask : proxy of RCWorkItemTask) @groupTaskManagementPresenter "完成外协"
+			signal out misDispatchingWorkItemTaskRequest(workItemTask : proxy of RCWorkItemTask) @groupTaskManagementPresenter "串单"
+			signal out finishWorkItemTaskRequest(WorkItemTask : proxy of RCWorkItemTask) @groupTaskManagementPresenter "工单完工"
+			signal out followUpWOrkItemTaskRequest(workItemTask : proxy of RCWorkItemTask) @groupTaskManagementPresenter "跟进"
+			signal out printWorkItemRequest(workItemTask : proxy of RCWorkItemTask) @groupTaskManagementPresenter "打印工单"
+			
+		}
+
+		interaction{
+			
+			part WorkItemTaskListPresenter : WorkItemTaskListPresenter
+			part repairTaskDetailInfoPresenter : RepairTaskDetailInfoPresenter
+			part workItemStorageListPresenter : WorkItemStorageListPresenter
+			part workitemPictureListPresenter : PictureListPresenter
+			
+			factory createOrUpdateWorkItemTaskPresenter : CreateOrUpdateWorkItemTaskPresenter
+			factory groupTaskFinishReportPresenter : GroupTaskFinishReportPresenter
+			factory groupTaskMisDispatchReportPresenter : GroupTaskMisDispatchReportPresenter
+			factory workItemFinishReportPresenter : WorkItemFinishReportPresenter
+			factory workItemOutsourcePresenter : WorkItemOutsourcePresenter
+			factory workItemFinishOutsourcePresenter : WorkItemFinishOutsourcePresenter
+			factory workItemPendPresenter : WorkItemPendPresenter
+			factory workItemCancelPendPresenter : WorkItemCancelPendPresenter
+			factory workItemMisDispatchingPresenter : WorkItemMisDispatchingPresenter
+			factory workItemFollowUpPresenter : WorkItemFollowUpPresenter
+			
+			timer : com.uniquesoft.gwt.client.common.Timer
+			input call.postDeactivated(){
+				timer.cancel
+			}
+			
+			input prepare.setup(){
+				service.getTeamName(onSuccess[name|
+					fire view.setTeamName(name)
+					initPart(WorkItemTaskListPresenter).setup[
+						initPart(repairTaskDetailInfoPresenter).setup[
+							initPart(workItemStorageListPresenter).setup[
+								initPart(workitemPictureListPresenter).setup[
+							this.activate[
+								workitemPictureListPresenter.setContext(getView().getActionContext.adapt[toProxy as IHasDocumentsProxy])
+								fire view.refresh
+								installDirtyCheck()
+								done
+							]
+							]
+							
+							]
+						]
+					]					
+				])
+			}
+			
+			input call.installDirtyCheck(){
+				timer = new com.uniquesoft.gwt.client.common.Timer()
+				(timer=>[timer|
+					timer.process = [
+						service.isDirty(
+							callback[
+								onSuccessDo[isDirty|
+									if(isDirty){
+										fire view.markAsDirty
+									}
+								]
+								onFailureDo[
+									display("错误","刷新数据错误，可能网络中断")
+								]
+							]
+						)
+						if(isActivated){
+							timer.schedule(1000*10)
+						}else{
+							timer.cancel
+						}
+					]
+				]).schedule(1000*10)
+			}
+			
+			input view.filterRequest(c : UIGroupTaskCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+					fire view.resetDirty()
+				])
+			}
+			input eventbus.GroupTasksChanged(){
+				fire view.refresh
+			}
+			input view.showGroupTaskDetailRequest(groupTask : proxy of RCGroupTask){
+				WorkItemTaskListPresenter.setValue(groupTask)
+				workItemStorageListPresenter.setGroupTask(groupTask)
+				service.getRepairTask(groupTask,onSuccess[
+					repairTaskDetailInfoPresenter.setRepairTask(it)
+				])
+				
+			}
+			input view.createWorkItemTaskRequest(groupTask : proxy of RCGroupTask){
+				createOrUpdateWorkItemTaskPresenter.get=>[
+					it.setup4Create(groupTask)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.finishGroupTaskRequest(groupTask :proxy of RCGroupTask){
+				groupTaskFinishReportPresenter.get=>[
+					it.setup(groupTask)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+
+			input view.misDispatchGroupTaskRequest(groupTask : proxy of RCGroupTask){
+				groupTaskMisDispatchReportPresenter.get=>[
+					setup(groupTask)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+
+			input view.finishWorkItemTaskRequest(workItemTask : proxy of RCWorkItemTask){
+				workItemFinishReportPresenter.get=>[
+					setup(workItemTask)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.pendWorkItemTaskRequest(workItemTask : proxy of RCWorkItemTask){
+				workItemPendPresenter.get=>[
+					setup(workItemTask)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.cancelPendWorkItemTaskRequest(workItemTask : proxy of RCWorkItemTask){
+				workItemCancelPendPresenter.get=>[
+					setup(workItemTask)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.outsourceWorkItemTaskRequest(workItemTask : proxy of RCWorkItemTask){
+				workItemOutsourcePresenter.get=>[
+					setup(workItemTask)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.finishOutsourceWorkItemTaskRequest(workItemTask : proxy of RCWorkItemTask){
+				workItemFinishOutsourcePresenter.get.setup(workItemTask)[
+					fire eventbus.PopActivatedPresenter(it)
+				]
+			}
+			input view.misDispatchingWorkItemTaskRequest(workItemTask : proxy of RCWorkItemTask){
+				workItemMisDispatchingPresenter.get=>[
+					setup(workItemTask)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.followUpWOrkItemTaskRequest(workItemTask : proxy of RCWorkItemTask){
+				workItemFollowUpPresenter.get=>[
+					setup(workItemTask)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input view.printWorkItemRequest(workItemTask : proxy of RCWorkItemTask){
+				service.generatePrintContents(workItemTask,onSuccess[html|
+					Print::it(html)
+				])
+			}
+		}
+		service{
+			@Inject criteriaMapper : GroupTaskCriteriaMapper
+			@Inject mapper : GroupTaskMapper
+			@Inject taskDirtyManager : RCTaskDirtyManager
+			@Inject workflowService : RCWorkflowService
+			@Inject systemParameter : RCSystemParameterService
+			
+			op getTeamName():String{
+				workflowService.loadMaintenanceTeams4SystemUser.^map[organization.name].join(',')
+			}
+			
+			op isDirty():Boolean{
+				val teamRoles = workflowService.loadMaintenanceTeams4SystemUser
+				if(teamRoles.size==0) return false
+				teamRoles.forall[
+					taskDirtyManager.checkDirty(it)
+				]
+			}
+			
+			op filter(uicriteria : UIGroupTaskCriteria) : IPagedResult<UIGroupTask>{
+				val c = uicriteria.createPagedCriteria(typeof(RCGroupTaskCriteria),criteriaMapper,entities)
+				val result = c.listAndTransform[mapper.apply(it)]
+				workflowService.loadMaintenanceTeams4SystemUser.forEach[
+					taskDirtyManager.refreshed(it)
+				]
+				result
+			}
+			
+			op delete(value : proxy of RCGroupTask) : void {
+				entities.delete(resolve value)
+			}
+			op getRepairTask(groupTask : proxy of RCGroupTask) : proxy of RCRepairTask{
+				(resolve groupTask).repairTask.toProxy
+			}
+			op generatePrintContents(workItemTask : proxy of RCWorkItemTask) : String{
+				val result = Template::workItem(resolve workItemTask,systemParameter.systemParameter)
+				result
+			}
+			
+		}
+	}
+	
+	view GroupTaskManagementView for GroupTaskManagementPresenter{
+		@Inject listGrid : GroupTaskListGrid
+		@Inject criteriaForm : GroupTaskCriteriaForm
+		factory organizationOutlinePresenter : OrganizationOutlinePresenter
+		@Inject createWorkItemPictureCommand : CreateWorkItemPictureCommand
+		@Inject viewWorkItemPictureCommand : ViewWorkItemPictureCommand
+		pager : IPager 
+		refreshButton : TextButton
+		soundPlayer : SoundWidget
+		
+		isDirty : Boolean
+		timer : com.uniquesoft.gwt.client.common.Timer		
+		dirtyInfoPanel : HTML	
+		
+		con: Widget
+		asWidget() : Widget{
+			con
+		}		
+		layout{
+			soundPlayer = new SoundWidget("sound/demo1.mp3")
+			dirtyInfoPanel = new HTML=>[
+				addClickHandler[
+					refresh
+				]
+			]
+			timer = new com.uniquesoft.gwt.client.common.Timer
+			
+			listGrid.asWidget
+			listGrid.keepSelection
+			val ac = listGrid.createActionContext
+			
+			val header = if(!teamName.nullOrEmpty) "--" + teamName else ""
+			con = widgets.FramedPanel("班组报修工作台"+header)=>[
+				setWidget(widgets.VLayout=>[
+					add(TABLE=>[
+						tr=>[
+							td=>[it+=criteriaForm.dateFrom.asWidget]
+							td=>[it+=criteriaForm.dateTo.asWidget]
+							td=>[it+=criteriaForm.includeFinishedTask.asWidget]
+						]
+						tr=>[
+							td=>[it+=criteriaForm.status.asWidget]
+							td=>[
+								it += TABLE=>[tr=>[
+									td=>[
+										it += criteriaForm.reportOrg.asWidget
+									]
+									td=>[
+										it += widgets.TextButton("选择")=>[
+											addSelectHandler[
+												organizationOutlinePresenter.get=>[
+													it.setupAsSimpleTree[
+														asSelector("选择组织机构",300,500)[
+															criteriaForm.reportOrg.value = it.toProxy
+														].show
+													]
+												]
+											]
+										]
+									]
+								]
+							]]
+							td=>[it+=
+								TABLE=>[tr=>[
+									td=>[
+										it += refreshButton = widgets.TextButton("查询")=>[
+											setWidth("80px")
+											addSelectHandler[
+												fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+													page = 1
+												])
+											]
+										]
+									]
+									td=>[it += dirtyInfoPanel]
+									td=>[it += soundPlayer]
+								]]
+							]
+						]
+					])
+					pager = listGrid.createPager=>[
+						pagerHandler = [int pageNum, int recordsPerPage|
+							fire view.filterRequest(criteriaForm.value.withPagerInfo(pager)=>[
+								page = pageNum
+								pageSize = recordsPerPage
+							])							
+						]
+					]
+					add(widgets.ContentPanel=>[
+						widget = widgets.VLayout=>[
+							add(listGrid.asWidget,widgets.VLayoutData(1,1))
+							add(TABLE=>[
+								tr=>[
+									td=>[it+=pager.asWidget]
+								]
+							])
+						]
+						securities.check(ui-requester.createWorkItemTaskRequest)[v|
+						addButton(ac.onSingleObjectAction[
+							onExecute[UIGroupTask groupTask|
+								fire view.createWorkItemTaskRequest(groupTask.toProxy)
+							]
+							onCheckEnable[
+								ac.singleSelectedAnd[
+									StatusValidator::canExecute(status,UIGroupTaskActionType::createTask)
+								]
+							]
+						].asButtonRequester("工单派工"))
+						]
+		
+						securities.check(ui-requester.finishGroupTaskRequest)[v|
+						addButton(ac.onSingleObjectAction[
+							onExecute[UIGroupTask groupTask|
+								fire view.finishGroupTaskRequest(groupTask.toProxy)
+							]
+							onCheckEnable[
+								ac.singleSelectedAnd[
+									StatusValidator::canExecute(status,UIGroupTaskActionType::reportFinish)
+								]
+							]
+						].asButtonRequester("完工上报"))
+						]
+
+						securities.check(ui-requester.misDispatchGroupTaskRequest)[v|
+						addButton(ac.onSingleObjectAction[
+							onExecute[UIGroupTask groupTask|
+								fire view.misDispatchGroupTaskRequest(groupTask.toProxy)
+							]
+							onCheckEnable[
+								ac.singleSelectedAnd[
+									StatusValidator::canExecute(status,UIGroupTaskActionType::reportMisdispatch)
+								]
+							]
+						].asButtonRequester("串单上报"))
+						]
+						
+					],widgets.VLayoutData(1,0.6))
+					add(widgets.TabPanel=>[
+						
+
+						add(
+							widgets.ContentPanel=>[
+								widget = WorkItemTaskListPresenter.getView().asWidget
+								
+								val taskListAc = WorkItemTaskListPresenter.getView().actionContext
+								securities.check(ui-requester.finishWorkItemTaskRequest)[v|
+								addButton(taskListAc.onSingleObjectAction[
+									onExecute[UIWorkItemTask workItemTask|
+										fire view.finishWorkItemTaskRequest(workItemTask.toProxy)
+									]
+									onCheckEnable[
+										taskListAc.singleSelectedAnd[
+											StatusValidator::canExecute(status,UIWorkItemTaskActionType::finish)
+										]
+									]
+								].asButtonRequester("工单完工"))
+								]
+								
+				
+								securities.check(ui-requester.pendWorkItemTaskRequest)[v|
+								addButton(taskListAc.onSingleObjectAction[
+									onExecute[UIWorkItemTask workItemTask|
+										fire view.pendWorkItemTaskRequest(workItemTask.toProxy)
+									]
+									onCheckEnable[
+										taskListAc.singleSelectedAnd[
+											StatusValidator::canExecute(status,UIWorkItemTaskActionType::pend)
+										]
+									]
+								].asButtonRequester("工单挂起"))
+								]
+				
+								securities.check(ui-requester.cancelPendWorkItemTaskRequest)[v|
+								addButton(taskListAc.onSingleObjectAction[
+									onExecute[UIWorkItemTask workItemTask|
+										fire view.cancelPendWorkItemTaskRequest(workItemTask.toProxy)
+									]
+									onCheckEnable[
+										taskListAc.singleSelectedAnd[
+											StatusValidator::canExecute(status,UIWorkItemTaskActionType::cancelPend)
+										]
+									]
+								].asButtonRequester("结束挂起"))
+								]
+				
+				
+								securities.check(ui-requester.outsourceWorkItemTaskRequest)[v|
+								addButton(taskListAc.onSingleObjectAction[
+									onExecute[UIWorkItemTask workItemTask|
+										fire view.outsourceWorkItemTaskRequest(workItemTask.toProxy)
+									]
+									onCheckEnable[
+										taskListAc.singleSelectedAnd[
+											StatusValidator::canExecute(status,UIWorkItemTaskActionType::oursource)
+										]
+									]
+								].asButtonRequester("需外协"))
+								]
+								
+								
+								securities.check(ui-requester.finishOutsourceWorkItemTaskRequest)[v|
+								addButton(taskListAc.onSingleObjectAction[
+									onExecute[UIWorkItemTask workItemTask|
+										fire view.finishOutsourceWorkItemTaskRequest(workItemTask.toProxy)
+									]
+									onCheckEnable[
+										taskListAc.singleSelectedAnd[
+											StatusValidator::canExecute(status,UIWorkItemTaskActionType::finishOutsource)
+										]
+									]
+								].asButtonRequester("完成外协"))
+								]
+								
+								securities.check(ui-requester.misDispatchingWorkItemTaskRequest)[v|
+								addButton(taskListAc.onSingleObjectAction[
+									onExecute[UIWorkItemTask workItemTask|
+										fire view.misDispatchingWorkItemTaskRequest(workItemTask.toProxy)
+									]
+									onCheckEnable[
+										taskListAc.singleSelectedAnd[
+											StatusValidator::canExecute(status,UIWorkItemTaskActionType::misDispatching)
+										]
+									]
+								].asButtonRequester("工单串单"))
+								]
+								securities.check(ui-requester.followUpWOrkItemTaskRequest)[v|
+									addButton(taskListAc.onSingleObjectAction[
+										onExecute[UIWorkItemTask workItemTask|
+											fire view.followUpWOrkItemTaskRequest(workItemTask.toProxy)
+										]
+										onCheckEnable[
+											taskListAc.singleSelectedAnd[
+												StatusValidator::canExecute(status,UIWorkItemTaskActionType::followup)
+											]
+										]
+									].asButtonRequester("工单跟进"))
+								]
+								securities.check(ui-requester.printWorkItemRequest)[v|
+									addButton(taskListAc.onSingleObjectAction[
+										onExecute[UIWorkItemTask workItemTask|
+											fire view.printWorkItemRequest(workItemTask.toProxy)
+										]
+									].asButtonRequester("工单打印"))
+								]
+								addCommand(taskListAc.adapt[toProxy],createWorkItemPictureCommand)
+								addCommand(taskListAc.adapt[uitask|new HasDocumentsWithAdditionalInfo=>[value = uitask.toProxy hasDocuments = uitask.hasDocuments]],viewWorkItemPictureCommand)
+							]
+							,"派工信息"
+						)
+						add(workItemStorageListPresenter.getView().asWidget,"用料信息")
+						add(repairTaskDetailInfoPresenter.getView().asWidget,"报修信息")	
+						add(widgets.ContentPanel=>[
+							widget = workitemPictureListPresenter.getView().asWidget
+						],"工单图片")
+											
+					],widgets.VLayoutData(1,0.4))
+				])
+				
+				listGrid.addSelectEntityListener[
+					fire view.showGroupTaskDetailRequest(it.toProxy)
+				]
+				
+				
+			]					
+		}
+		
+		op showResults(results : IPagedResult<UIGroupTask>) : void{
+			pager.pageLoaded(results)
+			refreshButton.setHTML("查询")
+		}
+		
+		op refresh() : void{
+			pager.gotoPage(pager.activePage)
+		}
+		op buildMessage(color : String) : String{
+			"<a href='#' style='font-size:larger;color:"+color+";'>有新的待处理报修任务，请刷新!</a>"
+		}
+		op destroy():void{
+			super.destroy
+			if(isDirty){
+				timer.cancel
+				soundPlayer.stop
+			}
+		}
+		op markAsDirty():void{
+			if(isDirty) return;
+			isDirty = true
+			timer.process = [
+				if(isDirty){
+					if(dirtyInfoPanel.HTML.contains('red'))
+						dirtyInfoPanel.setHTML(buildMessage("white"))
+					else
+						dirtyInfoPanel.setHTML(buildMessage("red"))
+					timer.schedule(500)
+				}else{
+					timer.cancel
+				}
+			]
+			timer.schedule(500)	
+			soundPlayer.^start
+			dirtyInfoPanel.setHTML(buildMessage('red'))
+		}
+		op resetDirty():void{
+			dirtyInfoPanel.setHTML("")
+			soundPlayer.stop
+			isDirty = false
+		}
+		teamName : String
+		op setTeamName(name : String):void{
+			this.teamName = name
+		}
+		op getActionContext():ActionContext<UIGroupTask>{
+			listGrid.createActionContext
+		}		
+	}		
+}

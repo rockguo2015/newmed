@@ -1,0 +1,35 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.Date
+	import java.util.Collection
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.device.pm.^proxy.*
+	import com.fudanmed.platform.core.web.*
+	import com.uniquesoft.gwt.shared.command.IContextConsumer
+	import com.fudanmed.platform.core.web.client.organization.*
+	import com.fudanmed.platform.core.web.shared.organization.*
+	import com.google.gwt.i18n.client.DateTimeFormat
+	import com.uniquesoft.uidl.validation.Validates
+	import com.uniquesoft.gwt.client.common.print.Print
+	import com.fudanmed.platform.core.web.server.^service.^template.*
+	
+	ui-command PrintPMWorkItemAssignmentCommand for proxy of RCPMWorkItemWorkerAssignment "打印PM工单"{
+		execute{
+			service.generatePrintContents(value,onSuccess[html|
+				Print::it(html)
+			])
+		}
+		service{
+			@Inject systemParameter : RCSystemParameterService
+			
+			op generatePrintContents(workItemTask : proxy of RCPMWorkItemWorkerAssignment) : String{
+				val result = PMWorkItemTemplate::^template(resolve workItemTask,systemParameter.systemParameter)
+				result
+			}
+		}
+	}
+}

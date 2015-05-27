@@ -1,0 +1,114 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.uniquesoft.gwt.shared.datatype.*
+	import edu.fudan.langlab.csv.shared.*
+	import com.fudanmed.platform.core.web.shared.common.*
+	import com.fudanmed.platform.core.web.client.common.*
+	
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.^proxy.*
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.web.*
+	import com.fudanmed.platform.core.web.shared.device.*
+	import edu.fudan.langlab.common.client.widget.ContentPanel
+	import edu.fudan.mylang.utils.DateUtil
+	import edu.fudan.langlab.uidl.domain.document.server.DocumentDownloader
+	import edu.fudan.langlab.domain.document.*
+	import edu.fudan.langlab.domain.document.^proxy.*
+	import com.google.gwt.core.client.GWT
+	import com.fudanmed.platform.core.web.client.app.resource.MedImages
+	
+	ui-command CreateDeviceDocumentStorageCommand require proxy of IDocumentContainer "上传设备文档" @deviceManagementPresenter{
+		required deletage : CreateDocumentStorageCommand
+		execute{
+			deletage.^execute(value)
+		}
+	}
+	ui-command UpdateDeviceDocumentStorageCommand require proxy of DocumentStorage "修改设备文档" @deviceManagementPresenter{
+		required deletage : UpdateDocumentStorageCommand
+		execute{
+			deletage.^execute(value)
+		}
+	}
+	
+	ui-command DeleteDeviceDocumentStorageCommand require proxy of DocumentStorage "删除设备文档" @deviceManagementPresenter{
+		required deletage : DeleteDocumentStorageCommand
+		execute{
+			deletage.^execute(value)
+		}
+		
+	}
+	
+	ui-command CreateDevicePictureCommand require proxy of IDocumentContainer "上传设备图片" @deviceManagementPresenter{
+		required delegate :CreatePictureCommand
+		execute{
+			delegate.^execute(value)
+		}
+		
+	}
+	ui-command UpdateDevicePictureCommand require proxy of DocumentStorage "修改设备图片" @deviceManagementPresenter{
+		required delegate :UpdatePictureCommand
+		execute{
+			delegate.^execute(value)
+		}
+		
+	}	
+	ui-command DeleteDevicePictureCommand require proxy of DocumentStorage "删除设备图片" @deviceManagementPresenter{
+		required delegate :DeletePictureCommand
+		execute{
+			delegate.^execute(value)
+		}
+		
+	}
+	
+	
+	
+	ui-command CreateDeviceTypeDocumentStorageCommand require proxy of IDocumentContainer "上传设备文档" @deviceTypeCategoryManagementPresenter{
+		required deletage : CreateDocumentStorageCommand
+		execute{
+			deletage.^execute(value)
+		}
+	}
+	ui-command UpdateDeviceTypeDocumentStorageCommand require proxy of DocumentStorage "修改设备文档" @deviceTypeCategoryManagementPresenter{
+		required deletage : UpdateDocumentStorageCommand
+		execute{
+			deletage.^execute(value)
+		}
+	}
+	
+	ui-command DeleteDeviceTypeDocumentStorageCommand require proxy of DocumentStorage "删除设备文档" @deviceTypeCategoryManagementPresenter{
+		required deletage : DeleteDeviceDocumentStorageCommand
+		execute{
+			deletage.^execute(value)
+		}
+		
+	}
+	
+	ui-command CreateDeviceTypePictureCommand require proxy of IDocumentContainer "上传设备图片" @deviceTypeCategoryManagementPresenter{
+		required delegate :CreatePictureCommand
+		execute{
+			delegate.^execute(value)
+		}
+		
+	}
+	ui-command UpdateDeviceTypePictureCommand require proxy of DocumentStorage "修改设备图片" @deviceTypeCategoryManagementPresenter{
+		required delegate :UpdatePictureCommand
+		execute{
+			delegate.^execute(value)
+		}
+		
+	}	
+	ui-command DeleteDeviceTypePictureCommand require proxy of DocumentStorage "删除设备图片" @deviceTypeCategoryManagementPresenter{
+		required delegate :DeletePictureCommand
+		execute{
+			delegate.^execute(value)
+		}
+		
+	}	
+		
+}

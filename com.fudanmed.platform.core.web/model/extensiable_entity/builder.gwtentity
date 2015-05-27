@@ -1,0 +1,243 @@
+package com.fudanmed.platform.core.web feature device{
+	
+	import com.fudanmed.platform.core.entityextension.*
+	import com.fudanmed.platform.core.web.*
+	
+	ui-entity UIPrimaryType for RCPrimaryType{
+		
+		name : String
+		
+		ui-component PrimaryTypeList as GXTGrid{
+			binding{name}
+		}
+	}
+	
+	content-provider PrimaryTypeContentProvider for proxy of RCPrimaryType{
+		contents{
+			entities.all(typeof(RCPrimaryType))
+		}
+	}
+	
+	ui-datatype UIPrimaryAttribute{
+		parentCompositeAttribute : String "所属复合参数"
+		attributeName : String "参数名"
+		type : proxy of RCPrimaryType "参数类型"
+		
+		ui-component PrimaryAttributeForm as GXTForm{
+			required primaryTypeList : PrimaryTypeList
+			binding{parentCompositeAttribute as ReadonlyItem,type as ComboBoxItem content from PrimaryTypeContentProvider, attributeName}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(parentCompositeAttribute.asWidget)
+						addFill(attributeName.asWidget)
+						addFill(type.asWidget)
+					]
+				]
+			}			
+		}
+		
+		constraints PrimaryAttributeValidator{
+			rule Required on type
+			rule Required on attributeName
+		}
+	}
+	
+	presenter CreatePrimaryTypePresenter with-validation implements CommitablePresenter{
+
+		view interface{
+			op getValue():UIPrimaryAttribute
+			op setSlotName(name:String):void
+		}
+
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input call.setup4ExtensiableEntity(ee : proxy of RCExtensiableEntity, postInit : (CreatePrimaryTypePresenter)=>void){
+				commiter = [notifier|
+					service.createExtensiableEntityAttribute(ee,getView().getValue(),onSuccess[
+						fire eventbus.AttributeSlotAdded(it)
+						notifier.success
+					])
+				]
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			input call.setup4CompositeSlot(slot : proxy of RCAttributeSlot,postInit :  (CreatePrimaryTypePresenter)=>void){
+				commiter = [notifier|
+					service.createCompositeSlotAttribute(slot,getView().getValue(),onSuccess[
+						fire eventbus.AttributeSlotAdded(it)
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadSlotName(slot,onSuccess[
+						getView().setSlotName(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject primaryAttributeValidator :PrimaryAttributeValidator
+			@Inject slotMapper : AttributeSlotMapper
+			op loadSlotName(slot : proxy of RCAttributeSlot):String{
+				(resolve slot).attr.name
+			}
+			op createExtensiableEntityAttribute(ee : proxy of RCExtensiableEntity, attribute : UIPrimaryAttribute) : UIAttributeSlot{
+				attribute.validateWith(primaryAttributeValidator)
+				slotMapper.transform((resolve ee).value.createAttribute(attribute.attributeName,resolve attribute.type))
+			}
+			op createCompositeSlotAttribute(slot : proxy of RCAttributeSlot, attribute : UIPrimaryAttribute) : UIAttributeSlot{
+				attribute.validateWith(primaryAttributeValidator)
+				slotMapper.transform(((resolve slot).value as RCCompositeValue).createAttribute(attribute.attributeName,resolve attribute.type))
+			}
+		}
+	}
+	
+	view CreatePrimaryTypeView for CreatePrimaryTypePresenter implements IHasSize, IHasTitle{
+		@Inject form : PrimaryAttributeForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UIPrimaryAttribute{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIPrimaryAttribute value) : void{
+			form.value = value
+		}
+		op setSlotName(name:String):void{
+			form.parentCompositeAttribute.value = name
+		}
+		op getSize():Size{
+			new Size(300,200)
+		}
+		op getTitle():String{
+			'新建基本参数'
+		}
+					
+	}
+	
+	ui-datatype UICompositeAttribute{
+		parentCompositeAttribute : String "所属复合参数"
+		attributeName : String "复合参数名称"
+		ui-component CompositeAttributeForm as GXTForm{
+			binding{parentCompositeAttribute as ReadonlyItem,attributeName}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(parentCompositeAttribute.asWidget)
+						addFill(attributeName.asWidget)
+					]
+				]
+			}
+		}
+		constraints CompositeAttributeValidator{
+			rule Required on attributeName
+		}
+	}
+	
+	presenter CreateCompositeTypePresenter with-validation implements CommitablePresenter{
+
+		view interface{
+			op getValue():UICompositeAttribute
+			op setSlotName(name:String):void
+			
+		}
+
+		interaction{
+			commiter : (CommitResultNotifier)=>void
+			input call.setup4ExtensiableEntity(ee : proxy of RCExtensiableEntity, postInit : (CreateCompositeTypePresenter)=>void){
+				commiter = [notifier|
+					service.createExtensiableEntityAttribute(ee,getView().getValue(),onSuccess[
+						fire eventbus.AttributeSlotAdded(it)
+						notifier.success
+					])
+				]
+				this.activate[
+					postInit.apply(this)
+				]
+			}
+			input call.setup4CompositeSlot(slot : proxy of RCAttributeSlot,postInit :  (CreateCompositeTypePresenter)=>void){
+				commiter = [notifier|
+					service.createCompositeSlotAttribute(slot,getView().getValue(),onSuccess[
+						fire eventbus.AttributeSlotAdded(it)
+						notifier.success
+					])
+				]
+				this.activate[
+					service.loadSlotName(slot,onSuccess[
+						getView().setSlotName(it)
+						postInit.apply(this)
+					])
+				]
+				
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				commiter.apply(notifier)
+			}			
+		}
+		
+		service{
+			@Inject slotMapper : AttributeSlotMapper
+			
+			@Inject compositeAttributeValidator :CompositeAttributeValidator
+			op loadSlotName(slot : proxy of RCAttributeSlot):String{
+				(resolve slot).attr.name
+			}
+			
+			op createExtensiableEntityAttribute(ee : proxy of RCExtensiableEntity, attribute : UICompositeAttribute) : UIAttributeSlot{
+				attribute.validateWith(compositeAttributeValidator)
+				slotMapper.transform((resolve ee).value.createAttribute(attribute.attributeName,attribute.attributeName))
+			}
+			op createCompositeSlotAttribute(slot : proxy of RCAttributeSlot, attribute : UICompositeAttribute) : UIAttributeSlot{
+				attribute.validateWith(compositeAttributeValidator)
+				slotMapper.transform(((resolve slot).value as RCCompositeValue).createAttribute(attribute.attributeName,attribute.attributeName))
+			}
+		}
+	}
+
+	view CreateCompositeTypeView for CreateCompositeTypePresenter implements IHasSize, IHasTitle{
+		@Inject form : CompositeAttributeForm
+		initializer{
+			this += widgets.VLayout=>[add(form.asWidget, widgets.VLayoutData(1,-1,10))]
+		}
+		op getValue() : UICompositeAttribute{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		op setSlotName(name:String):void{
+			form.parentCompositeAttribute.value = name
+		}
+		
+		op setValue(UICompositeAttribute value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(300,200)
+		}
+		op getTitle():String{
+			'新建复合参数'
+		}
+					
+	}	
+	
+}
