@@ -1,0 +1,48 @@
+package com.fudanmed.platform.core.device.pm{
+	import com.uniquesoft.gwt.shared.^datatype.File
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.device.pm.events.*
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.entityextension.*
+	import edu.fudan.mylang.utils.DateUtil
+	
+	entity-events-listener RCDeviceTypeListener for RCDeviceType{
+		on entityCreated(){
+			create RCPMDeviceTypeEntry()=>[
+				it.deviceType := ^entity
+			]
+		}
+		on entityDeleted(){
+			#[from RCPMDeviceTypeEntry as e where e.deviceType = {^entity}].list.forEach[
+				delete it
+			]
+		}
+	}
+	
+	entity-events-listener RCDevicePMSpecificationDeviceAction for RCDevice{
+		
+		inject dao : RCDevicePMSpecificationDAO
+			  	
+	  	on entityCreated(){
+	  		val deviceType := ^entity.deviceType
+	  		val entry := #[from RCPMDeviceTypeEntry as e where e.deviceType = {deviceType}].uniqueResult
+	  		entry.populateToDevice(^entity)
+	  	}
+	  	
+	  	on entityDeleted(){
+	  		#[from RCDevicePMSpecification as e where e.device = {^entity}].list.forEach[
+	  			dao.^delete(it)[]
+	  		]
+	  	}
+	 	
+	}
+	
+}

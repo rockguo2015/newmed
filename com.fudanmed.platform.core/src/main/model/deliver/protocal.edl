@@ -1,0 +1,62 @@
+package com.fudanmed.platform.core.deliver{
+	
+	import java.util.Date
+	import java.util.Collection
+	import edu.fudan.mylang.utils.DateUtil
+	import edu.fudan.mylang.pf.*
+	import com.fudanmed.platform.core.domain.*
+	import edu.fudan.langlab.domain.code.Code
+	import edu.fudan.langlab.domain.common.*
+	import com.fudanmed.platform.core.deliver.*
+	import static com.uniquesoft.uidl.validation.Validates
+	import edu.fudan.langlab.domain.security.ISystemUserService
+
+	entity DLRoutineTaskTemplate{
+		part protocal : DLRoutineProtocal
+		op generateTasks(fromDate:Date, toDate : Date):void
+	}
+	
+	/*
+	 * 周期计划
+	 */	
+	entity DLRoutineProtocal{
+		template : DLRoutineTaskTemplate
+		title : String
+		applyDateRange : DateRange
+		
+	}
+	
+	entity DLSingleDayProtocal extends DLRoutineProtocal{
+		date : Date
+	}
+	
+	entity DLDailyRoutineProtocal extends DLRoutineProtocal{
+		fromDate : Date
+		toDate : Date
+		isForever : Boolean := false
+	}
+	
+	enum DLWeekDay{
+		mon tue wed thr fri sat sun
+	}
+	
+	entity DLWeeklyRoutineProtocal extends DLRoutineProtocal{
+		weekdays : DLWeekDay[*]
+		op generateTasks(fromDate:Date, toDate : Date):void{
+			
+		}		
+	}
+	
+	entity DLMonthlyRoutineProtocal extends DLRoutineProtocal{
+		days : Integer[*]
+		interval : Integer
+	}
+	
+	entity DLTaskProtocalSource extends DLTaskSource{
+		protocal : DLRoutineProtocal
+		op getEntityName():String{
+			"周期任务"
+		}
+	}
+	 	
+}

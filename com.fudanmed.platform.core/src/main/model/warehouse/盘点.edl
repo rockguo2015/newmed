@@ -1,0 +1,232 @@
+package com.fudanmed.platform.core.warehouse{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import  com.fudanmed.platform.core.warehouse.*
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	import static com.uniquesoft.uidl.validation.Validates
+	entity RCStockTakingStatus{
+		isInStockTaking : Boolean := false /*正在盘点 */
+		warehouse : RCWarehouse /*盘点仓库 */
+	}
+	
+	criteria RCStockTakingListCriteria for RCStockTakingList{
+		warehouse : RCWarehouse
+		dateFrom : Date
+		dateTo : Date
+		
+		condition self.warehouse = :warehouse
+		condition self.date >= :dateFrom
+		condition self.date <= :dateTo
+		
+		stores : Collection<Long> := newArrayList
+		condition self.warehouse.id in :stores
+		
+		order by self.date desc
+	}
+	
+	/*实盘*/
+	entity RCStockTakingList{
+		warehouse : RCWarehouse /*盘点仓库 */
+		operator : RCEmployee
+		comment : String
+		date : Date /*实盘日期 */
+
+		part stockTakingRecord : RCStockTakingRecord
+		part items : RCStockTakingItem[*] opposite takingList
+		
+		op initializeStockTakingItems(operator : RCEmployee):void{
+			this.date := date
+			this.operator := operator
+			#[from RCProductWarehouseStorageSummary as ps where ps.store = {warehouse}].list.forEach[storage|
+				this.createAndAddtoItems()=>[item|
+					item.productSpec := storage.productSpec
+					item.quantity := storage.quantity
+					item.realQuantity := storage.quantity
+				]
+			]
+		}
+		
+		op allDataCollected():Boolean{
+			items.forall[quantity!=null]
+		}
+
+		op getIsCommited() : Boolean{
+			stockTakingRecord !=null && stockTakingRecord.committed
+		}		
+		
+		op createStockTakingRecord():RCStockTakingRecord{
+			val ss := beanFactory.getBean(typeof(RCWarehouseService))
+			val seq := beanFactory.getBean(typeof(RCSequenceService))
+			create RCStockTakingRecord()=>[takingRecord|
+				takingRecord.sourceStore := warehouse
+				takingRecord.date := DateUtil::today
+				takingRecord.sid := seq.nextStockTakingSequence
+				items.forEach[item|
+					val productSpedSummary := ss.findOrCreateSummaryData(warehouse,item.productSpec)
+					if(productSpedSummary.quantity!=item.quantity){
+						val balance := item.quantity - productSpedSummary.quantity
+						if(balance<0) //亏，出库操作
+							warehouse.outStockCalculate(item.productSpec,-balance,false).forEach[resultItem|
+								takingRecord.createAndAddtoItems=>[
+									it.recordItem.productEntry := resultItem.productEntry
+									it.recordItem.quantity := -resultItem.quantity
+								]
+							]
+						else{ //赢，入库至最新的批次
+							takingRecord.createAndAddtoItems=>[
+								it.recordItem.productEntry := warehouse.getlastProductStorage(item.productSpec).productEntry
+								it.recordItem.quantity := balance
+							]
+						}
+
+					}
+				]
+			]=>[this.stockTakingRecord := it]
+		}
+	}
+
+	entity RCStockTakingItem{
+		belongs to takingList : RCStockTakingList
+		productSpec : RCProductSpecification
+		quantity : Integer
+		realQuantity : Integer
+		comment : String
+		
+	}
+	
+	service RCStockTakingService{
+		op getStockTakingStatus(warehouse : RCWarehouse):RCStockTakingStatus{
+			#[from RCStockTakingStatus as s where s.warehouse = {warehouse}].uniqueResult.withDefault[
+				create RCStockTakingStatus()=>[
+					it.warehouse := warehouse 
+					it.isInStockTaking := false
+				]
+			]
+		}
+		op canPerformStockOperation(warehouse : RCWarehouse) : Boolean{
+			!getStockTakingStatus(warehouse).isInStockTaking
+		}
+		/*开始盘点时生成盘点单 */
+		op startStockTaking(preInit : (RCStockTakingList)=>RCStockTakingList) : RCStockTakingList{
+			create RCStockTakingList()=>[
+				preInit.apply(it)
+				Assert(canPerformStockOperation(it.warehouse),"正在盘点中")
+				initializeStockTakingItems(it.operator)
+				getStockTakingStatus(it.warehouse).isInStockTaking := true
+			]
+		}
+		
+		op commitStockTaking(stockTakingList : RCStockTakingList,operator : RCEmployee) : void{
+			getStockTakingStatus(stockTakingList.warehouse).isInStockTaking := false
+			stockTakingList.createStockTakingRecord()=>[
+				commit(operator)
+			]
+		}
+		
+		op cancelStockTaking(stockTakingList : RCStockTakingList):void{
+			getStockTakingStatus(stockTakingList.warehouse).isInStockTaking := false
+			delete stockTakingList
+		}
+		
+	}
+	
+	entity RCStockTakingRecord{
+		sid : String
+		
+		operator : RCEmployee
+		date : Date
+		comment : String
+		
+		part items : RCStockTakingRecordItem[*] opposite record
+		sourceStore : RCWarehouse
+		committed : Boolean := false
+		
+		op getTypeName() : String{
+			"盘点"
+		}
+		
+		op getTotalAmount() : Double{
+			items.^map[recordItem.totalAmount].reduce[Double d1, Double d2|d1+d2].nullsafe
+		}
+		
+		op initItemsFromSummary(summaryItems : Collection<RCProductSpecificationSummary>):void{
+			removeAllItems
+			summaryItems.forEach[summaryItem|
+				if(summaryItem.quantity<0) //出库
+					sourceStore.outStockCalculate(summaryItem.productSpec,summaryItem.quantity,false).forEach[resultItem|
+						createAndAddtoItems=>[
+							it.recordItem.productEntry := resultItem.productEntry
+							it.recordItem.quantity := resultItem.quantity
+						]
+					]
+				else{
+					createAndAddtoItems=>[
+						it.recordItem.productEntry := sourceStore.getAllProductStorage(summaryItem.productSpec).last.productEntry
+						it.recordItem.quantity := summaryItem.quantity
+					]
+				}
+			]
+		}
+	
+		op commit(operator : RCEmployee):void{
+			this.operator := operator
+			this.date := DateUtil::now
+			items.forEach[item|
+				val sourceStorage := sourceStore.inStock(item.recordItem.productEntry,item.recordItem.quantity)
+				create RCStockTakingTransaction(sourceStorage)=>[
+					it.StockTakingRecord := this
+					it.quantity := item.recordItem.quantity
+					it.date := DateUtil::now
+					it.operator := operator
+					transactionCommitted
+				]
+			]
+			committed := true
+		}
+	}
+	
+	criteria RCStockTakingRecordCriteria for RCStockTakingRecord{
+		sid : String
+		dateFrom : Date
+		dateTo : Date
+		condition self.sid like :sid
+		
+		order by self.date desc
+	}
+	
+	entity RCStockTakingRecordItem{
+		recordItem : RCRecordItem
+		belongs to record : RCStockTakingRecord
+	}
+	
+	entity RCStockTakingTransaction extends RCProductStoreTransaction{
+		
+		stockTakingRecord : RCStockTakingRecord
+		
+		op getEventRecordSid() : String{
+			stockTakingRecord.sid
+		}
+		
+		op getTransactionTypeDesc() : String{
+			if(this.quantity>0)
+				"盘赢"
+			else if(this.quantity<0)
+				"盘亏"
+		}
+		op transactionCommitted():void{
+			transactionCommitted[it,quantity,amount|
+				it.stockTakingStockQuantity := it.stockTakingStockQuantity +quantity
+				it.stockTakingStockAmount := it.stockTakingStockAmount +amount
+				
+			]
+		}
+		
+	}
+
+}

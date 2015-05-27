@@ -1,0 +1,152 @@
+@def selectionBorderWidth 2px;
+.dataGridWidget {
+  
+}
+
+.dataGridFirstColumn {
+  
+}
+
+.dataGridLastColumn {
+  
+}
+
+.dataGridFooter {
+  font-family: "Open Sans",Arial,sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  border-top: 1px solid #5A6066;
+  border-bottom: 1px solid #5A6066;
+  padding: 3px 15px;
+  text-align: left;
+  color: #979699;
+  text-shadow: #ddf 1px 1px 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.dataGridHeader {
+  background: -moz-linear-gradient(center top , #F9F9F9 0%, #F0F0F0 100%) repeat scroll 0 0 transparent;
+  font-family: "Open Sans",Arial,sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+/*   background-color: none repeat scroll 0 0 #F2F3F4; */
+  opacity: 1;
+  border-left: 1px solid #E5E8E8;
+  border-top: 1px solid #D4D5D5;
+  border-bottom: 1px solid #D4D5D5;
+/*   border-top: 2px solid #E5E8E8;
+  border-bottom: 2px solid #E5E8E8; */
+  margin-left: 0;
+  padding-bottom: 0.6em;
+  padding-left: 16px;
+  padding-top: 0.6em;
+  text-shadow: 0 0.1em rgba(255, 255, 255, 0.7);
+  text-align: left;
+  color: #4b4a4a;
+  text-shadow: #ddf 1px 1px 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.dataGridCell {
+  font-family: "Open Sans",Arial,sans-serif;
+  font-weight: 400;
+  color :#5A6066;
+/*   border-bottom: 1px solid #5A6066;
+  border-right: 1px solid #5A6066; */
+  border-color: -moz-use-text-color -moz-use-text-color -moz-use-text-color #E5E8E8;
+  border-style: none none none solid;
+  border-width: medium medium medium 1px;
+  padding-bottom: 0.2em;
+  padding-top: 0.2em;
+  line-height: 19px;
+  font-size: 14px;
+  padding: 2px 15px;
+  overflow: hidden;
+}
+
+.dataGridFirstColumnFooter {
+  
+}
+
+.dataGridFirstColumnHeader {
+  
+}
+
+.dataGridLastColumnFooter {
+  
+}
+
+.dataGridLastColumnHeader {
+  
+}
+
+.dataGridSortableHeader {
+  cursor: pointer;
+  cursor: hand;
+}
+
+.dataGridSortableHeader:hover {
+ /*  color: #6c6b6b; */
+}
+
+.dataGridSortedHeaderAscending {
+  
+}
+
+.dataGridSortedHeaderDescending {
+  
+}
+
+.dataGridEvenRow {
+  background: #fff;
+}
+
+.dataGridEvenRowCell {
+/*   border: selectionBorderWidth solid #ffffff; */
+}
+
+.dataGridOddRow {
+  background: #F3F4F5;
+}
+
+.dataGridOddRowCell {
+/*   border: selectionBorderWidth solid #f3f7fb; */
+}
+
+.dataGridHoveredRow {
+/*   background: #eee; */
+}
+
+.dataGridHoveredRowCell {
+/*   border: selectionBorderWidth solid #eee; */
+}
+
+.dataGridKeyboardSelectedRow {
+/*   background: #ffc; */
+/*   background: -moz-linear-gradient(center top , #75B0E7 0%, #5F9DE1 100%) repeat scroll 0 0 transparent; */
+}
+
+.dataGridKeyboardSelectedRowCell {
+/*   border: selectionBorderWidth solid #ffc; */
+}
+
+.dataGridSelectedRow {
+/*   background: #628cd5; */
+  background: -moz-linear-gradient(center top , #75B0E7 0%, #5F9DE1 100%) repeat scroll 0 0 transparent;
+  color: white;
+  height: auto;
+  overflow: auto;
+}
+
+.dataGridSelectedRowCell {
+/*   border: selectionBorderWidth solid #628cd5; */
+}
+
+/**
+ * The keyboard selected cell is visible over selection.
+ */
+.dataGridKeyboardSelectedCell {
+/*   border: selectionBorderWidth solid #d7dde8; */
+}

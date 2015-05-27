@@ -1,0 +1,264 @@
+package edu.fudan.langlab.uidl.domain.app feature login{
+	
+	import com.shrct.businessprocess.organization.*
+	import com.shrct.businessprocess.organization.^proxy.*
+	
+	import com.google.gwt.user.client.^ui.*	
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.domain.security.*		
+	import edu.fudan.langlab.security.client.Securities
+	import edu.fudan.langlab.security.shared.IFunctionIdentifier
+	import java.util.*
+	import com.sencha.gxt.widget.core.client.container.CenterLayoutContainer
+	import edu.fudan.langlab.uidl.domain.app.client.workbench.ApplicationWorkbenchPresenter
+	
+	import com.google.gwt.user.client.^ui.*
+	
+	signal LoginSuccess
+	signal Logout
+	signal ApplicationInitialized(app : ApplicationWorkbenchPresenter)
+
+	ui-datatype UIUser{
+		userid : String
+		name : String
+	}
+	
+	ui-datatype ULoginData{
+		userid : String "用户名"
+		passwd : String "密码"
+		
+		ui-component UILoginForm as GXTForm{
+			binding{userid,passwd as PasswordItem}
+		}
+	}
+
+	presenter LoginPresenter{
+		
+		view interface{
+			signal out login(String userid, String passwd)
+			signal in loginFailed()
+		}
+
+		interaction{
+			required app : ApplicationWorkbenchPresenter
+			required securities : Securities
+			
+			static public user : UIUser 
+			
+			start{
+//				doLogin('admin','admin')
+			}
+			
+			input view.login(String userid, String passwd){
+				doLogin(userid,passwd)
+			}
+			
+			input call.doLogin(String userid, String passwd) : void{
+
+				service.login(userid,passwd,onSuccess[UIUser u|
+					if(u!=null){
+						user = u
+						service.isSuperUsr(userid,onSuccess[isSuperUser|
+							if(isSuperUser){ 
+								securities.setAsSuperuser()
+								RootPanel::get().remove(0)
+								app.activate[
+									RootPanel::get().add(app.getView().asWidget());
+									fire eventbus.ApplicationInitialized(app)
+								]							
+							}else{
+								service.loadFunctions4User(u,onSuccess[functions|
+									functions.forEach[function|
+										securities.registValidFunction(function)
+									]
+									RootPanel::get().remove(0)
+									app.activate[
+										RootPanel::get().add(app.getView().asWidget());
+										fire eventbus.ApplicationInitialized(app)
+									]								
+								])
+							}
+						])
+					}else{
+						fire view.loginFailed()
+					}
+				])				
+			}
+		}
+		
+		service{
+			@Inject securityService : ISecurityService
+			@Inject systemUserService : ISystemUserService
+			op isSuperUsr(userid : String):Boolean{
+				"admin".equals(userid)
+			}
+			op login(userid : String, passwd : String) : UIUser{
+				val u = securityService.login(userid,passwd)
+				if(u==null) 
+					return null
+				else {
+					systemUserService.setCurrentUser(u)
+					var user = new UIUser=>[uiuser|
+						uiuser.userid = u.userid
+						uiuser.name = u.entityName
+					]
+					loadFunctions4User(user)	
+					return user
+				}
+			}
+		
+			op loadFunctions4User(user : UIUser) : Collection<? extends IFunctionIdentifier>{
+				securityService.loadValidFunctions4User(user.userid)
+			}			
+		}		
+	}
+	
+	view LoginView for LoginPresenter non-default{
+		@Inject loginForm : UILoginForm
+		con : Widget
+		message1 : Label
+
+		initializer{
+			con = TABLE=>[ width="100%"
+				tr=>[height="150"]
+				tr=>[
+					td=>[
+						it += new CenterLayoutContainer()=>[
+						it += widgets.VLayout=>[
+							it += loginForm.userid.asWidget
+							it += loginForm.passwd.asWidget
+							it += widgets.TextButton("Login")=>[
+								addSelectHandler[
+									message1.text = ""
+									fire view.login(loginForm.userid.value,loginForm.passwd.value)
+								]
+							]
+							it += message1 = widgets.Label("")
+						]]						
+					]
+				]
+			]
+		}
+		
+		op loginFailed() : void{
+			message1.text = "用户名或密码错误"
+		}
+		
+		op asWidget():Widget{
+			con
+		}		
+	}
+	
+	
+	view FudanmedLoginView for LoginPresenter non-default{
+		@Inject loginForm : UILoginForm
+		
+		con : Widget
+		message1 : Label
+
+		initializer{
+			
+			con = DIV=>[
+				it.addStyleName("login_con")
+				div=>[
+					it.addStyleName("con_box")
+					
+					val userName = widgets.TextField()=>[
+						it.width = 142
+						it.addStyleName("input")
+						it.addStyleName("in_name")
+					]
+					it += userName
+					
+					val passwd = widgets.PasswordField()=>[
+						it.width = 142
+						it.addStyleName("input")
+						it.addStyleName("in_pass")
+					]
+					it += passwd
+					
+					it += widgets.TextButton("登录")[
+						fire view.login(userName.value,passwd.value)
+					]=>[
+						it.width = 80
+						it.addStyleName("btn")
+						it.addStyleName("tj")
+					]
+					it += widgets.TextButton("取消")[
+						userName.value = ""
+						passwd.value = ""
+					]=>[
+						it.width = 80
+						it.addStyleName("btn")
+						it.addStyleName("qx")
+					]
+				]
+			]
+		}
+		
+		op loginFailed() : void{
+		 	display("失败","用户名或密码错误")
+		}
+		
+		op asWidget():Widget{
+			con
+		}		
+	}
+	view RichCloudLoginView for LoginPresenter non-default{
+		@Inject loginForm : UILoginForm
+		
+		con : Widget
+		message1 : Label
+
+		initializer{
+			con = DIV=>[
+				div=>[ addStyleName('logo_con')]
+				div=>[
+				it.addStyleName("login_con")
+				div=>[
+					it.addStyleName("con_box")
+					
+					val userName = widgets.TextField()=>[
+						it.width = 142
+						it.addStyleName("input")
+						it.addStyleName("in_name")
+					]
+					it += userName
+					
+					val passwd = widgets.PasswordField()=>[
+						it.width = 142
+						it.addStyleName("input")
+						it.addStyleName("in_pass")
+					]
+					it += passwd
+					
+					it += widgets.TextButton("登录")[
+						fire view.login(userName.value,passwd.value)
+					]=>[
+						it.width = 80
+						it.addStyleName("btn")
+						it.addStyleName("tj")
+					]
+					it += widgets.TextButton("取消")[
+						userName.value = ""
+						passwd.value = ""
+					]=>[
+						it.width = 80
+						it.addStyleName("btn")
+						it.addStyleName("qx")
+					]
+				]
+			]				
+			]
+
+		}
+		
+		op loginFailed() : void{
+		 	display("失败","用户名或密码错误")
+		}
+		
+		op asWidget():Widget{
+			con
+		}		
+	}		
+}

@@ -1,0 +1,2 @@
+1. base class for all Entities
+2. IObjectFactory :

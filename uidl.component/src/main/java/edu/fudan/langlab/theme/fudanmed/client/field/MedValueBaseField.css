@@ -1,0 +1,39 @@
+input.focus,textarea.focus {
+	border: 1px solid #888;
+}
+
+@sprite input.invalid,textarea.invalid {
+	gwt-image: 'invalidLine';
+	background-color: #fff;
+	background-position: bottom;
+	border: 1px solid #c30;
+	height: 20px;
+	line-height: 20px;
+}
+
+.wrap {
+	position: relative;
+	left: 0;
+	top: 0;
+	zoom: 1;
+	white-space: nowrap;
+	text-align: left;
+}
+
+@if user.agent ie6 {
+	.wrap {
+		position: static;
+	}
+}
+
+.field {
+	font: 12px Verdana, "宋体 ", "Lucida Grande", sans-serif;
+}
+
+.empty {
+	color: gray;
+}
+
+.readonly {
+	
+}

@@ -1,0 +1,65 @@
+package edu.fudan.langlab.domain.security{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import java.util.*
+
+	entity RoleFunctionAssignment{
+		roleId:String
+		function : AppFunction
+	}
+
+	/*
+	 * 功能可能是一个按钮，一个视图或者视图中的一个区域
+	 */
+	entity AppFunction implements INamedModelObject{
+		parentFunctionId : String
+		functionId : String
+		name : String
+		
+		op getParent():AppFunction{
+			#[from AppFunction as f where f.functionId = {parentFunctionId}].uniqueResult
+		}
+		
+		op getFunctionsFromPath():Collection<AppFunction>{
+			val result := <AppFunction>newArrayList
+			var AppFunction curFunction := this
+			while(curFunction!=null){
+				result += curFunction
+				curFunction := curFunction.parent
+			}
+			result
+		}
+		
+		op getSubFunctions():Collection<AppFunction>{
+			collectSubFunctions(<AppFunction>newArrayList)
+		}
+		
+		op collectSubFunctions(result : Collection<AppFunction>):Collection<AppFunction>{
+			val directChildren := #[from AppFunction as f where f.parentFunctionId = {functionId}].list
+			result.addAll(directChildren)
+			directChildren.forEach[
+				it.collectSubFunctions(result)
+			]
+			result
+		}
+		
+		op getEntityName():String{
+			name
+		}
+	}
+	
+	service AppFunctionService{
+		
+		op loadAllFunctions4Role(roleId : String) : Collection<AppFunction>{
+			#[from RoleFunctionAssignment as fa where fa.roleId = {roleId}].list.^map[function].toList
+		}
+		
+		op loadAllFunctionAssignments4Role(roleId : String) : Collection<RoleFunctionAssignment>{
+			#[from RoleFunctionAssignment as fa where fa.roleId = {roleId}].list
+		}
+		
+	}	
+}

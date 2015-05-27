@@ -1,0 +1,767 @@
+package com.fudanmed.platform.core.deliver{
+	
+	import java.util.Date
+	import java.util.Collection
+	import edu.fudan.mylang.utils.DateUtil
+	import edu.fudan.mylang.pf.*
+	import com.fudanmed.platform.core.domain.*
+	import edu.fudan.langlab.domain.code.Code
+	import edu.fudan.langlab.domain.common.*
+	import static com.uniquesoft.uidl.validation.Validates
+	import com.fudanmed.platform.core.deliver.*
+	import com.fudanmed.platform.core.deliver.impl.*
+	import edu.fudan.langlab.domain.security.ISystemUserService
+	import edu.fudan.langlab.domain.code.*
+	import com.fudanmed.platform.core.deliver.events.*
+	
+	service RCDeliverCodeTypeProvider implements CodeTypeProvider{
+		op getCodeTypes() : Collection<CodeType> {
+			newArrayList(
+				new CodeType("运送紧急度",typeof(DLDeliverEmergencyImpl)),
+				new CodeType("运送方式",typeof(DLPatientDeliverMethodImpl))
+			);
+		}
+	}
+
+	
+	entity DLTaskEvent{
+		createTime : Date //生成时间
+		operator : RCEmployee //操作员
+		op getDescription():String
+		belongs to task : DLTask
+	}
+	
+	entity DLTask{
+		sid : String //任务编号
+		createTime : Date //生成时间
+		performers : RCEmployee[*] //运送人
+		operator : RCEmployee //操作员
+		part taskSource : DLTaskSource //任务来源
+		part events : DLTaskEvent[*] opposite task
+		op chackValid():void{
+			Assert(!sid.nullOrEmpty,"任务编号不能为空")
+			Assert(createTime!=null,"生成时间不能为空")
+			Assert(operator!=null,"操作员不能为空")
+			Assert(taskSource!=null,"任务来源不能为空")
+		}
+	}
+	
+	criteria DLTaskCriteria for distinct DLTask{
+		join self.performers as worker
+		sid : String //任务编号
+		createTimeFrom : Date //生成时间
+		createTimeTo : Date //生成时间
+		performer : RCEmployee //运送人
+		taskSourceType : DLTaskSourceType //任务来源
+		
+		condition self.sid like :sid
+		condition self.createTime >= :createTimeFrom
+		condition self.createTime <= :createTimeTo
+		condition worker = :performer
+		condition self.taskSource.type = :taskSourceType
+		
+	}
+	
+	enum DLTaskSourceType{
+		curtomerRequest imported
+	}
+	
+	/*任务来源标记，用于记录任务产生的原因，如科室即时要求，HIS系统导入等 */
+	entity DLTaskSource {
+		type : DLTaskSourceType
+	}
+	
+	/*用户即时需求产生的任务来源标记*/
+	entity DLTaskSource4CustomerRequest extends DLTaskSource{
+		organization : RCOrganization
+		reporter : String
+		op getEntityName():String{
+			"科室请求"
+		}
+	}
+	
+	entity DLTaskSource4HISImport extends DLTaskSource{
+		importBatchId : String
+		op getEntityName():String{
+			"HIS系统导入"
+		}
+	}
+	/*
+	 * 病区
+	 */
+	entity DLInHospitalLocation implements IHasSimplePy{
+		code : String
+		name : String
+		location : RCOnsitePosition
+		simplePy : String
+		op getNameField():String{
+			'name'
+		}
+		
+		op getEntityName():String{
+			name
+		}
+		op ^update(updater : (DLInHospitalLocation)=>void):void{
+			updater.apply(this)
+			checkValid
+		}
+		op checkValid():void{
+			Assert(!code.nullOrEmpty,'编码必须设置')
+			Assert(!name.nullOrEmpty,'名称必须设置')
+			Assert(location!=null,'位置必须设置')
+			Assert(#[from DLInHospitalLocation as e where e.code = {code}].list.size==1,'病区编码必须唯一')
+		}
+	}
+	
+	entity-dao DLInHospitalLocationDAO for DLInHospitalLocation{
+		inject eventsManager : DLInHospitalLocationEventsManager
+		op ^create(init :(DLInHospitalLocation)=>void) : DLInHospitalLocation{
+			create DLInHospitalLocation()=>[
+				init.apply(it)
+				checkValid
+				eventsManager.fireCreated(it)
+			]
+		}
+		
+		op ^delete(value : DLInHospitalLocation):void{
+			delete value
+			eventsManager.fireDeleted(value)
+		}
+		
+	}
+	
+	criteria DLInHospitalLocationCriteria for DLInHospitalLocation{
+		info : String
+		condition self.code like :info or self.name like :info or self.simplePy like :info
+	}
+	
+	/*运送部门 */
+	entity DLDeliverOrganization implements INamedModelObject{
+		code : String
+		name : String
+		organization : RCOrganization
+		op getEntityName():String{
+			name
+		}
+		op ^update(updater : (DLDeliverOrganization)=>void):void{
+			updater.apply(this)
+			checkValid
+		}
+		op checkValid():void{
+			Assert(!code.nullOrEmpty,'代码必须输入')
+			Assert(!name.nullOrEmpty,'名称必须输入')
+			Assert(organization!=null,'组织机构必须输入')
+			Assert(#[from DLDeliverOrganization as e where e.organization = {organization}].list.size==1,"不能重复设定组织机构")
+		}
+	}
+	entity-dao DLDeliverOrganizationDAO for DLDeliverOrganization{
+		inject eventsManager : DLDeliverOrganizationEventsManager
+		op ^create(init :(DLDeliverOrganization)=>void) : DLDeliverOrganization{
+			create DLDeliverOrganization()=>[
+				init.apply(it)
+				eventsManager.fireCreated(it)
+			]
+		}
+		
+		op ^delete(value : DLDeliverOrganization):void{
+			delete value
+			eventsManager.fireDeleted(value)
+		}
+		
+	}
+	criteria DLDeliverOrganizationCriteria for DLDeliverOrganization{
+		info : String
+		condition self.code like :info or self.name like :info
+		order by self.name desc
+	}
+	/*
+	 * 检查科室
+	 */
+	entity DLCheckOrganization implements IHasSimplePy{
+		code : String
+		name : String
+		organization : RCOrganization
+		simplePy : String
+		op getNameField():String{
+			'name'
+		}
+		
+		op getEntityName():String{
+			name
+		}
+		op ^update(updater : (DLCheckOrganization)=>void):void{
+			updater.apply(this)
+			checkValid
+		}
+		op checkValid():void{
+			Assert(!code.nullOrEmpty,'编码输入')
+			Assert(!name.nullOrEmpty,'名称输入')
+			Assert(#[from DLCheckOrganization as e where e.code = {code}].list.size==1,'病区编码必须唯一')
+		}
+		
+	}
+	entity-dao DLCheckOrganizationDAO for DLCheckOrganization{
+		inject eventsManager : DLCheckOrganizationEventsManager
+		op ^create(init :(DLCheckOrganization)=>void) : DLCheckOrganization{
+			create DLCheckOrganization()=>[
+				init.apply(it)
+				checkValid
+				eventsManager.fireCreated(it)
+			]
+		}
+		
+		op ^delete(value : DLCheckOrganization):void{
+			delete value
+			eventsManager.fireDeleted(value)
+		}
+		
+	}
+	
+	criteria DLCheckOrganizationCriteria for DLCheckOrganization{
+		info : String
+		condition self.code like :info or self.name like :info or self.simplePy like :info
+	}
+	/*运送紧急度 */
+	entity DLDeliverEmergency extends Code{
+		
+	}
+	
+	datatype DLPlanDateTime{
+		planDate : Date //计划日期
+		planTime : Date //计划时间
+		
+		op checkValid():void{
+			Assert(planDate!=null,"必须设置计划日期")
+		}
+	}
+	enum DLPatientCheckDeliverTaskEventType{
+		^create performUpdate dispatch cancel cancelDispatch finish
+	}
+	//DLTaskEvent
+	entity DLPatientCheckDeliverTaskEvent extends DLTaskEvent{
+		comment : String
+		eventType : DLPatientCheckDeliverTaskEventType
+		op getDescription():String{
+			comment
+		}
+	}
+	
+	/*统一安排调度的运送 */
+	entity DLCenterlizedDeliverTask extends DLTask{
+		resources : DLResource[*] //"资源"
+		subject : DLDeliverSubject //运送项目
+		planDateTime : DLPlanDateTime //计划日期
+		
+//		//derived
+//		fromLocation : RCOnsitePosition //起始位置
+//		//derived
+//		toLocation : RCOnsitePosition //目标位置
+		
+		op createEvent(eventType : DLPatientCheckDeliverTaskEventType)	:DLPatientCheckDeliverTaskEvent{
+			create DLPatientCheckDeliverTaskEvent(this)=>[
+				it.eventType := eventType
+//				it.operator := beanFactory.getBean(typeof(ISystemUserService)).currentUserAsParty as RCEmployee
+				it.createTime := DateUtil::now
+			]
+		}
+		
+		behavior Status{
+			
+			state scheduled
+			state dispatched
+			state canceled
+			state finished
+			
+			signal performUpdate
+			signal dispatch
+			signal cancel
+			signal cancelDispatch
+			signal finish
+			
+			start(){
+				createTime := DateUtil::now	
+				createEvent(DLPatientCheckDeliverTaskEventType::^create)=>[
+					it.comment := '新建任务'
+				]		
+				next state scheduled
+			}
+			
+			on scheduled{
+				input dispatch(performers : Collection<RCEmployee>){
+					Assert(!performers.nullOrEmpty,"必须设置运送员")
+					this.performers := performers
+					createEvent(DLPatientCheckDeliverTaskEventType::dispatch)=>[
+						it.comment := "分配给"+performers.^map[entityName].^join(',')+"执行"
+					]		
+					next state dispatched
+				}
+			}
+			
+			on dispatched{
+				input finish(comment : String){
+					createEvent(DLPatientCheckDeliverTaskEventType::finish)=>[
+						it.comment := comment
+					]		
+					next state finished
+					
+				}
+				input cancelDispatch(comment : String){
+					this.removeAllPerformers
+					createEvent(DLPatientCheckDeliverTaskEventType::cancelDispatch)=>[
+						it.comment := comment
+					]
+					next state scheduled
+					
+				}
+			}
+			
+			on scheduled, dispatched{
+				input performUpdate(updater:(DLCenterlizedDeliverTask)=>void){
+					updater.apply(this)
+					checkValid
+					createEvent(DLPatientCheckDeliverTaskEventType::performUpdate)		
+					next state -
+				}
+				input cancel(comment:String){
+					createEvent(DLPatientCheckDeliverTaskEventType::cancel)=>[
+						it.comment := comment
+					]		
+					next state canceled
+				}
+			}
+		}		
+	}
+	
+	entity-dao DLCenterlizedDeliverTaskDAO for DLCenterlizedDeliverTask{
+		inject eventsManager : DLCenterlizedDeliverTaskEventsManager
+		inject sequenceService : com.fudanmed.platform.core.common.RCSequenceService
+		op createPatientCheckDeliverTask(deliver:DLPatientCheckDeliver,init :(DLCenterlizedDeliverTask)=>void) : DLCenterlizedDeliverTask{
+			create DLCenterlizedDeliverTask()=>[
+				it.subject := deliver
+				it.createTime := DateUtil::now
+				it.sid := sequenceService.nextCenterilzedTaskSequence
+				init.apply(it)
+				it.^start
+				eventsManager.fireCreated(it)
+			]
+		}
+		
+		op ^delete(value : DLCenterlizedDeliverTask):void{
+			delete value
+			eventsManager.fireDeleted(value)
+		}
+		
+		op ^update(value : DLCenterlizedDeliverTask, updater:(DLCenterlizedDeliverTask)=>void):void{
+			updater.apply(value)
+			eventsManager.fireUpdateded(value)
+		}
+	}
+
+	criteria DLCenterlizedDeliverTaskCriteria for distinct DLCenterlizedDeliverTask{
+		join self.performers as worker
+		sid : String //任务编号
+		createTimeFrom : Date //生成时间
+		createTimeTo : Date //生成时间
+		performer : RCEmployee //运送人
+		taskSourceType : DLTaskSourceType //任务来源
+		
+		condition self.sid like :sid
+		condition self.createTime >= :createTimeFrom
+		condition self.createTime <= :createTimeTo
+		condition worker = :performer
+		condition self.taskSource.type = :taskSourceType
+		
+	}	
+	
+	interface DLTaskConsumer{
+		op forwardTo(consumer : DLTaskConsumer,subject:DLDeliverSubject):void
+	}
+	
+	entity DLScheduleCenter implements DLTaskConsumer{
+		op forwardTo(consumer : DLTaskConsumer,subject:DLDeliverSubject):void{
+			
+		}
+		
+	}
+	/*
+	 * 运送任务。一旦生成，该待运送任务会在不同的主体间传递，系统需要记录下任务完成的完整过程
+	 */
+	entity DLDeliverSubject implements INamedModelObject{
+//		task : DLTask	//执行该运送项目的任务
+		emergency : DLDeliverEmergency
+		op getEntityName():String
+	}	
+	// TODO up-level
+	enum DLGender{male female}
+	
+	/*住院病人*/
+	entity DLInHospitalPatient implements IHasSimplePy{
+		
+		sid : String //住院号
+		name : String //姓名
+		age : Integer //年龄
+		gender : DLGender //性别
+		
+		location : DLInHospitalLocation //病区
+		bedNumber : String //床号
+		
+		simplePy : String
+		op getNameField():String{
+			'name'
+		}
+		op getEntityName():String{
+			name
+		}
+		
+		op ^update(updater:(DLInHospitalPatient)=>void):void{
+			updater.apply(this)
+			checkValid
+			beanFactory.getBean(typeof(DLInHospitalPatientEventsManager)).fireUpdateded(this)
+		}
+	}
+	
+	criteria DLInHospitalPatientCriteria for DLInHospitalPatient{
+		info : String
+		condition self.sid like :info or self.name like :info or self.simplePy like :info
+	}
+	
+	entity-dao DLInHospitalPatientDAO for DLInHospitalPatient{
+		inject eventsManager : DLInHospitalPatientEventsManager
+		op ^create(init :(DLInHospitalPatient)=>void) : DLInHospitalPatient{
+			create DLInHospitalPatient()=>[
+				init.apply(it)
+				eventsManager.fireCreated(it)
+			]
+		}
+		
+		op ^delete(value : DLInHospitalPatient):void{
+			delete value
+			eventsManager.fireDeleted(value)
+		}
+		
+		op findByCode(sid : String):DLInHospitalPatient{
+			#[from DLInHospitalPatient as e where e.sid = {sid}].uniqueResult
+		}
+	}
+	
+	
+	/*病人运送方式 */
+	entity DLPatientDeliverMethod extends Code{
+		
+	}
+	
+	/*住院病人检查运送任务*/
+	entity DLPatientCheckDeliver extends DLDeliverSubject{
+		patient : DLInHospitalPatient //病人
+		checkType :DLDeliverPatientCheckType //检查项目
+		checkOrganization : DLCheckOrganization //检查科室
+		deliverMethod : DLPatientDeliverMethod //接送方式
+		
+		op getEntityName():String{
+			patient.entityName+':'+checkType.entityName
+		}
+		
+		op ^update(updater:(DLPatientCheckDeliver)=>void):void{
+			updater.apply(this)
+			checkValid()
+		}
+		
+		op checkValid():void{
+			super.checkValid()
+			Assert(patient!=null,"必须设置运送病人")
+			Assert(checkOrganization!=null,"必须设置检查科室")
+			Assert(checkType!=null,"必须设置检查项目")
+			Assert(deliverMethod!=null,"必须设置接送方式")
+		}
+	}
+	
+	entity-dao DLPatientCheckDeliverDAO for DLPatientCheckDeliver{
+		inject eventsManager : DLPatientCheckDeliverEventsManager
+		op ^create(init :(DLPatientCheckDeliver)=>void) : DLPatientCheckDeliver{
+			create DLPatientCheckDeliver()=>[
+				init.apply(it)
+				checkValid
+				eventsManager.fireCreated(it)
+			]
+		}
+		
+		op ^delete(value : DLPatientCheckDeliver):void{
+			delete value
+			eventsManager.fireDeleted(value)
+		}
+		
+	}
+	
+	criteria DLPatientCheckDeliverCriteria for DLPatientCheckDeliver{
+		patient : DLInHospitalPatient //病人
+		location : DLInHospitalLocation //病区
+		bedNumber : String //床号
+		checkOrganization : DLCheckOrganization //检查科室
+		checkType :DLDeliverPatientCheckType //检查项目
+		deliverMethod : DLPatientDeliverMethod //接送方式
+		condition self.patient = :patient
+		condition self.patient.location = :location
+		condition self.patient.bedNumber = :bedNumber
+		condition self.checkOrganization = :checkOrganization
+		condition self.checkType = :checkType
+		condition self.deliverMethod = :deliverMethod
+		
+	}
+	
+	/*检查项目大类*/
+	entity DLDeliverPatientCheckCategory implements INamedModelObject,IHasHierarchy{
+		code : String
+		name : String
+		belongs to parentCategory : DLDeliverPatientCheckCategory
+		part subCategories : DLDeliverPatientCheckCategory[*] opposite parentCategory
+		part types : DLDeliverPatientCheckType[*] opposite category
+		
+		op ^update(updater:(DLDeliverPatientCheckCategory)=>void):void{
+			updater.apply(this)
+			checkValid
+		}
+		
+		op getEntityName():String{
+			name
+		}
+		
+		op checkValid():void{
+			Assert(!code.nullOrEmpty,"必须设置编码")
+			Assert(!name.nullOrEmpty,"必须设置名称")
+			Assert(#[from DLDeliverPatientCheckCategory as e where e.code ={code}].list.size==1,"编码不能重复")
+		}
+		
+		op createCheckType(init:(DLDeliverPatientCheckType)=>void):DLDeliverPatientCheckType{
+			this.createAndAddtoTypes=>[
+				init.apply(it)
+				it.checkValid
+			]
+		}
+		
+		op deleteCheckType(checkType:DLDeliverPatientCheckType):void{
+			this.removeFromTypes(checkType)
+		}
+		
+		fullIdPath : String
+		
+		op getFullPath():String{
+			this.getFullNamePath([name])			
+		}
+		
+		op moveTo(newParent : DLDeliverPatientCheckCategory):void{
+			this.changeParent(newParent)
+		}
+		
+		op getHierarchyChildren():Iterable<IHasHierarchy>{
+			subCategories.filter(typeof(IHasHierarchy))
+		}
+		
+		op getHierarchyParent():IHasHierarchy{
+			parentCategory
+		}
+		op setHierarchyParent(parent : IHasHierarchy):void{
+			this.parentCategory := parent as DLDeliverPatientCheckCategory
+		}		
+		
+	}
+	entity-dao DLDeliverPatientCheckCategoryDAO for DLDeliverPatientCheckCategory{
+		inject eventsManager : DLDeliverPatientCheckCategoryEventsManager
+		op ^create(parent:DLDeliverPatientCheckCategory,init :(DLDeliverPatientCheckCategory)=>void) : DLDeliverPatientCheckCategory{
+			create DLDeliverPatientCheckCategory(parent)=>[
+				init.apply(it)
+				it.updateFullIdPath()
+				checkValid
+				eventsManager.fireCreated(it)
+			]
+		}
+		
+		op ^delete(value : DLDeliverPatientCheckCategory):void{
+			delete value
+			eventsManager.fireDeleted(value)
+		}
+		
+		op findAll():Collection<DLDeliverPatientCheckCategory>{
+			#[from DLDeliverPatientCheckCategory as e order by e.code].list
+		}
+		
+	}	
+	/*检查项目 */
+	entity DLDeliverPatientCheckType implements IHasSimplePy{
+		belongs to category : DLDeliverPatientCheckCategory
+		code : String
+		name : String
+		performence : Integer //绩效系数
+		timeLimitation : Integer //时间限制(分钟)
+		checkOrganization : DLCheckOrganization[*]
+		comment : String 
+		
+		
+		op ^update(updater:(DLDeliverPatientCheckType)=>void):void{
+			updater.apply(this)
+			checkValid
+		}
+		
+		op getEntityName():String{
+			name
+		}
+		
+		simplePy : String
+		op getNameField():String{
+			'name'
+		}
+		
+	}
+	
+	criteria DLDeliverPatientCheckTypeCriteria for DLDeliverPatientCheckType{
+		info : String
+		
+		transient category : DLDeliverPatientCheckCategory
+		//derived
+		idPath : String
+		op postInitialize():void{
+			idPath := category.getIdPath().toSqlLike
+		}
+		
+		condition self.code like :info or self.name like :info or self.simplePy like :info
+		condition self.category.fullIdPath like :idPath
+		
+		order by self.code
+		
+	}
+
+	/*运送材料大类 */
+	entity DLDeliverMaterialCategory implements INamedModelObject,IHasHierarchy{
+		code : String
+		name : String
+		belongs to parentCategory : DLDeliverMaterialCategory
+		part subCategories : DLDeliverMaterialCategory[*] opposite parentCategory
+		part materialTypes : DLDeliverMaterialType[*] opposite category
+		op getEntityName():String{
+			name
+		}
+		
+		op ^update(updater : (DLDeliverMaterialCategory)=>void):void{
+			updater.apply(this)
+			checkValid			
+		}
+		
+		op createMaterialType(updater:(DLDeliverMaterialType)=>void):void{
+			createAndAddtoMaterialTypes=>[it
+				updater.apply(it)
+				it.checkValid
+			]
+		}
+		
+		op deleteMaterialType(materialType:DLDeliverMaterialType):void{
+			removeFromMaterialTypes(materialType)
+		}
+		
+		op checkValid():void{
+			Assert(!code.nullOrEmpty,"必须设置编码")
+			Assert(!name.nullOrEmpty,"必须设置名称")
+			Assert(#[from DLDeliverMaterialCategory as e where e.code ={code}].list.size==1,"编码不能重复")
+		}
+		
+		fullIdPath : String
+		
+		op getFullPath():String{
+			this.getFullNamePath([name])			
+		}
+		
+		op moveTo(newParent : DLDeliverMaterialCategory):void{
+			this.changeParent(newParent)
+		}
+		
+		op getHierarchyChildren():Iterable<IHasHierarchy>{
+			subCategories.filter(typeof(IHasHierarchy))
+		}
+		
+		op getHierarchyParent():IHasHierarchy{
+			parentCategory
+		}
+		op setHierarchyParent(parent : IHasHierarchy):void{
+			this.parentCategory := parent as DLDeliverMaterialCategory
+		}			
+	}
+	
+	entity-dao DLDeliverMaterialCategoryDAO for DLDeliverMaterialCategory{
+		inject eventsManager : DLDeliverMaterialCategoryEventsManager
+		op ^create(parent : DLDeliverMaterialCategory,init :(DLDeliverMaterialCategory)=>void) : DLDeliverMaterialCategory{
+			create DLDeliverMaterialCategory(parent)=>[
+				init.apply(it)
+				it.updateFullIdPath()
+				checkValid
+				eventsManager.fireCreated(it)
+			]
+		}
+		
+		op ^delete(value : DLDeliverMaterialCategory):void{
+			delete value
+			eventsManager.fireDeleted(value)
+		}
+		
+	}
+	
+	/*运送材料 */
+	entity DLDeliverMaterialType implements IHasSimplePy{
+		belongs to category : DLDeliverMaterialCategory
+		code : String
+		name : String
+		comment : String 
+		unit : String //计量单位
+		
+		op getEntityName():String{
+			name
+		}
+		simplePy : String
+		op getNameField():String{
+			'name'
+		}
+		
+		op ^update(updater:(DLDeliverMaterialType)=>void):void{
+			updater.apply(this)
+			checkValid
+		}
+		op checkValid():void{
+			Assert(!code.nullOrEmpty,"必须设置编码")
+			Assert(!name.nullOrEmpty,"必须设置名称")
+			Assert(#[from DLDeliverMaterialType as e where e.code ={code}].list.size==1,"编码不能重复")
+			
+		}
+	}
+	
+	criteria DLDeliverMaterialTypeCriteria for DLDeliverMaterialType{
+		info : String
+		transient category : DLDeliverMaterialCategory
+		//derived
+		idPath : String
+		op postInitialize():void{
+			idPath := category.getIdPath().toSqlLike
+		}
+		
+		condition self.category.fullIdPath like :idPath
+		condition self.code like :info or self.name like :info or self.simplePy like :info
+	}
+
+	entity DLMaterialDeliverDetail{
+		materialType : DLDeliverMaterialType //材料类型
+		quantity : Double //数量
+		belongs to materialDeliver : DLMaterialDeliver
+	}
+
+	/*物品运送*/
+	entity DLMaterialDeliver extends DLDeliverSubject{
+		part materialDetails : DLMaterialDeliverDetail[*] opposite materialDeliver
+		fromLocation : RCOnsitePosition
+		toLocation : RCOnsitePosition
+		op checkValid():void{
+			super.checkValid()
+			Assert(!materialDetails.nullOrEmpty,"物品信息必须输入")
+		}
+		op getEntityName():String{
+			materialDetails.^map[materialType.entityName+'('+quantity+')'].^join(',')
+		}
+	}
+	
+
+}

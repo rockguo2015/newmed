@@ -1,0 +1,102 @@
+//package com.fudanmed.platform.core.device{
+//	import java.util.*
+//	import org.springframework.test.annotation.Rollback
+//	import com.fudanmed.platform.core.entityextension.*
+//
+//	import edu.fudan.mylang.pf.*
+//	import com.fudanmed.platform.core.domain.*
+//	import com.fudanmed.platform.core.device.*
+//
+//	entity MyData extends RCExtensiableEntity{
+//		
+//	}
+//	test-case ParameterTest{
+//		inject organizationService : RCOrganizationService 
+//		inject securityService : RCSecurityService
+//		inject deviceDAO : RCDeviceDAO
+////		inject deviceTypeDAO : RCDeviceTypeDAO
+//		
+//		test-op createCompositeTypeTest():void{
+//
+//			val numberType := create RCNumberWithUnitType()=>[
+//				it.alias := "时间"
+//				it.unit := "年"
+//			]
+//			val rangeType := create RCRangeType()=>[
+//				it.numberType := numberType 
+//			]
+//			
+//			val type := create RCExtensiableEntityType()=>[
+//				rootType := create RCCompositeType(it)
+//			]
+//
+//			val myData := create MyData()=>[
+//				it.type := type
+//				it.value := type.rootType.createInstance(it)
+//			]
+//			
+//			val slot1 := myData.value.createAttribute("age",numberType)
+//			(slot1.value as RCNumberWithUnitValue).setValue(12.3)
+//			
+//			myData.value.createAttribute("birthday","Date")=>[
+//				(value as RCCompositeValue).createAttribute("year",numberType)=>[
+//					(value as RCNumberWithUnitValue).setValue(2014.0)
+//				]
+//				(value as RCCompositeValue).createAttribute("month",numberType)=>[
+//					(value as RCNumberWithUnitValue).setValue(6.0)
+//				]
+//			]
+//			myData.value.createAttribute("age",rangeType)=>[
+//				(value as RCRangeValue).setUpperBound(12.0)
+//			]
+//			
+//			myData.type.rootType.attrs.forEach[println(it.name)]
+//			println(myData.value.entityName)
+//		}
+//		
+//		test-op deviceParameterTest():void{
+//
+//			val numberType := create RCNumberWithUnitType()=>[
+//				it.alias := "时间"
+//				it.unit := "年"
+//			]
+//			val rangeType := create RCRangeType()=>[
+//				it.numberType := numberType 
+//			]
+//			
+//			val deviceType := create RCDeviceType(null)
+//			
+//			deviceDAO.createDevice("FirstDevice")[device|
+//				device.deviceType := deviceType
+//			]=>[
+//				extension.value.createAttribute("购入日期","Date")=>[
+//					(value as RCCompositeValue).createAttribute("year",numberType)=>[
+//						(value as RCNumberWithUnitValue).setValue(2014.0)
+//					]
+//					(value as RCCompositeValue).createAttribute("month",numberType)=>[
+//						(value as RCNumberWithUnitValue).setValue(6.0)
+//					]
+//				]
+//				extension.value.createAttribute("预期寿命",rangeType)=>[
+//					(value as RCRangeValue)=>[
+//						setUpperBound(12.0)
+//						setLowerBound(8.0)
+//					]
+//				]
+//				
+//				println(it.extension.value.entityName)
+//			]
+//			
+//			
+//		}
+//		
+////		@Rollback(false)		
+////		test-op deleteTest() : void{
+////			#[from MyData as d].list.forEach[
+////				delete it
+////			]
+////		}
+//		
+//	}
+//
+//}

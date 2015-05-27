@@ -1,0 +1,228 @@
+package edu.fudan.langlab.domain.security{
+	
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.mylang.pf.*
+	import java.util.*
+	import static com.uniquesoft.uidl.validation.Validates
+	
+	datatype AppRole{
+		roleId : String
+		name : String
+	}
+
+	entity Role implements INamedModelObject{
+		roleId : String
+		isBuildin : Boolean := false
+		name : String
+		op getEntityName(): String{
+			name
+		}		
+	}
+
+	entity UserRoleAssignment{
+		roleId : String
+		user : User
+	}
+		
+	entity User implements INamedModelObject{
+		userid : String
+		passwd : String
+		op getEntityName(): String{
+			userid
+		}
+	}
+	
+	service SecurityService{
+		op getAllRoles4User(userid : String) : Collection<UserRoleAssignment>{
+			#[from UserRoleAssignment as ra where ra.user.userid = {userid}].list
+		}
+		
+		op getAllRoles4User(user : User) : Collection<Role>{
+			#[from UserRoleAssignment as ra where ra.user = {user}].list.^map[
+				val roleId := it.roleId
+				#[from Role as r where r.roleId = {roleId}].uniqueResult
+			].toList
+		}
+		
+		op createRole(roleId : String, roleName : String) : Role{
+			create Role()=>[
+				it.roleId := roleId
+				it.name := roleName
+			]
+		}
+		
+		op getAllUsers4Role(role : Role):Collection<User>{
+			val roleId := role.roleId
+			#[from UserRoleAssignment as ra where ra.roleId={roleId}].list.^map[it.user].toList
+		}
+		
+		op findRoleByRoleId(roleId : String) : Role{
+			#[from Role as r where r.roleId = {roleId}].uniqueResult
+		}
+		
+		op getAllRoles() : Collection<AppRole>{
+			#[from Role as r].list.^map[role|
+				new AppRole()=>[
+					roleId := role.roleId
+					name := role.name
+				]
+			].toList
+		}
+		
+		op assignRole2User(role : Role , user : User):void{
+			Assert(!getAllRoles4User(user).exists[it==role],"不能给用户重复分配角色")
+			create UserRoleAssignment()=>[
+				it.roleId := role.roleId
+				it.user := user
+			]
+		}
+		
+		op removeRoleFromUser(role : Role, user : User):void{
+			Assert(getAllRoles4User(user).exists[it==role],"用户没有分配待解除的角色")
+			val roleId := role.roleId
+			delete #[from UserRoleAssignment as ra where ra.user = {user} and ra.roleId = {roleId}].uniqueResult
+		}
+		
+		op assignFunction2Role(function : AppFunction, role : Role):void{
+			create RoleFunctionAssignment()=>[
+				it.roleId := role.roleId
+				it.function := function
+			]
+		}
+		
+		op createFunction(parentFunctionId:String,functionId:String, name : String):AppFunction{
+			if(parentFunctionId==null)createFunction(null as AppFunction,functionId,name)
+			else{
+				val parentFunction := #[from AppFunction as e where e.functionId={parentFunctionId}].uniqueResult
+				Assert(parentFunction!=null,"父功能不存在:"+parentFunctionId)
+				createFunction(parentFunction,functionId,name)
+			}
+		}
+		op createFunction(parentFunction:AppFunction,functionId:String, name : String):AppFunction{
+			Assert(
+				#[from AppFunction as e where e.functionId = {functionId} select count(e)].uniqueResult == 0,
+				"功能ID重复:"+functionId
+			)
+			create AppFunction()=>[
+				it.parentFunctionId := parentFunction?.functionId
+				it.functionId := functionId
+				it.name := name
+			]
+		}
+		op removeFunctionFromRole(function : AppFunction, role : Role):void{
+			val v := #[from RoleFunctionAssignment as ra where ra.function = {function} and ra.roleId = {role.roleId}].uniqueResult
+			delete v
+		}
+		
+		op removeFunctionFromRoleCascade(function : AppFunction, role: Role):void{
+			val v := function.getSubFunctions=>[
+				^add(function)
+			]
+			v.forEach[
+				delete it
+			]
+		}
+		
+		op getAllFunctions4Role(role : Role):Collection<AppFunction>{
+			val roleId := role.roleId
+			#[from RoleFunctionAssignment as e where e.roleId = {roleId}].list.^map[it.function].toList
+		}
+		
+		op getAllFunctions4User(user : User):Collection<AppFunction>{
+			getAllRoles4User(user).^map[getAllFunctions4Role(it)].flatten.toSet
+		}
+	}
+}
+
+package edu.fudan.langlab.domain.document{
+	import java.sql.Blob
+	import java.util.Date
+	import java.util.Collection
+	import edu.fudan.mylang.pf.*
+
+	interface IDocument{
+		op getContentType():String
+		op getContent():Blob
+		op getFileName():String
+		op getContainer():IDocumentContainer
+	}	
+	
+	
+	interface IHasDocuments{
+		op getDocuments():Collection<? extends IDocument>
+		
+	}
+	
+	interface IDocumentContainer extends IHasDocuments{
+		op createDocument(init:(IDocument)=>void):IDocument
+		op removeDocument(document : IDocument):void
+	}		
+
+	entity DocumentStorage implements INamedModelObject, IDocument{
+		name : String
+		contentType : String
+		fileName : String
+		content : Blob
+		uploadTime : Date
+		op setFile(file : java.io.File):void{
+			try{
+				content := objectFactory
+						.getHibernateSession()
+						.getLobHelper()
+						.createBlob(
+								new java.io.FileInputStream(file), -1);
+			}catch(e:java.io.IOException){
+				throw new RuntimeException(e)
+			}			
+		}
+		op getContainer():IDocumentContainer
+		op getEntityName() : String{
+			name
+		}
+	}
+}
+package edu.fudan.langlab.domain.common{
+	import java.util.Date
+	import java.sql.Blob
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.mylang.utils.DateUtil		
+	
+	entity FileStorage implements INamedModelObject{
+
+		name : String
+		contentType : String
+		content : Blob
+		uploadTime : Date
+		
+		op getEntityName() : String{
+			name
+		}
+	}	
+	
+	
+	datatype DateRange{
+
+		startDate : java.util.Date
+		finishDate : java.util.Date		
+
+		op inRange(d:Date):boolean{
+			d >= startDate && d <= finishDate
+		}
+		
+		op inRange(range: DateRange):boolean{
+			inRange(range.startDate) || inRange(range.finishDate)
+		}
+		
+		op getDurangeInSeconds():Integer{
+			((finishDate.time - startDate.time)/1000).intValue 
+		}
+	}
+}
+
+
+
+
+
+
+
+

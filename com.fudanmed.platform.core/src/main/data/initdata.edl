@@ -1,0 +1,58 @@
+package com.fudanmed.platform.core.organization{
+	import java.util.*
+	import org.springframework.test.annotation.Rollback
+
+	import edu.fudan.mylang.pf.*
+	import com.fudanmed.platform.core.domain.*
+
+	test-case InitData{
+		inject organizationService : RCOrganizationService 
+		inject securityService : RCSecurityService
+
+		test-op initdatas():void{
+			organizationService.createRootOrganization("00n","华山医院")
+		}
+		
+		op initAdmin() : void{
+//			organizationService.registerEmployee("admin")=>[
+//				name := "系统管理员"
+//			]		
+		}
+		
+		op initOrgzniation() : void{
+			val hospital := organizationService.createRootOrganization("001","华山医院")
+			val host := organizationService.createRootOrganization("002","复旦后勤运营点")
+			
+			hospital.createAndAddtoSubOrganizations=>[
+				code := "001001"
+				name := "住院部"
+			]
+			hospital.createAndAddtoSubOrganizations=>[
+				code := "001002"
+				name := "门诊"
+			]
+			
+			val edepart := host.createAndAddtoSubOrganizations=>[
+				code := "002001"
+				name := "工程部"
+			]
+			
+			edepart.createAndAddtoSubOrganizations=>[
+				code := "002001001"
+				name := "水电班组"
+			]
+			edepart.createAndAddtoSubOrganizations=>[
+				code := "002001002"
+				name := "空调班组"
+			]
+			
+		}
+		
+		op initLocation():void{
+			organizationService.createRootOnsitePosition("001","华山医院")
+		}
+		
+		
+	}
+
+}

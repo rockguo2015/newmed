@@ -1,0 +1,30 @@
+package com.fudanmed.platform.core.domain{
+	import edu.fudan.mylang.pf.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import java.util.*
+	
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	
+	entity-events-listener RCEmployeeListener for RCEmployee{
+		on entityCreated(){
+			
+		}
+		
+		on leaveJob(){
+			#[from RCWarehouse as e].list.filter[it.storeManager.contains(^entity)].forEach[
+				removeFromStoreManager(^entity)
+			]
+		}
+		
+		on returnJob(){
+			
+		}
+		
+	}
+	
+}

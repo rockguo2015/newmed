@@ -1,0 +1,49 @@
+package edu.fudan.langlab.domain.task{
+	import java.util.*
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.task.*
+	
+	entity Task implements INamedModelObject{
+		op getTaskCategory() : String 
+		taskType : String
+		op getTaskTypeName() : String
+		owner : Party
+		genDate : Date
+		dueDate : Date
+		description : String
+		op getEntityName(): String{
+			description
+		}
+		
+		op forwardTo(newOwner : Party):void{
+			this.owner := newOwner
+		}
+	}
+	
+	criteria TaskCriteria for Task{
+		owner : Party
+		genDateFrom : Date
+		genDateTo : Date
+		dueDateFrom : Date
+		dueDateTo : Date
+		description : String
+		
+		condition self.owner = :owner
+		condition self.genDate >= :genDateFrom	
+		condition self.genDate <= :genDateTo
+		condition self.dueDate >= :dueDateFrom
+		condition self.dueDate <= :dueDateTo
+		condition self.description like :description	
+	}
+	
+	entity NormalTask extends Task{
+		
+		taskTypeName : String		
+		
+		op getTaskCategory() : String {
+			"提醒事项"
+		}
+	}
+
+}

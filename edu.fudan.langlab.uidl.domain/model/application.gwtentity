@@ -1,0 +1,253 @@
+package edu.fudan.langlab.uidl.domain.app feature workbench{
+	
+	import java.util.*
+	import com.google.gwt.user.client.^ui.*
+	import com.uniquesoft.gwt.client.common.Presenter
+	
+	import com.google.gwt.user.client.Window
+	import com.google.inject.^Inject
+	import com.sencha.gxt.core.client.util.Margins
+	import com.sencha.gxt.widget.core.client.ContentPanel
+	import com.sencha.gxt.widget.core.client.container.*
+	import com.sencha.gxt.widget.core.client.container.HtmlLayoutContainer
+	import com.sencha.gxt.widget.core.client.container.MarginData
+	import com.sencha.gxt.widget.core.client.container.SimpleContainer
+	import com.sencha.gxt.widget.core.client.form.ComboBox
+	import edu.fudan.langlab.gxt.client.container.ResizeTrackerBorderLayoutContainer
+	import com.sencha.gxt.widget.core.client.container.Viewport
+	import edu.fudan.langlab.uidl.domain.app.client.*
+	import com.shrct.businessprocess.client.web.*
+	import com.uniquesoft.gwt.client.common.CommitablePresenter
+	import edu.fudan.langlab.gxt.client.widget.*
+	import edu.fudan.langlab.security.client.Securities
+	import org.eclipse.xtext.xbase.lib.*
+	import edu.fudan.langlab.theme.blue.client.panel.NavButton
+	import edu.fudan.langlab.theme.blue.client.navbar.*
+	import edu.fudan.langlab.theme.blue.client.panel.NavContentPanelAppearance
+	import com.sencha.gxt.core.client.dom.*
+	
+	signal ShowPresenter(Presenter ^presenter)
+	signal PopPresenter(Presenter ^presenter)
+	signal PopActivatedPresenter(Presenter ^presenter)
+	signal ShowActivePresenter(Presenter ^presenter)
+	signal ShowActivePresenterWithHeader(Presenter ^presenter, String header)
+
+	presenter ApplicationWorkbenchPresenter{
+		view interface{
+			signal in showPresenter(Presenter ^presenter, (void)=>void init)
+			signal in showActivatedPresenter(Presenter ^presenter)
+			signal in popPresenter(Presenter ^presenter, (void)=>void init)
+			signal in popActivatedPresenter(Presenter ^presenter)
+			signal in showSctivatedPresenterWithHeader(Presenter ^presenter, String header)
+		}
+		interaction{
+			start{
+			}
+			input eventbus.ShowPresenter(Presenter ^presenter){
+				fire view.showPresenter(^presenter, null)
+			}
+			input eventbus.ShowActivePresenter(Presenter ^presenter){
+				fire view.showActivatedPresenter(^presenter)
+			}
+			
+			input eventbus.PopPresenter(Presenter ^presenter){
+				if(^presenter instanceof CommitablePresenter)
+					(^presenter as CommitablePresenter).asDialog
+				else
+					fire view.popPresenter(^presenter,null)
+			}
+			input eventbus.PopActivatedPresenter(Presenter ^presenter){
+				if(^presenter instanceof CommitablePresenter)
+					(^presenter as CommitablePresenter).asActivatedDialog
+				else
+					fire view.popActivatedPresenter(^presenter)
+			}
+			input eventbus.ShowActivePresenterWithHeader(Presenter ^presenter, String header){
+				fire view.showSctivatedPresenterWithHeader(^presenter,header)
+			}
+		}
+	}
+	
+	view ApplicationWorkbenchView for ApplicationWorkbenchPresenter{
+		viewport : Viewport
+		body : BorderLayoutContainer 
+		west : com.sencha.gxt.widget.core.client.ContentPanel
+		center : SimpleContainer
+		
+		@Inject workbenchManager : WorkbenchManager
+		
+		initializer{
+			viewport = new Viewport()
+			body = new ResizeTrackerBorderLayoutContainer
+			body.setPixelSize(Window::getClientWidth(), Window::getClientHeight());
+    		val BorderLayoutContainer$BorderLayoutData northData = new BorderLayoutContainer$BorderLayoutData(80);
+    		northData.setMargins(new Margins(0))
+    		workbenchManager.headerPresenter.activate[
+    			body.setNorthWidget(workbenchManager.headerPresenter.getView().asWidget,northData)
+    		]
+    		
+			var BorderLayoutContainer$BorderLayoutData westData = new BorderLayoutContainer$BorderLayoutData(180);
+			westData.setMargins(new Margins(5, 0, 5, 5));
+			westData.setSplit(true);
+			westData.setCollapsible(true);
+//			westData.setCollapseHidden(true);
+			westData.setCollapseMini(true);
+			val allMenuItems = <NavMenuItem>newArrayList
+			west = widgets.NavHeader("功能导航")=>[
+				widget = new AccordionLayoutContainer()=>[accordion|
+					workbenchManager.categories.filter[it.visable].forEach[category|
+						securities.check(category.categoryId)[
+						accordion.add(widgets.AccordionPanel(category.categoryName,category.image)=>[
+							widget = widgets.VLayout=>[l|
+								l.setScrollMode(ScrollSupport$ScrollMode::AUTOY);
+								workbenchManager.getPresenterParts(category).forEach[pp|
+									val ()=>void t = [|l.add(new NavMenuItem(pp.getName)=>[
+										allMenuItems.add(it)
+										addClickHandler[e|
+											allMenuItems.forEach[unselected]
+											it.selected
+											switch(pp){
+												WorkbenchCommandProxy:
+													pp.^execute
+												WorkbenchPresenterProxy:
+													showPresenter(pp.getPresenter())[]
+												WorkbenchWindowProxy:
+													pp.show
+												WorkbenchActivePresenterProxy:{
+													pp.getPresenter[
+														showActivatedPresenter(it)
+													]
+												}
+											}
+										]
+									],widgets.VLayoutData(1,-1))]		
+									if(pp.requireCheck)	
+										securities.check(pp.getFunctionId)[
+											t.apply
+										]
+									else t.apply
+								]
+							]
+						])
+						]
+					]
+				]
+			]
+			body.setWestWidget(west, westData);
+			
+		    var MarginData centerData = new MarginData();
+		    centerData.setMargins(new Margins(5, 5, 5, 5));
+		    center = new SimpleContainer		
+		    body.setCenterWidget(center, centerData);
+		    RootPanel::get() += body				
+		}		
+		activePresenter : Presenter
+		
+		op asWidget() : Viewport{
+			viewport
+		}
+		
+		op popPresenter(Presenter p,  (void)=>void init) : void{
+			(new PresenterWindow(p)).showWindow()
+		}
+		
+		op popActivatedPresenter(Presenter p):void{
+			(new PresenterWindow(p)).showActivatedWindow()
+		}
+		
+		op showActivatedPresenter(Presenter p) : void{
+			if(activePresenter!=null){
+				activePresenter.deactivate
+				activePresenter.getView().asWidget().removeFromParent
+			}
+			activePresenter = p
+			var w = p.^view.asWidget
+			center.setWidget(w)
+			if(w instanceof ResizeContainer){
+				(w as ResizeContainer).forceLayout
+			}
+			body.forceLayout
+			viewport.setWidget(body)
+			
+		}
+		
+		op showSctivatedPresenterWithHeader(Presenter p,String header):void{
+			if(activePresenter!=null){
+				activePresenter.deactivate
+				activePresenter.getView().asWidget().removeFromParent
+			}
+			activePresenter = p
+			val v = p.^view.asWidget
+			var w = widgets.ContentPanel()=>[
+				it.setTitle(header)
+				widget = v
+			]
+			center.setWidget(w)
+			if(v instanceof ResizeContainer){
+				(w as ResizeContainer).forceLayout
+			}
+			body.forceLayout
+			viewport.setWidget(body)
+			
+		}
+	
+		op showPresenter(Presenter p, (void)=>void init) : void{
+			if(activePresenter!=null){
+				activePresenter.deactivate
+				activePresenter.getView().asWidget().removeFromParent
+			}
+			p.activate[
+				activePresenter = p
+				var w = p.^view.asWidget
+				center.setWidget(w)
+				if(w instanceof ResizeContainer){
+					(w as ResizeContainer).forceLayout
+				}
+				body.forceLayout
+				viewport.setWidget(body)
+				if(init!=null)
+					init.apply(null)
+			]
+		}		
+
+	}
+	presenter FramedPresenter{
+		view interface{
+			op setContentPresenter(theTitle:String,p : Presenter):void
+		}
+		
+		interaction{
+			contentPresenter : Presenter
+			input prepare.setup(theTitle : String,p : Presenter){
+				this.contentPresenter = p
+				getView().setContentPresenter(theTitle,p)
+				this.activate[
+					done
+				]
+			}
+			input call.postDeactivated(){
+				contentPresenter.deactivate
+			}
+		}
+	}
+	
+	
+	view FramedView for FramedPresenter{
+		con: Widget
+		contentPresenter : Presenter
+		theTitle : String
+		
+		op asWidget():Widget{
+			con
+		}
+		layout{
+			con = widgets.FramedPanel(theTitle)=>[
+				widget = contentPresenter.getView().asWidget
+			]
+		}
+		op setContentPresenter(theTitle:String,p : Presenter):void{
+			this.contentPresenter = p
+			this.theTitle = theTitle
+		}
+	}	
+}

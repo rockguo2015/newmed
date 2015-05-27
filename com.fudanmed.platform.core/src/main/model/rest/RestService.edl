@@ -1,0 +1,299 @@
+package com.fudanmed.platform.core.domain.rest{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*	
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.measure.*
+	
+
+	datatype LoginResult{
+		userName : String
+		hospitalName : String
+		department : String
+		roles:String
+	}
+	
+	datatype WorkItemBreifInfo{
+		^id : Long
+		sid : String
+		time : Date
+	}
+	
+	datatype WorkItemInfo{
+		^id : Long
+		sid : String
+		reportSid : String
+		status : String
+		reportTime : Date
+		time : Date
+		workers : String
+		comment : String
+		location : String
+		organization : String
+		reporter : String
+		reporterPhone : String
+		emergencyType : String
+	}
+	
+	datatype WorkItemReportInfo{
+		reportDate : Date
+		reportTime : Date
+		description : String
+	}
+	
+	datatype WorkItemFinishInfo{
+		deviceNumber : String
+		photos : String //用','分割
+		info : WorkItemReportInfo
+	}
+	
+	datatype MeasureInstrument{
+		sid : String
+		location : String
+		lastValue : String
+	}
+	
+	enum MeasureInstrumentType{
+		suibiao dianbiao meiqibiao fengudianbiao
+	}
+	
+	datatype MeasureValueSubmitInfo{
+		date : Date
+		value : String
+		userid : String
+	}
+	
+	criteria RCFinishedWorkItemTaskCriteria for distinct RCWorkItemTask {
+		join self.workers as worker
+		owner : RCEmployee
+		startDate:Date
+		endDate : Date
+		processingStatus : RCWorkItemTaskStatus
+		outsourcingStatus : RCWorkItemTaskStatus
+		pendingStatus : RCWorkItemTaskStatus
+		followupingStatus : RCWorkItemTaskStatus
+		
+		op postInitialize():void{
+			processingStatus := RCWorkItemTaskStatus::valueOf(typeof(RCWorkItemTaskStatus),"processing")
+			outsourcingStatus := RCWorkItemTaskStatus::valueOf(typeof(RCWorkItemTaskStatus),"outsourcing")
+			pendingStatus := RCWorkItemTaskStatus::valueOf(typeof(RCWorkItemTaskStatus),"pending")
+			followupingStatus := RCWorkItemTaskStatus::valueOf(typeof(RCWorkItemTaskStatus),"followuping")
+		}
+		
+		condition self.Status <> :processingStatus and self.Status <> :outsourcingStatus and self.Status <> :pendingStatus and self.Status <> :followupingStatus
+		condition worker = :owner
+		condition self.date >= :startDate
+		condition self.date <= :endDate
+	}
+	
+	criteria RCWorkItemTaskCriteria4Status for distinct RCWorkItemTask {
+		join self.workers as worker
+		owner : RCEmployee
+		status : RCWorkItemTaskStatus
+		fromDate : Date
+		toDate : Date
+		condition worker = :owner
+		condition self.Status = :status
+		condition self.groupTask.repairTask.reportDate >= :fromDate
+		condition self.groupTask.repairTask.reportDate <= :toDate
+	}
+	
+	criteria RCProcessingWorkItemTaskCriteria for distinct RCWorkItemTask {
+		join self.workers as worker
+		owner : RCEmployee
+		processingStatus : RCWorkItemTaskStatus
+		outsourcingStatus : RCWorkItemTaskStatus
+		pendingStatus : RCWorkItemTaskStatus
+		followupingStatus : RCWorkItemTaskStatus
+		
+		op postInitialize():void{
+			processingStatus := RCWorkItemTaskStatus::valueOf(typeof(RCWorkItemTaskStatus),"processing")
+			outsourcingStatus := RCWorkItemTaskStatus::valueOf(typeof(RCWorkItemTaskStatus),"outsourcing")
+			pendingStatus := RCWorkItemTaskStatus::valueOf(typeof(RCWorkItemTaskStatus),"pending")
+			followupingStatus := RCWorkItemTaskStatus::valueOf(typeof(RCWorkItemTaskStatus),"followuping")
+		}
+		
+		condition self.Status = :processingStatus or self.Status = :outsourcingStatus or self.Status = :pendingStatus or self.Status = :followupingStatus
+		condition worker = :owner
+	}
+	
+	service RestService{
+		inject securityService : RCSecurityService
+		inject roleService : SecurityService
+		inject appFunctionService : AppFunctionService
+		inject systemParameterService : RCSystemParameterService
+		inject entities : IObjectFactory
+		
+		
+		
+		op login(userid:String, passwd : String):LoginResult{
+			val user := securityService.employeeUserLogin(userid,passwd)
+			if(user==null) 
+				null
+			else
+				new LoginResult()=>[
+					userName := user.employee.name
+					department := user.employee.organization.name
+					roles := roleService.getAllRoles4User(userid)
+						.^map[appFunctionService.loadAllFunctions4Role(it.roleId)].flatten
+						.toSet.filter["com.fudanmed.platform.core.app".equals(it.parent.functionId)]
+						.^map[name].^join(",")
+					hospitalName := systemParameterService.systemParameter.orgName
+				]
+		}
+		
+		op modifyPasswd(userid:String, oldPasswd:String, newPasswd:String) : Boolean{
+			val user := securityService.employeeUserLogin(userid,oldPasswd)
+			if(user!=null){
+				user.passwd := newPasswd
+				true
+			}else
+				false
+		}
+		
+		
+		/*本月已完成的工单数 */
+		op finishedCount(employee : RCEmployee, startDate:Date, endDate : Date):Integer{
+			(entities.createQueryCriteria(typeof(RCFinishedWorkItemTaskCriteria))=>[
+				it.owner := employee
+				it.startDate := startDate
+				it.endDate := endDate
+			]).^count
+		}
+		
+//		/*获取处于已完成状态的所有状态 */
+//		op getFinishedStatus():Collection<RCWorkItemTaskStatus>{
+//			
+//		}
+		
+		/*本月已完成的工单 */
+		op getFinishedWorkItem(employee : RCEmployee, startDate:Date, endDate:Date,startNumber : Integer, endNumber: Integer):Collection<WorkItemBreifInfo>{
+			(entities.createQueryCriteria(typeof(RCFinishedWorkItemTaskCriteria))=>[
+				it.owner := employee
+				it.startDate := startDate
+				it.endDate := endDate
+				it.^start := startNumber
+				it.^limit := endNumber - startNumber
+			]).list.^map[item|
+				new WorkItemBreifInfo()=>[
+					it.^id := item.^id
+					it.sid := item.^sid
+					it.time := item.date
+				]
+			].toList
+			
+		}
+		
+		/*当前未完成的工单数 */
+		op getProcessingCount(employee : RCEmployee):Integer{
+			(entities.createQueryCriteria(typeof(RCProcessingWorkItemTaskCriteria))=>[
+				it.owner := employee
+			]).^count
+		}
+		
+//		/*获取处于未完成状态的所有状态 */
+//		op getUnfinishedStatus():Collection<RCWorkItemTaskStatus>{
+//			
+//		}
+		
+		/*当前未完成的工单 */
+		op getProcessingWorkItem(employee : RCEmployee,startNumber : Integer, endNumber: Integer):Collection<WorkItemBreifInfo>{
+			(entities.createQueryCriteria(typeof(RCProcessingWorkItemTaskCriteria))=>[
+				it.owner := employee
+				it.^start := startNumber
+				it.^limit := endNumber - startNumber
+			]).list.^map[item|
+				new WorkItemBreifInfo()=>[
+					it.^id := item.^id
+					it.sid := item.^sid
+					it.time := item.date
+				]
+			].toList
+			
+		}
+		
+		/*获取指定状态的工单信息 */
+		op getWorkItem4Status(employee : RCEmployee,status : RCWorkItemTaskStatus,startNumber : Integer, endNumber: Integer):Collection<WorkItemBreifInfo>{
+			(entities.createQueryCriteria(typeof(RCWorkItemTaskCriteria4Status))=>[
+				it.owner := employee
+				it.status := status
+				it.^start := startNumber
+				it.^limit := endNumber - startNumber
+			]).list.^map[item|
+				new WorkItemBreifInfo()=>[
+					it.^id := item.^id
+					it.sid := item.^sid
+					it.time := item.date
+				]
+			].toList
+		}
+		
+		/*获取工单详情 */
+		op getWorkItemDetail(workItem : RCWorkItemTask):WorkItemInfo{
+//			new WorkItemInfo()=>[
+//				it.^id := workItem.^id
+//				it.^sid := workItem.sid
+//				it.reportSid := workItem.groupTask.repairTask.reportSid
+//			]
+		}
+		
+		/*提交文件，系统返回一个文件标识 */
+		op submitPhoto(bytes : Byte[]):String{
+			
+		}
+		
+		/*挂起 */
+		op pend(workitem : RCWorkItemTask,info : WorkItemReportInfo):void{
+			workitem.comment := info.description
+			workitem.pend
+		}
+		
+		/*结束挂起 */
+		op cancelPend(workitem : RCWorkItemTask,info : WorkItemFinishInfo):void{
+			
+		}
+		
+		/*需外协 */
+		op outsource(workitem:RCWorkItemTask, info : WorkItemReportInfo):void{
+			
+		}
+		
+		/*完成外协 */
+		op finishOutsource(workitem : RCWorkItemTask, info : WorkItemFinishInfo):void{
+			
+		}
+		
+		/*工单串单 */
+		op misDispatching(workitem : RCWorkItemTask,info : WorkItemReportInfo):void{
+			
+		}
+		
+		/*工单跟进 */
+		op followup(workitem : RCWorkItemTask, info : WorkItemReportInfo):void{
+			
+		}
+		
+		/*工单完工 */
+		op finish(workitem : RCWorkItemTask, info : WorkItemFinishInfo):void{
+			
+		}
+		
+		/*获取指定类型的计量设备 */
+		op getMeasureInstruments(type : MeasureInstrumentType) : Collection<MeasureInstrument>{
+			
+		}
+		
+		/*提交指定设备的本次读数 */
+		op submitMeasureResult(sid : RCMeasureDevice, info : MeasureValueSubmitInfo):void{
+			
+		}
+	}	
+	
+}

@@ -1,0 +1,212 @@
+package edu.fudan.langlab.uidl.domain.app feature security{
+	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.*	
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import edu.fudan.langlab.uidl.domain.app.server.^service.login.ISecurityService
+	import edu.fudan.langlab.uidl.domain.app.*
+	
+	ui-command RoleFunctionAssignmentCommand "系统功能权限设置" @!roleFunctionAssignmentPresenter{
+		@Inject roleFunctionAssignmentPresenter : RoleFunctionAssignmentPresenter
+		execute{
+			roleFunctionAssignmentPresenter.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}
+	
+	presenter RoleFunctionAssignmentPresenter{
+		view interface{
+			signal in showRoles(roles :Collection<UIAppRole>)
+			signal in showFunctions(functions : Collection<UIAppFunction>)
+			signal out showRoleFunctionsRequest(role : UIAppRole) 
+			signal out modifyAssignmentRequest(role : UIAppRole)  @roleFunctionAssignmentPresenter "修改功能分配"
+		}
+		interaction{
+			factory createOrUpdateAppFunctionAssignmentPresenter : CreateOrUpdateAppFunctionAssignmentPresenter
+			input call.setup(postInit : (RoleFunctionAssignmentPresenter)=>void){
+				this.activate[
+					service.getAllRoles(onSuccess[
+						fire view.showRoles(it)
+						postInit.apply(this)
+					])
+				]
+			}
+			
+			input view.showRoleFunctionsRequest(role : UIAppRole){
+				service.getFunctions4Role(role.roleId,onSuccess[
+					fire view.showFunctions(it)
+				])
+			}
+			
+			input view.modifyAssignmentRequest(role : UIAppRole){
+				createOrUpdateAppFunctionAssignmentPresenter.get=>[
+					it.setup(role)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			
+			input eventbus.AppFunctionAssignmentsChanged(role : UIAppRole){
+				service.getFunctions4Role(role.roleId,onSuccess[
+					fire view.showFunctions(it)
+				])
+			}
+		}
+
+		service{
+			@Inject roleManager : RoleManager
+			@Inject appFunctionMapper : AppFunctionMapper
+			@Inject appFunctionService : AppFunctionService
+			op getAllRoles() : Collection<UIAppRole>{
+				roleManager.allRoles.^map[role|
+					new UIAppRole()=>[
+						roleId = role.roleId
+						name = role.name
+					]
+				].toList
+			}
+			
+			op getFunctions4Role(roleId : String): Collection<UIAppFunction>{
+				appFunctionService.loadAllFunctions4Role(roleId).^map[
+					appFunctionMapper.transform(it)
+				].toList
+			}
+		}
+	}
+	
+	view RoleFunctionAssignmentView for RoleFunctionAssignmentPresenter{
+		required roleListGrid : AppRoleListGrid
+		required appFunctionListGrid : AppFunctionListGrid
+		con : Widget
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = widgets.FramedPanel("系统功能权限设置")=>[
+				widget = widgets.HLayout=>[
+					add(roleListGrid.asWidget,widgets.HLayoutData(0.4,1))
+					val ac = roleListGrid.createActionContext
+					
+					add(widgets.ContentPanel=>[
+						widget = appFunctionListGrid.asWidget
+						securities.check(ui-requester.modifyAssignmentRequest)[v|
+							addButton(ac.onSingleObjectAction[
+								onExecute[UIAppRole role|
+									fire view.modifyAssignmentRequest(role)
+								]
+							].asButtonRequester("修改"))
+						]
+					],widgets.HLayoutData(0.6,1))
+					ac.addSelectionChangedListener[roles|
+						fire view.showRoleFunctionsRequest(roles.head)
+					]
+				]
+			]
+		}
+		interaction{
+			input view.showRoles(roles : Collection<UIAppRole>){
+				roleListGrid.objects = roles
+			}
+			input view.showFunctions(functions : Collection<UIAppFunction>){
+				appFunctionListGrid.objects = functions
+			}
+		}
+	}
+	
+	content-provider AllAppFunctionContentProvider for UIAppFunction{
+		@Inject mapper : AppFunctionMapper
+		contents{
+			entities.all(typeof(AppFunction)).^map[mapper.transform(it)].toList
+		}
+	}
+
+
+	
+	signal AppFunctionAssignmentsChanged(role : UIAppRole)
+	
+	presenter CreateOrUpdateAppFunctionAssignmentPresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIAppFunctionAssignment
+			op setValue(value : UIAppFunctionAssignment) : void
+		}
+		
+		interaction{
+			role : UIAppRole
+			input call.setup(
+				role : UIAppRole,
+				(CreateOrUpdateAppFunctionAssignmentPresenter)=>void postInitializer
+			){
+				this.role = role
+				this.activate[
+					service.loadValue(role.roleId,onSuccess[
+						getView().setValue(it)
+						postInitializer.apply(this)
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.AppFunctionAssignmentsChanged(role)
+						notifier.success
+					])
+			}			
+		}
+
+		service{
+			@Inject appFunctionMapper : AppFunctionMapper
+			@Inject appFunctionService : AppFunctionService
+			op loadValue(roleId : String) : UIAppFunctionAssignment{
+				new UIAppFunctionAssignment=>[
+					it.roleId = roleId
+					it.functions = appFunctionService.loadAllFunctions4Role(roleId).^map[
+						appFunctionMapper.transform(it)
+					].toList
+				]
+			}
+			op updateValue(uivalue : UIAppFunctionAssignment) : void{
+				appFunctionService.loadAllFunctionAssignments4Role(uivalue.roleId).forEach[
+					entities.delete(it)
+				]
+				uivalue.functions.forEach[uifunction|
+					val function = entities.get(typeof(AppFunction),uifunction.id)
+					entities.^create(typeof(RoleFunctionAssignment))=>[
+						it.roleId = uivalue.roleId
+						it.function = function
+					]
+				]
+			}
+		}
+	}
+	
+	view CreateOrUpdateAppFunctionAssignmentView for CreateOrUpdateAppFunctionAssignmentPresenter implements IHasSize, IHasTitle{
+		@Inject form : AppFunctionAssignmentForm
+		initializer{
+			this += form.functions.asWidget.widget=>[
+				height = "280"
+			]
+		}
+		op getValue() : UIAppFunctionAssignment{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIAppFunctionAssignment value) : void{
+			form.value = value
+		}
+		op getSize():Size{
+			new Size(300,400)
+		}
+		op getTitle():String{
+			'系统功能'
+		}
+	}		
+}

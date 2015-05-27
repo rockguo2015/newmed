@@ -1,0 +1,15 @@
+
+.cell{
+	font: 12px Verdana,"宋体 ","Lucida Grande",sans-serif;
+}
+
+.row {
+  	cursor: default;
+  	padding: 0 1px;
+  	vertical-align: middle; 
+}
+
+.rowSelected .cell, .rowSelected .rowWrap {
+  background-color: #8FD8F6 !important;
+  border-color: #A3BAE9;
+}

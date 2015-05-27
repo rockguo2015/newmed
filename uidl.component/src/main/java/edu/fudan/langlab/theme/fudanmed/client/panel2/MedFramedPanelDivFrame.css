@@ -1,0 +1,33 @@
+@external noheader;
+
+.topLeft,.top,.topRight {
+  height: auto;
+  font-size:14px;
+}
+
+.topLeft {
+  border-bottom:1px solid; 
+  border-color: #cdcdcd;
+}
+
+.noheader .topLeft, .noheader .top {
+  height: 3px;
+  border: none; 
+}
+
+.left {
+  background-color: #f9f9f9;
+  padding-left: 6px;
+}
+
+.right {
+  background-color: #f9f9f9;
+}
+
+.content {
+  padding-top: 6px;
+}
+
+.bottom,.bottomLeft,.bottomRight {
+  height: 6px;
+}

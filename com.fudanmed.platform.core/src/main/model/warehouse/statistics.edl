@@ -1,0 +1,29 @@
+package com.fudanmed.platform.core.warehouse{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import  com.fudanmed.platform.core.warehouse.*
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	
+	criteria RCWorkItemStockStatisticsCriteria for RCWorkItemStockRecordItem{
+		
+		reportDateFrom : Date
+		reportDateTo : Date
+		team : RCMaintenanceTeam
+		reportOrg : RCOrganization
+		
+		condition self.record.workItem.groupTask.repairTask.reportDate >= :reportDateFrom
+		condition self.record.workItem.groupTask.repairTask.reportDate <= :reportDateTo
+		condition self.record.workItem.groupTask.repairTask.reportOrg = :reportOrg
+		condition self.record.workItem.groupTask.team = :team
+		
+		order by self.record.date desc
+	
+	}
+	
+}

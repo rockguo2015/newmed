@@ -1,0 +1,275 @@
+package com.fudanmed.platform.core.warehouse{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.entityextension.*
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+
+	upgrade V_0_3_upgrade from V_0_3 to V_0_4{
+		update devicePMTypes{
+			create RCDevicePMType()=>[
+				it.codeid := '001'
+				it.name := '大修'
+			]
+			create RCDevicePMType()=>[
+				it.codeid := '002'
+				it.name := '中修'
+			]
+			create RCDevicePMType()=>[
+				it.codeid := '003'
+				it.name := '小修'
+			]
+		}	
+		
+		update FaultLevelColorConfigCreator1{
+			#[from RCFaultLevel as e].list.forEach[faultLevel|
+				create RCFaultLevelColorAdaptor()=>[
+					it.color := RCStandardColor::black
+					it.faultLevel := faultLevel
+				]
+			]
+		}
+		
+		update CodeInit_FaultReportSource{
+			create RCFaultReportSource()=>[
+				it.codeid := '001'
+				it.name := '用户报修'
+			]
+			create RCFaultReportSource()=>[
+				it.codeid := '002'
+				it.name := '巡检报修'
+			]
+		}
+		
+		update ReporterName{
+			#[from RCRepairTask as e].list.forEach[
+				it.reporterName := it.reporter.name
+				it.reporterPhone := it.reporter.workTel
+			]
+		}
+		
+		update IfFromReporter{
+			#[from RCRepairTask as e].list.forEach[
+				it.isFromReporter := false
+			]
+		}
+		
+		update employeeLeaveStatus{
+			#[from RCEmployee as e].list.forEach[
+				if(it.status==null)
+					it.^start
+			]
+		}
+		update requireAuditInfo{
+			#[from RCFaultType as e].list.forEach[
+				it.needAudit := false
+			]
+		}
+		
+		update updateCategoryPath{
+			#[from RCProductType as e].list.forEach[
+				it.updateCategoryPath
+			]
+		}
+		
+		update updateHospitalEmployeeRoles1{
+			#[from RCEmployeeUser as e].list.filter[employee.cardNumber==null].forEach[emp|
+				if(emp.userid!="admin")
+					create UserRoleAssignment()=>[
+						it.user := emp
+						it.roleId := '06'
+					]
+			]
+		}
+				
+		update functions1{
+			create AppFunction()=>[
+				it.functionId := 'com.fudanmed.platform.core.web.device'
+				it.name := '设备台账'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.device'
+				it.functionId := 'com.fudanmed.platform.core.web.deviceManagementPresenter'
+				it.name := '设备管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.device'
+				it.functionId := 'com.fudanmed.platform.core.web.deviceTypeCategoryManagementPresenter'
+				it.name := '设备类型管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.device'
+				it.functionId := 'com.fudanmed.platform.core.web.numberWithUnitTypeManagementPresenter'
+				it.name := '参数类型管理'
+			]
+			create AppFunction()=>[
+				it.functionId := 'com.fudanmed.platform.core.web.pm'
+				it.name := 'PM管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.pm'
+				it.functionId := 'com.fudanmed.platform.core.web.devicePMSpecificationManagementPresenter'
+				it.name := 'PM计划管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.pm'
+				it.functionId := 'com.fudanmed.platform.core.web.pmWorkItemManagementPresenter'
+				it.name := 'PM任务管理'
+			]
+			create AppFunction()=>[
+				it.functionId := 'com.fudanmed.platform.core.web.statistics'
+				it.name := '统计查询'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.statistics'
+				it.functionId := 'com.fudanmed.platform.core.web.repairTaskStatisticListPresenter'
+				it.name := '报修单统计表'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.statistics'
+				it.functionId := 'com.fudanmed.platform.core.web.workItemStockStatisticListPresenter'
+				it.name := '报修用料统计表'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.numberWithUnitTypeManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.NumberWithUnitTypeManagementPresenter.createRequest'
+				it.name := '新建参数类型'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.numberWithUnitTypeManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.NumberWithUnitTypeManagementPresenter.deleteRequest'
+				it.name := '删除参数类型'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.numberWithUnitTypeManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.NumberWithUnitTypeManagementPresenter.modifyRequest'
+				it.name := '修改参数类型'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.numberWithUnitTypeManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.NumberWithUnitTypeManagementPresenter.createRangeTypeRequest'
+				it.name := '新建范围类型'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.PMDefaultIntervalAssociationListPresenter.setPMSpecRequest'
+				it.name := '设置默认PM计划'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.pmWorkItemManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.PMWorkItemManagementPresenter.createRequest'
+				it.name := '新建PM任务'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.pmWorkItemManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.PMWorkItemManagementPresenter.finishWorkItemRequest'
+				it.name := 'PM任务结单'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.devicePMSpecificationManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DevicePMSpecificationManagementPresenter.createRequest'
+				it.name := '新建PM计划'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.devicePMSpecificationManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DevicePMSpecificationManagementPresenter.deleteRequest'
+				it.name := '删除PM计划'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.devicePMSpecificationManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DevicePMSpecificationManagementPresenter.modifyRequest'
+				it.name := '修改PM计划'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.devicePMSpecificationManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DevicePMSpecificationManagementPresenter.initPM4DeviceRequest'
+				it.name := '生成PM任务'
+			]
+			
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceTypeManagementPresenter.createChildRequest'
+				it.name := '新建设备类别'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceTypeManagementPresenter.modifyChildRequest'
+				it.name := '修改设备类别'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceTypeManagementPresenter.deleteChildRequest'
+				it.name := '删除设备类别'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.deviceManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceManagementPresenter.createRequest'
+				it.name := '新建设备'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.deviceManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceManagementPresenter.deleteRequest'
+				it.name := '删除设备'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.deviceManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceManagementPresenter.modifyRequest'
+				it.name := '修改设备'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.deviceTypeCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceTypeCategoryManagementPresenter.createRequest'
+				it.name := '新建设备大类'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.deviceTypeCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceTypeCategoryManagementPresenter.deleteRequest'
+				it.name := '删除设备大类'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.deviceTypeCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceTypeCategoryManagementPresenter.modifyRequest'
+				it.name := '修改设备大类'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.deviceTypeCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceTypeCategoryManagementPresenter.createChildRequest'
+				it.name := '新建设备类别'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.deviceTypeCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceTypeCategoryManagementPresenter.modifyChildRequest'
+				it.name := '修改设备类别'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.deviceTypeCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceTypeCategoryManagementPresenter.deleteChildRequest'
+				it.name := '删除设备类别'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.deviceTypeCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceTypeCategoryManagementPresenter.setPMSpecRequest'
+				it.name := '设置默认PM计划'
+			]				
+		}
+		
+		update functions2{
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.basic'
+				it.functionId := "edu.fudan.langlab.uidl.domain.app.changePasswdPresenter"
+				it.name := '修改密码'
+			]
+			
+		}
+	}
+	
+	
+}

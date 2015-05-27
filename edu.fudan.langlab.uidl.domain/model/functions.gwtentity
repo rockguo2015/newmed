@@ -1,0 +1,7 @@
+package edu.fudan.langlab.uidl.domain.app feature web{
+	
+	ui-function systemadmin "系统管理"
+		ui-function roleManagementPresenter@systemadmin "系统角色管理"
+		ui-function roleFunctionAssignmentPresenter@systemadmin "系统功能权限设置"
+		ui-function codeManagementPresenter@systemadmin "基础代码管理" 
+}

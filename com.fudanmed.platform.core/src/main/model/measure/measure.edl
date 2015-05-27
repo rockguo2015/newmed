@@ -1,0 +1,290 @@
+package com.fudanmed.platform.core.measure{
+	
+	import java.util.Date
+	import java.util.Collection
+	import edu.fudan.mylang.utils.DateUtil
+	import edu.fudan.mylang.pf.*
+	import com.fudanmed.platform.core.domain.*
+	import edu.fudan.langlab.domain.code.Code
+	import edu.fudan.langlab.domain.common.*
+	import static com.uniquesoft.uidl.validation.Validates
+	import com.fudanmed.platform.core.deliver.DLResource
+	import edu.fudan.langlab.domain.security.ISystemUserService
+	import com.uniquesoft.uidl.validation.*
+	
+	entity RCMeasureDeviceType{
+		name : String
+		sid : String
+		op getMeasureDevices():Collection<RCMeasureDevice>{
+			#[from RCMeasureDevice as e where e.deviceType = {this}].list
+		}
+	}
+
+	entity-dao RCMeasureDeviceTypeDAO for RCMeasureDeviceType{
+		op getAllMeasureDeviceTypes():Collection<RCMeasureDeviceType>{
+			#[from RCMeasureDeviceType as e].list
+		}
+		op findByName(name:String):RCMeasureDeviceType{
+			#[from RCMeasureDeviceType as e where e.name = {name}].uniqueResult
+		}
+	}
+	
+	entity RCMeasureDevice{
+		deviceType : RCMeasureDeviceType
+		sid : String
+		name : String
+		location : String
+		lastValue : RCMeasureValue
+		op createValue(measureDate : Date, measurePerson : String):RCMeasureValue{
+			if(lastValue!=null)
+				Assert(measureDate.time>=lastValue.measureDate.time,"抄表时间不能早于已提交的记录")
+			doCreateValue()=>[
+				it.device := this
+				it.measureDate := measureDate
+				it.measurePerson := measurePerson
+				it.lastValue := lastValue
+				this.lastValue := it
+			]
+		}
+		op doCreateValue():RCMeasureValue
+		
+		
+		op checkValid():void{
+			Assert(deviceType!=null,"设备类型不能为空")
+			Assert(!sid.nullOrEmpty,"设备编号不能为空")
+			Assert(#[from RCMeasureDevice as e where e.sid = {sid} select count(*)].uniqueResult==1,"设备编号重复")
+		}
+	}
+	
+	
+	entity-dao RCMeasureDeviceDAO for RCMeasureDevice{
+		op ^delete(device : RCMeasureDevice):void{
+			delete device
+		}
+	}
+	
+	criteria RCMeasureDeviceCriteria for RCMeasureDevice{
+		type : RCMeasureDeviceType
+		sid : String
+		
+		condition self.deviceType = :type
+		condition self.sid = :sid
+	}
+	
+	entity RCMeasureValue{
+		device : RCMeasureDevice
+		measureDate : Date //抄表日期
+		measurePerson : String //抄表人
+		lastValue : RCMeasureValue
+		op toValueString():String
+		
+		op serializeValues():Collection<Double>
+		op deserializeValues(values:Collection<Double>):void
+	}
+	entity-dao RCMeasureValueDAO for RCMeasureValue{
+		op ^delete(value : RCMeasureValue):void{
+			delete value
+		}
+	}
+	criteria RCMeasureValueCriteria for RCMeasureValue{
+		deviceType : RCMeasureDeviceType
+		device : RCMeasureDevice
+		measureDateFrom : Date //抄表日期
+		measureDateTo : Date //抄表日期
+		
+		condition self.device.deviceType = :deviceType
+		condition self.device = :device
+		condition self.measureDate >= :measureDateFrom
+		condition self.measureDate <= :measureDateTo
+		
+		order by self.measureDate desc
+		
+	}
+	
+	
+	entity RCWaterMeasureDeviceType extends RCMeasureDeviceType{
+		op createDevice(init:(RCWaterMeasureDevice)=>void):RCWaterMeasureDevice{
+			create RCWaterMeasureDevice()=>[
+				it.deviceType := this
+				init.apply(it)
+			]=>[
+				checkValid
+				beanFactory.getBean(typeof(events.RCWaterMeasureDeviceEventsManager)).fireCreated(it)
+			]
+		}
+		//create-op createDevice : RCWaterMeasureDevice{
+		//	create RCWaterMeasureDevice()=>[it.deviceType := this]
+		//}
+	}
+	
+	entity RCWaterMeasureDevice extends RCMeasureDevice{
+		op doCreateValue():RCWaterMeasureValue{
+			create RCWaterMeasureValue()
+		}
+		op ^update(updater : (RCWaterMeasureDevice)=>void):void{
+			updater.apply(this)
+			checkValid
+			beanFactory.getBean(typeof(events.RCWaterMeasureDeviceEventsManager)).fireUpdateded(this)
+		}
+				
+	}
+	
+	entity RCWaterMeasureValue extends RCMeasureValue{
+		value : Double
+		op toValueString():String{
+			value.toString 
+		}
+		op getIncrementalValue():Double{
+			if(lastValue==null) value
+			else (value-(lastValue as RCWaterMeasureValue).value)
+		}
+		op serializeValues():Collection<Double>{
+			newArrayList(value)
+		}	
+		op deserializeValues(values:Collection<Double>):void{
+			value := values.iterator.^next
+		}	
+	}
+	
+	entity RCGasMeasureDeviceType extends RCMeasureDeviceType{
+		op createDevice(init:(RCGasMeasureDevice)=>void):RCGasMeasureDevice{
+			create RCGasMeasureDevice()=>[
+				it.deviceType := this
+				init.apply(it)
+			]=>[checkValid]
+		}
+	}
+	
+	entity RCGasMeasureDevice extends RCMeasureDevice{
+		op doCreateValue():RCMeasureValue{
+			create RCGasMeasureValue()
+		}
+		op ^update(updater : (RCGasMeasureDevice)=>void):void{
+			updater.apply(this)
+			checkValid
+		}
+		
+	}
+	
+	entity RCGasMeasureValue extends RCMeasureValue{
+		value : Double
+		op toValueString():String{
+			value.toString 
+		}
+		op getIncrementalValue():Double{
+			if(lastValue==null) value
+			else (value-(lastValue as RCGasMeasureValue).value)
+		}
+		op serializeValues():Collection<Double>{
+			newArrayList(value)
+		}		
+		op deserializeValues(values:Collection<Double>):void{
+			value := values.iterator.^next
+		}	
+		
+	}
+
+	entity RCElectricMeasureDeviceType extends RCMeasureDeviceType{
+		op createDevice(init:(RCElectricMeasureDevice)=>void):RCElectricMeasureDevice{
+			create RCElectricMeasureDevice()=>[
+				it.deviceType := this
+				init.apply(it)
+			]=>[checkValid]
+		}
+	}
+	
+	entity RCElectricMeasureDevice extends RCMeasureDevice{
+		op doCreateValue():RCMeasureValue{
+			create RCElectricMeasureValue()
+		}
+		op ^update(updater : (RCElectricMeasureDevice)=>void):void{
+			updater.apply(this)
+			checkValid
+		}
+		op ^delete():void{
+			delete this
+		}
+		
+	}
+	
+	entity RCElectricMeasureValue extends RCMeasureValue{
+		value : Double
+		op toValueString():String{
+			value.toString 
+		}
+		op getIncrementalValue():Double{
+			if(lastValue==null) value
+			else (value-(lastValue as RCElectricMeasureValue).value)
+		}
+		op serializeValues():Collection<Double>{
+			newArrayList(value)
+		}		
+		op deserializeValues(values:Collection<Double>):void{
+			value := values.iterator.^next
+		}	
+		
+	}
+
+	entity RCPhasedElectricMeasureDeviceType extends RCMeasureDeviceType{
+		op createDevice(init:(RCPhasedElectricMeasureDevice)=>void):RCPhasedElectricMeasureDevice{
+			create RCPhasedElectricMeasureDevice()=>[
+				it.deviceType := this
+				init.apply(it)
+			]=>[checkValid]
+		}
+	}
+	
+	entity RCPhasedElectricMeasureDevice extends RCMeasureDevice{
+		factor : Double
+		op doCreateValue():RCMeasureValue{
+			create RCPhasedElectricMeasureValue()
+		}
+		op ^update(updater : (RCPhasedElectricMeasureDevice)=>void):void{
+			updater.apply(this)
+			checkValid
+		}
+		
+	}
+	
+	entity RCPhasedElectricMeasureValue extends RCMeasureValue{
+		highValue : Double
+		averageValue : Double
+		peekValue : Double
+		lowValue : Double
+		maxRequiredValue : Double
+		noPowerValue : Double
+		op toValueString():String{
+			getTotalEfficentPower.toString
+		}
+		/*有功电量 */
+		op getTotalEfficentPower():Double{
+			highValue.nullsafe + averageValue.nullsafe + peekValue.nullsafe + lowValue.nullsafe
+		}
+		/*耗电量 */
+		op getConsumedPower():Double{
+			val t := if(lastValue==null) getTotalEfficentPower
+			else{
+				val v := lastValue as RCPhasedElectricMeasureValue
+				totalEfficentPower - v.totalEfficentPower				
+			}
+			t * (device as RCPhasedElectricMeasureDevice).factor	
+		}
+		op toIncrementValueString():String{
+			getConsumedPower.toString
+		}
+		op serializeValues():Collection<Double>{
+			newArrayList(highValue,averageValue,peekValue,lowValue,maxRequiredValue,noPowerValue)
+		}		
+		op deserializeValues(values:Collection<Double>):void{
+			val i := values.iterator
+			highValue := i.^next
+			averageValue := i.^next
+			peekValue := i.^next
+			lowValue := i.^next
+			maxRequiredValue := i.^next
+			noPowerValue := i.^next
+		}	
+		
+	}
+
+}

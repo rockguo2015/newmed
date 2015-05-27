@@ -1,0 +1,20 @@
+package edu.fudan.langlab.domain.organization{
+	
+	import edu.fudan.mylang.pf.*
+	import java.util.*	
+	import edu.fudan.langlab.domain.security.*
+
+	entity Party implements IHasSimplePy{
+		name : String
+		phone : String
+		email : String
+		address : String	/*联系方式 */
+		simplePy : String
+		op getEntityName(): String{
+			name
+		}
+		op getNameField():String{
+			"name"
+		}
+	}
+}

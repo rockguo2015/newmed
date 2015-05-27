@@ -1,0 +1,11 @@
+@sprite .select{
+	padding-left:15px;
+	gwt-image:'star_select';
+	cursor:pointer;
+}
+
+@sprite .noselect{
+	padding-left:15px;
+	gwt-image:'star';
+	cursor:pointer
+}

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module rename-to='security'>
+	<inherits name='com.google.gwt.user.User' />
+	<inherits name="com.google.gwt.i18n.I18N"/>
+	<inherits name="com.google.gwt.inject.Inject" />
+	<inherits name="com.google.common.collect.Collect" />
+	<inherits name='org.eclipse.xtext.xbase.lib.Lib' />	
+	<inherits name='com.uniquesoft.gwt.Sharedlib' />
+	<source path='client' />
+	<source path='shared' />
+
+</module>
+

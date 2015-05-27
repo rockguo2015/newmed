@@ -1,0 +1,25 @@
+@sprite .header {
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  font-family: Verdana,"宋体 ", "Lucida Grande", sans-serif;
+  border-color: #99BBE8;
+  gwt-image: "headerBackground";
+  height: auto;
+  padding-left:16px;
+  padding-top:0;
+  padding-bottom:0;
+}
+
+.headerText {
+  font-family: Verdana,"宋体 ", "Lucida Grande", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 41px;
+  padding-top:0;
+  padding-bottom:0;
+}
+
+.headerIcon {
+	padding-top:1px;
+}

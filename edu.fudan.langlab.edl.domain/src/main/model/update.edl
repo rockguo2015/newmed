@@ -1,0 +1,32 @@
+package edu.fudan.langlab.domain.updater{
+
+	import java.util.*
+	import edu.fudan.langlab.domain.updater.*
+	
+	/*
+	 * upgrade A from 1_0_0 to 1_0_1{
+	 * 
+	 * 		update AddRepairEvaluate(){
+	 * 		}
+	 * }
+	 */
+	entity UPSystemUpdateStatus{
+		curVersion : String
+	}
+	
+	entity UPUpdateStateRecord{
+		upgrader : String
+		fromVersionTag : String
+		updaterTag : String
+		updateDate : Date
+	}
+
+	
+
+
+	upgrade UPInit from V_0_0 to V_0_0{
+	
+	}
+	
+
+}

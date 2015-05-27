@@ -1,0 +1,9 @@
+.body {
+  border: none;
+  background: none;
+}
+
+.ghost ul {
+  background-color: #595959;
+  border-color: #1c252b;
+}

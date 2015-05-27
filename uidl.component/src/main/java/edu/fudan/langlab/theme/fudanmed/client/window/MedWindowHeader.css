@@ -1,0 +1,20 @@
+.header {
+  color:#ffffff;
+  font-size: 16px;
+  font-family: tahoma, arial, verdana, sans-serif; 
+  padding: 5px 0 4px;
+}
+
+.headerText{
+	padding-left:22px;
+}
+
+
+.headerHasIcon{
+	line-height: 40px;
+	padding-left:20px;
+}
+
+.headerBar {
+  padding-top: 6px;
+}

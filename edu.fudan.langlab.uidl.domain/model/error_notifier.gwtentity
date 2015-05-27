@@ -1,0 +1,41 @@
+package edu.fudan.langlab feature csv{
+	
+	ui-datatype UIErrorItem{
+		errorTitle : String "标题／位置"
+		errorMessage : String "信息"
+		
+		ui-component ErrorItemListGrid as GXTGrid{
+			binding{errorTitle,errorMessage}
+		}
+	}
+	
+	presenter ErrorMessagePresenter{
+		view interface{
+			op showErrorItems(results:UIErrorItem[*]):void
+		}
+		interaction{
+			input prepare.setup(results:UIErrorItem[*]){
+				this.activate[
+					getView().showErrorItems(results)
+					done
+				]
+			}
+		}
+	}
+	
+	view ErrorMessageView for ErrorMessagePresenter ui-title:'错误信息' ui-size:(400,300){
+		@Inject listGrid : ErrorItemListGrid
+		
+		con : Widget
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = listGrid.asWidget
+		}
+		showErrorItems(results:UIErrorItem[*]):void{
+			listGrid.objects = results
+		}
+	}
+	
+}

@@ -1,0 +1,196 @@
+
+package com.fudanmed.platform.core.warehouse{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.pm.*
+	import com.fudanmed.platform.core.entityextension.*
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+
+	upgrade V_0_4_upgrade from V_0_4 to V_0_5{
+		inject sequenceService : RCSequenceService
+		update updateRepairtaskMonth{
+			#[from RCRepairTask as e].list.forEach[
+				updateDerived
+			]
+		}
+
+		update updateGrouptaskMonth{
+			#[from RCGroupTask as e].list.forEach[
+				updateDerived
+			]
+		}
+		update updateWorkitemTaskMonth{
+			#[from RCWorkItemTask as e].list.forEach[
+				updateDerived
+			]
+		}
+		
+		update pmsequence{
+			sequenceService.computeConfig.pmWorkItemSequence := 0
+			#[from RCPMWorkItem as e].list.forEach[
+				it.sid := sequenceService.nextPMWorkItemSequence
+			]
+		}
+		
+		update onlineReportCode{
+			create RCFaultReportSource()=>[
+				it.codeid := '_01'
+				it.name := '自助报修'
+			]
+		}		
+		
+		update pmTeamFunction{
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.pmTeamWorkItemManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.PMTeamWorkItemManagementPresenter.assignWorkerRequest'
+				it.name := '派工'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.pmTeamWorkItemManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.PMTeamWorkItemManagementPresenter.reportFinishRequest'
+				it.name := '完成'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.pmTeamWorkItemManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.PMTeamWorkItemManagementPresenter.reportAllFinishRequest'
+				it.name := '完工上报'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.pmTeamWorkItemManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.PMTeamWorkItemManagementPresenter.pendRequest'
+				it.name := '延迟'
+			]			
+		}
+		
+		update statFunction{
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.statistics'
+				it.functionId := 'com.fudanmed.platform.core.web.GroupTaskStatByTeamCommand'
+				it.name := '班组接修统计'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.statistics'
+				it.functionId := 'com.fudanmed.platform.core.web.RepairTaskStatByMonthCommand'
+				it.name := '月份报修统计'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.process'
+				it.functionId := 'com.fudanmed.platform.core.web.pmTeamWorkItemManagementPresenter'
+				it.name := '班组PM工作台'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.deviceManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.AttributeSlotTreeListPresenter.editSlotValueRequest'
+				it.name := '修改设备参数'
+			]
+			
+		}
+		
+		update reportSourceStatFunction{
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.statistics'
+				it.functionId := 'com.fudanmed.platform.core.web.RepairTaskStatByReportSourceCommand'
+				it.name := '报修来源统计'
+			]
+		}
+		
+		update lostFunction20150115{
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.groupTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.GroupTaskManagementPresenter.printWorkItemRequest'
+				it.name := '打印工单'
+			]	
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.deviceTypeCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.device.DeviceTypeManagementPresenter.showAttributeSlotEditorRequest'
+				it.name := '扩展技术参数'
+			]					
+		}
+			
+		update primaryTypes2{
+			create RCStringType()
+			create RCDateType()
+			create RCNumberType()
+			create RCNumberWithUnitType()=>[
+				it.alias := "功率"
+				it.unit := "千瓦/时"
+			]
+			val t1 := create RCNumberWithUnitType()=>[
+				it.alias := "温度"
+				it.unit := "摄氏度"
+			]
+			create RCRangeType()=>[
+				it.numberType := t1
+			]
+			create RCNumberWithUnitType()=>[
+				it.alias := "流量"
+				it.unit := "m3/h"
+			]
+			create RCNumberWithUnitType()=>[
+				it.alias := "功"
+				it.unit := "KW"
+			]
+			create RCNumberWithUnitType()=>[
+				it.alias := "压强"
+				it.unit := "Pa"
+			]
+			create RCNumberWithUnitType()=>[
+				it.alias := "音量"
+				it.unit := "dB(A)"
+			]
+			create RCNumberWithUnitType()=>[
+				it.alias := "压强"				
+				it.unit := "Kpa"
+			]
+			create RCNumberWithUnitType()=>[
+				it.alias := "压强"								
+				it.unit := "Mpa"
+			]
+			create RCNumberWithUnitType()=>[
+				it.alias := "流量"
+				it.unit := "m/s"
+			]
+		}
+		
+		update StockTakingMistake{
+			#[from RCProductWarehouseStorage as e where e.quantity < 0].list.^map[summary].toSet.forEach[ RCProductWarehouseStorageSummary summary|
+				println(summary.store.entityName +":" + summary.productSpec.sid)
+				summary.getProductWarehouseStorages.forEach[
+					it.quantity := 0
+				]
+				summary.getProductWarehouseStorages.toList.reverse.head.quantity := summary.quantity
+			]
+		}	
+		
+		update OnsitePositionFullIdPath{
+			#[from RCOnsitePosition as p].list.forEach[
+				path := it.fullIdPath
+			]
+		}
+		
+		update fixFunctionDefinition{
+			#[from AppFunction as f where f.functionId like 'com.fudanmed.platform.core.web.client.device.DeviceTypeManagementPresenter%'].list.forEach[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.deviceTypeCategoryManagementPresenter'
+			]
+			#[from AppFunction as f where f.functionId = 'com.fudanmed.platform.core.web.client.device.DeviceTypeCategoryManagementPresenter.createChildRequest'].uniqueResult=>[
+				it.name := it.name + '[X]'
+			]
+			#[from AppFunction as f where f.functionId = 'com.fudanmed.platform.core.web.client.device.DeviceTypeCategoryManagementPresenter.modifyChildRequest'].uniqueResult=>[
+				it.name := it.name + '[X]'
+			]
+			#[from AppFunction as f where f.functionId = 'com.fudanmed.platform.core.web.client.device.DeviceTypeCategoryManagementPresenter.deleteChildRequest'].uniqueResult=>[
+				it.name := it.name + '[X]'
+			]
+			
+		}
+	}
+	
+}

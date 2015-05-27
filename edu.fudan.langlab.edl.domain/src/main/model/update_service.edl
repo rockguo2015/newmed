@@ -1,0 +1,56 @@
+package edu.fudan.langlab.domain.updater{
+
+	import java.util.*
+	import edu.fudan.langlab.domain.updater.*
+
+
+	service UpgradeExecutor{
+		inject upgraders : Collection<edu.fudan.langlab.domain.updater.IUpgrader>
+		
+		op execute():void{
+			upgraders.forEach[
+				it.doUpgrade()
+			]
+		}	
+	}
+	
+	service UpdateServie{
+		
+		op getSystemUpdateStatus():UPSystemUpdateStatus{
+			(#[from UPSystemUpdateStatus as s].uniqueResult.withDefault[
+				create UPSystemUpdateStatus()=>[
+					curVersion := "V_0_0"
+				]
+			])			
+		}
+		
+		op canPerformUpdate(upgrader:String,fromVersion : String,updaterTag : String ) : Boolean{
+			val curVersion := getSystemUpdateStatus.curVersion
+			if(!curVersion.equals(fromVersion)){
+				return false;
+			}
+			val result := #[from UPUpdateStateRecord as u 
+				where u.upgrader = {upgrader} and u.fromVersionTag = {fromVersion} and u.updaterTag = {updaterTag}
+			].uniqueResult == null
+			println("check update "+upgrader + "." + updaterTag +":" + result)
+			result
+		}
+		
+		op updaterCommited(upgrader:String,fromVersion : String,updaterTag : String ) : void{
+			create UPUpdateStateRecord()=>[
+				it.upgrader := upgrader
+				it.fromVersionTag := fromVersion
+				it.updaterTag := updaterTag
+				it.updateDate := new Date
+			]
+		}
+		
+		op upgraderCommited(fromVersion : String, toVersion : String) : void{
+			getSystemUpdateStatus()=>[
+				if(it.curVersion==fromVersion)
+					it.curVersion := toVersion
+			]
+		}
+		
+	}	
+}

@@ -1,0 +1,557 @@
+package com.fudanmed.platform.core.domain{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.document.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*	
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	import com.fudanmed.platform.core.domain.*
+	
+	service RCTaskDirtyManager{
+		
+		op getDirtyRecord(team : RCMaintenanceTeam) : RCDirtyRecord{
+			var result := #[from RCDirtyRecord as dr where dr.team = {team}].uniqueResult
+			if(result==null)
+				result := create RCDirtyRecord()=>[
+					it.team := team
+					it.isDirty4Team := false
+					it.isDirty4Scheduler := false
+				]
+			result
+		}
+		
+		op getReporterDirtyRecord() : RCReporterDirtyRecord{
+			var result := #[from RCReporterDirtyRecord as dr].uniqueResult
+			if(result==null)
+				result := create RCReporterDirtyRecord()=>[
+					isDirty := false
+				]
+			result
+		}
+		
+		op checkDirty(team : RCMaintenanceTeam) : Boolean{
+			getDirtyRecord(team).isDirty4Team
+		}
+		
+		op refreshed(team : RCMaintenanceTeam) : void{
+			getDirtyRecord(team).refreshed4Team()
+		}
+		
+		op notifyTeam(team : RCMaintenanceTeam) : void{
+			getDirtyRecord(team).notify4Team
+		}
+		op notifyScheduler(team:RCMaintenanceTeam) : void{
+			getDirtyRecord(team).notify4Scheduler
+		}
+		op notifyReported():void{
+			getReporterDirtyRecord().isDirty := true
+		}
+		op checkDirty():Boolean{
+			#[from RCDirtyRecord as dr].list.exists[it.isDirty4Scheduler] || getReporterDirtyRecord().isDirty 
+			
+		}
+		
+		op refreshed():void{
+			#[from RCDirtyRecord as dr].list.forEach[
+				refreshed4Scheduler
+			]
+			getReporterDirtyRecord().isDirty := false
+		}
+	}
+	
+	entity RCReporterDirtyRecord{
+		isDirty : Boolean
+	}
+	
+	entity RCDirtyRecord{
+		team : RCMaintenanceTeam
+		isDirty4Team : Boolean
+		isDirty4Scheduler : Boolean
+		
+		op refreshed4Team():void{
+			isDirty4Team := false
+		}
+		
+		op notify4Team():void{
+			isDirty4Team := true
+		}
+		
+		op refreshed4Scheduler():void{
+			isDirty4Scheduler := false
+		}
+		
+		op notify4Scheduler():void{
+			isDirty4Scheduler := true
+			
+		}
+	}
+	
+
+	
+
+	
+	/*投诉 */
+	entity RCComplaint{
+		
+		belongs to repairTask : RCRepairTask
+		
+		date : Date
+		contents : String
+		owner : RCEmployee
+	}
+	
+	/*到达及时性 */
+	enum RCArrivalTime{
+		good normal bad
+	}
+	
+	/*服务态度 */
+	enum RCServiceAttitude{
+		good normal bad
+	}
+	
+	/*同一问题维修频率 */
+	enum RCFrequencyProblem{
+		good normal bad
+	}
+	
+	enum RCRepairQuality{
+		good normal bad
+	}
+	
+	enum RCEvaluateState{
+		notReady waiting finished autoCommitted
+	}
+	
+	/*评价 */
+	entity RCRepairEvaluate{
+		evaluateState : RCEvaluateState := RCEvaluateState::notReady
+		arrivalTime : RCArrivalTime 
+		serviceAttitude : RCServiceAttitude
+		frequencyProblem : RCFrequencyProblem 
+		repairQuality : RCRepairQuality
+		arrivalTimeValue : Integer 
+		serviceAttitudeValue : Integer
+		frequencyProblemValue : Integer 
+		repairQualityValue : Integer
+		comment : String
+		
+		evaluator : RCEmployee
+		readyDate : Date
+		evaluateDate : Date
+		
+		op commit():void{
+			evaluateState := RCEvaluateState::finished
+		}
+		
+		op autoCommit():void{
+			evaluateState := RCEvaluateState::autoCommitted
+			evaluateDate := DateUtil::today
+			arrivalTimeValue := 5
+			serviceAttitudeValue := 5
+			frequencyProblemValue := 5
+			repairQualityValue := 5
+		}
+	}
+	
+	/*调度单 */
+	entity RCGroupTask implements IHasDocuments{
+		belongs to repairTask : RCRepairTask
+		team : RCMaintenanceTeam
+		date : Date
+		time : Date
+		comment : String
+	
+		finishDate : Date
+		finishTime : Date
+		operator : RCEmployee
+		
+		month : String
+		
+		part tasks : RCWorkItemTask[*] opposite groupTask
+		
+		op getAmount():Double{
+			tasks.^map[amount].reduce[Double d1, Double d2|d1+d2].nullsafe
+		}
+		
+		op allTasksFinished():Boolean{
+			tasks.forall[it.isEnd]
+		}
+		op allTasksFinishedExcept(task : RCWorkItemTask):Boolean{
+			tasks.forall[it==task || it.isEnd]
+		}
+		op updateDerived():void{
+			month := DateUtil::getMonth(date).serialize
+		}			
+		
+		op hasMisDispatchedTask():Boolean{
+			tasks.exists[task|
+				switch(task.getStatus){
+					case RCWorkItemTaskStatus::misDispatching :{
+						true
+					}
+					default:{false}
+				}
+			]
+		}
+		
+		op isEnd() : Boolean{
+			allTasksFinished
+		}
+		
+		op getStorage() : Collection<RCWorkItemStorage>{
+			tasks.^map[storage].flatten.toList
+		}
+		
+		op getTaskDirtyManager():RCTaskDirtyManager{
+			beanFactory.getBean(typeof(RCTaskDirtyManager))
+		}
+		op getDocuments():Collection<? extends IDocument>{
+			tasks.^map[documents].flatten.toList
+		}
+		behavior Status{
+			state newCreated
+			state wait4TeamOwnerProcess
+			state wait4TasksFinish
+			state finished
+			state misDispatched
+			state canceled
+
+			signal reportFinish		//manual
+			signal taskFinished
+			signal taskCreated
+			signal reportMisdispatch
+			signal cancel
+						
+			start(){
+				taskDirtyManager.notifyTeam(team)
+				updateDerived
+				next state newCreated
+			}
+			
+			on wait4TeamOwnerProcess{
+				input reportFinish(){
+					if(!hasMisDispatchedTask)
+						repairTask.groupTaskFinished(this)
+					else 
+						repairTask.misdispatch(this)
+					taskDirtyManager.notifyScheduler(team)
+					next state finished
+				}
+			}
+			
+			on newCreated{
+				input cancel(){
+					next state canceled
+				}
+			}
+			
+			on newCreated,wait4TeamOwnerProcess{
+				input reportMisdispatch(){
+					repairTask.misdispatch(this)
+					taskDirtyManager.notifyScheduler(team)
+					next state misDispatched
+				}
+			}
+			
+			on newCreated,wait4TeamOwnerProcess,wait4TasksFinish{
+				input taskCreated(task : RCWorkItemTask){
+					switch(this.Status){
+						case RCGroupTaskStatus::newCreated:{
+							this.repairTask.firstWorkItemCreated
+						}
+					}
+					next state wait4TasksFinish
+				}
+			}
+			
+			on wait4TasksFinish{
+				input taskFinished(task : RCWorkItemTask){
+					if(allTasksFinished){
+						next state wait4TeamOwnerProcess
+					}else{
+						next state wait4TasksFinish
+					}
+				}
+			}
+		}
+		
+		op createWorkItemTask() : RCWorkItemTask{
+			create RCWorkItemTask(this)=>[
+				it.sid := beanFactory.getBean(typeof(RCSequenceService)).nextWorkItemTaskSequence
+				^start
+			]
+		}
+	}
+	
+
+	
+	/*
+	 * report RCGroupTaskReportByTeam for RCGroupTaskCriteria{
+	 * 		cnt : count(*)
+	 * 		maxDate : max(date)
+	 * 		group by team
+	 * }
+	 */
+	
+	criteria RCWorkItemTask4WorkersCriteria for RCWorkItemTask{
+		join self.workers as worker
+		dateFrom : Date
+		dateTo : Date
+		department : RCMaintenanceTeam
+		
+		condition self.groupTask.team = :department
+		condition self.date >= :dateFrom
+		condition self.date <= :dateTo
+		
+		
+	}
+	
+	stat-criteria RCWorkItemTask4WorkersStatCriteria for RCWorkItemTask4WorkersCriteria{
+		group by worker : worker
+		cnt: count(*)
+	}
+	
+	entity RCWorkItemPicture extends DocumentStorage{
+		belongs to workitemTask : RCWorkItemTask
+		op getContainer():IDocumentContainer{
+			workitemTask
+		}
+	}
+	
+	entity RCWorkItemTask extends RCRCProductStorageContainer implements INamedModelObject, IDocumentContainer{
+
+		belongs to groupTask : RCGroupTask
+		sid : String
+		date : Date
+		time : Date
+		
+		finishDate : Date
+		finishTime : Date
+		
+		workers : RCEmployee[*]
+		comment : String
+		
+		operator : RCEmployee
+		faultType : RCFaultType
+		faultDescription : String
+		
+		part documents : RCWorkItemPicture[*] opposite workitemTask
+		op createDocument(init:(IDocument)=>void):IDocument{
+			createAndAddtoDocuments()=>[
+				init.apply(it)
+				it.name := sid + ':' + it.name.nullsafe
+			]
+		}
+		op removeDocument(document : IDocument):void{
+			removeFromDocuments(document as RCWorkItemPicture)
+		}
+		
+		month : String
+		
+		op getEntityName():String{
+			sid
+		}
+		
+		op getTaskOwners() : Collection<RCEmployee>{
+			workers
+		}
+		
+		op getDescription():String{
+			comment
+		}
+		
+		op isEnd() : Boolean{
+			var result := switch(this.Status){
+				case RCWorkItemTaskStatus::processing:{
+					false
+				}
+				case RCWorkItemTaskStatus::outsourcing:{
+					false
+				}
+				case RCWorkItemTaskStatus::pending:{
+					false
+				}
+				case RCWorkItemTaskStatus::followuping:{
+					false
+				}
+				default:{
+					true
+				}
+			}
+			result
+		}
+	
+		op getOutStoreRecord() : Collection<RCWorkItemStockRecord>{
+			#[from RCWorkItemStockRecord as r where r.workItem = {this}].list
+		}
+		
+		op getStorage() : Collection<RCWorkItemStorage>{
+			#[from RCWorkItemStorage as s where s.workItem = {this}].list
+		}
+		op getAllProductStorage(productSpec : RCProductSpecification) : Collection<RCProductStorage>{
+			#[
+				from RCWorkItemStorage as ps where 
+					ps.productEntry.productSpec = {productSpec} and ps.workItem = {this} order by ps.productEntry.inStockRecord.date
+			].list.filter(typeof(RCProductStorage)).toList
+			
+		}
+		
+		op getAmount() : Double{
+			getStorage().^map[amount].reduce[Double d1, Double d2|d1+d2].nullsafe
+		}
+		op getOrCreateProductStorage(productEntry : RCProductEntry) : RCProductStorage{
+			#[
+				from RCWorkItemStorage as ps where 
+					ps.productEntry = {productEntry} and ps.workItem = {this}
+			].uniqueResult.withDefault[
+				create RCWorkItemStorage()=>[
+					it.workItem := this
+					it.productEntry := productEntry
+					it.quantity := 0
+				]
+			]
+			
+		}
+		op updateDerived():void{
+			month := DateUtil::getMonth(date).serialize
+		}			
+				
+		behavior Status{
+			
+			signal pend
+			signal cancelPend	//to final
+			signal outsource
+			signal followup
+			signal finishOutsource	//to final
+			signal misDispatching	//to final
+			signal finish	//to final
+			signal cancel
+		
+			state processing
+			state followuping
+			state pending
+			state outsourcing
+			state misDispatching	//final state
+			state pendFinish	//final state
+			state outsourceFinish	//final state
+			state finished	//final state
+			state canceled
+			
+			start(){
+				next state processing
+				groupTask.taskCreated(this)
+			}
+	
+			on processing{
+				input followup(){
+					next state followuping
+				}
+				input pend(){
+					next state pending
+				}
+				input misDispatching(){
+					next state misDispatching
+					groupTask.taskFinished(this)
+				}
+				input outsource(){
+					next state outsourcing
+				}
+				input cancel(){
+					next state canceled
+				}
+			}
+			
+			on pending{
+				input cancelPend(){
+					next state pendFinish
+					groupTask.taskFinished(this)
+				}
+			}
+			
+			on outsourcing{
+				input finishOutsource(){
+					next state outsourceFinish
+					groupTask.taskFinished(this)
+				}
+			}
+			
+			on followuping,processing{
+				input finish(){
+					next state finished
+					groupTask.taskFinished(this)
+				}
+				
+			}
+		}
+	}
+	
+	entity RCSettlement{
+		sid : String
+		date : Date
+		fromDate : Date
+		toDate : Date
+		description : String
+		totalAmount : Double
+		
+		op getAllItems():Collection<RCRepairTask>{
+			#[from RCRepairTask as rk where rk.settlement = {this}].list
+		}
+		
+		op getAllMaterialItems() : Collection<RCWorkItemStorage>{
+			#[from RCWorkItemStorage as s where s.workItem.groupTask.repairTask.settlement={this}].list
+		}
+		
+		op calculate():void{
+			totalAmount := getAllItems().^map[amount].reduce[Double d1,Double d2|d1+d2].nullsafe
+		}
+	}
+	
+	criteria RCSettlementCriteria for RCSettlement{
+		order by self.date desc
+	}
+
+	service RCSettlementService{
+		inject sequenceService : RCSequenceService
+		op createSettlement(preInit : (RCSettlement)=>void):RCSettlement{
+			create RCSettlement()=>[
+				preInit.apply(it)
+				it.sid := sequenceService.nextSettlementSequence
+				it.date := DateUtil::now
+			]
+		}
+		
+		op cancelSettlement(settlement : RCSettlement) : void{
+			settlement.allItems.forEach[cancelSettlement]
+			delete settlement
+		}
+		
+		op attachSettlementItems(settlement : RCSettlement, repairTasks : Iterable<RCRepairTask>) : void{
+			repairTasks.forEach[attachToSettlement(settlement)]
+			settlement.calculate
+		}
+		
+		op detachSettlementItem(settlement : RCSettlement, repairTask : RCRepairTask) : void{
+			repairTask.cancelSettlement
+			settlement.calculate
+		}
+	}
+	
+	
+	service RCWorkflowService{
+		inject systemUserService : ISystemUserService
+		inject securityService : SecurityService
+		
+		op loadMaintenanceTeams4SystemUser() : Collection<RCMaintenanceTeam>{
+			val userRoles := securityService.getAllRoles4User(systemUserService.currentUser.userid).^map[it.roleId]
+			val teams := #[from RCMaintenanceTeam as t].list
+			teams.filter[team|userRoles.exists[it==team.role.roleId]].toList
+		}
+		
+	}
+}

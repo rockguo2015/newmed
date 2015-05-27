@@ -1,0 +1,692 @@
+package com.fudanmed.platform.core.warehouse{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	import static com.uniquesoft.uidl.validation.Validates
+	
+	service RCWarehouseCodeTypeProvider implements CodeTypeProvider{
+		op getCodeTypes() : Collection<CodeType> {
+			newArrayList(
+				new CodeType("计量单位",typeof(impl.RCProduceSpecificationUnitImpl)),
+				new CodeType("入库类型",typeof(impl.RCInStoreTypeImpl))
+			)
+		}
+	}
+	
+	
+	//材料规格
+	entity RCProduceSpecificationUnit extends Code{
+	}
+	
+	//入库类型
+	entity RCInStoreType extends Code{
+	}
+	
+
+	entity RCProductSpecification implements IHasSimplePy{
+		sid : String //条码
+		
+		materialId : String //物品编号
+		brandType : RCMaterialBrand //品牌 
+		referencePrice : Double //参考单价
+		shelfLife : Integer //保质期(天)
+		lowerStorage : Integer //最小库存
+		upperStorage : Integer //最大库存
+		
+		name : String
+		typeDesc : String //型号
+		productType : RCProductType 
+		unit : RCProduceSpecificationUnit
+		defaultSupplier : RCSupplier
+		simplePy : String
+		
+		op getEntityName():String{
+			name
+		}
+		op getNameField():String{
+			"name"
+		}
+	}
+	
+	service RCProductSpecificationDAO{
+		op findBySid(sid : String) : RCProductSpecification{
+			#[from RCProductSpecification as s where s.sid = {sid}].uniqueResult
+		}
+		
+		op findByMaterialId(materialId : String) : RCProductSpecification{
+			#[from RCProductSpecification as s where s.materialId = {materialId}].uniqueResult
+			
+		}
+	}
+	
+	criteria RCProductSpecificationCriteria for RCProductSpecification{
+		info : String
+		transient category : RCProductCategory
+		/*derived */ categoryPath : String
+		op postInitialize():void{
+			if(category!=null)
+				categoryPath := '%['+category.^id+']%'
+		}
+		condition self.productType.categoryPath like :categoryPath
+		
+		condition self.sid like :info or 
+			self.name like :info or 
+			self.simplePy like :info or 
+			self.typeDesc like :info or
+			self.materialId like :info
+	}
+	
+	//商品大类
+	entity RCProductCategory implements IHasSimplePy{
+		code : String
+		name : String
+		simplePy : String
+		belongs to parent : RCProductCategory
+		part subCategories : RCProductCategory[*] opposite parent
+		part productTypes : RCProductType[*] opposite category
+		op getEntityName():String{
+			name
+		}
+		op getNameField():String{
+			"name"
+		}
+	}
+	
+	service RCProductCategoryDAO{
+		op findByCode(code : String):RCProductCategory{
+			#[from RCProductCategory as p where p.code = {code}].uniqueResult
+		}
+		op getAllToplevelCategories():Iterable<RCProductCategory>{
+			#[from RCProductCategory as p where p.parent is null].list
+		}
+	}
+	//商品类别
+	entity RCProductType implements IHasSimplePy{
+		belongs to category : RCProductCategory
+		code : String
+		name : String
+		simplePy : String
+		categoryPath : String
+		op updateCategoryPath():void{
+			var categoryp := ""
+			var curCategory := this.category
+			while(curCategory!=null){
+				categoryp := categoryp + '['+curCategory.^id.toString+']'
+				curCategory := curCategory.parent
+			}
+			this.categoryPath := categoryp
+		}	
+		op getEntityName() : String{
+			name
+		}
+		op getNameField():String{
+			"name"
+		}
+	}
+	
+	service RCProductTypeDAO{
+		op findByCode(code : String) : RCProductType{
+			#[from RCProductType as t where t.code = {code}].uniqueResult
+		}
+	}
+	
+	criteria RCProductTypeCriteria for RCProductType{
+		info : String
+		condition self.name like :info or self.simplePy like :info
+	}
+
+	abstract entity RCRCProductStorageContainer{
+		
+		/*按照批次先入先出的原则，计算从库存中取出指定数量的产品的集合（仅仅计算）*/
+		op outStockCalculate(productSpec : RCProductSpecification, quantity : Integer, isReturnOp : Boolean) : Collection<RCRecordItem>{
+			val Collection<Integer> takes := newArrayList
+			val productStorages := if(!isReturnOp) getAllProductStorage(productSpec) else getAllProductStorage(productSpec).toList.reverse
+			productStorages.^map[storage|
+				val quantityToTake := Math::^min(quantity -takes.reduce[Integer i1, Integer i2|i1+i2].nullsafe,storage.quantity)
+				takes.^add(quantityToTake)
+				new RCRecordItem()=>[
+					it.productEntry := storage.productEntry
+					it.quantity := quantityToTake
+				]
+			].filter[it.quantity!=0].toList
+		}
+		op inStock(productEntry : RCProductEntry, quantity : Integer) : RCProductStorage{
+			getOrCreateProductStorage(productEntry)=>[
+				it.quantity := it.quantity + quantity
+				Assert(it.quantity>=0,"操作将导致"+productEntry.productSpec.name+"库存数量小于0")
+				
+			]
+		}
+		op getAllProductStorage(productSpec : RCProductSpecification) : Collection<RCProductStorage>
+		op getOrCreateProductStorage(productEntry : RCProductEntry) : RCProductStorage
+	}
+	
+	entity RCWarehouse extends RCRCProductStorageContainer implements INamedModelObject{
+		name : String
+		location : String
+		isMajor : Boolean
+		storeManager : RCEmployee[*]
+		relatedTeams : RCMaintenanceTeam[*]
+		
+		op inStock(productEntry : RCProductEntry, quantity : Integer) : RCProductStorage{
+			Assert(beanFactory.getBean(typeof(RCStockTakingService)).canPerformStockOperation(this),"正在盘点中")			
+			val result := super.inStock(productEntry,quantity)
+			val ss := beanFactory.getBean(typeof(RCWarehouseService)).findOrCreateSummaryData(this,productEntry.productSpec)
+			ss.quantity := ss.quantity + quantity
+			Assert(ss.quantity>=0,"操作将导致"+productEntry.productSpec.name+"库存数量小于0")
+			ss.amount := ss.amount + productEntry.price * quantity
+			result
+		}
+		
+		op getlastProductStorage(productSpec : RCProductSpecification) : RCProductWarehouseStorage{
+			#[
+				from RCProductWarehouseStorage as ps where 
+					ps.productEntry.productSpec = {productSpec} and ps.store = {this} order by ps.productEntry.inStockRecord.date desc
+			].setMaxResults(1).uniqueResult			
+		}
+		
+		op getAllProductStorage(productSpec : RCProductSpecification) : Collection<RCProductStorage>{
+			#[
+				from RCProductWarehouseStorage as ps where 
+					ps.productEntry.productSpec = {productSpec} and ps.store = {this} and ps.quantity <> 0 order by ps.productEntry.inStockRecord.date
+			].list.filter(typeof(RCProductStorage)).toList
+			
+		}		
+		op getOrCreateProductStorage(productEntry : RCProductEntry) : RCProductStorage{
+			#[
+				from RCProductWarehouseStorage as ps where 
+					ps.productEntry = {productEntry} and ps.store = {this}
+			].uniqueResult.withDefault[
+				create RCProductWarehouseStorage()=>[
+					it.store := this
+					it.quantity := 0
+					it.productEntry := productEntry
+				]
+				
+			]
+		}		
+		op getEntityName():String{
+			name
+		}
+	}
+	
+	entity-dao RCWarehouseDAO for RCWarehouse{
+		
+		inject systemUserService : ISystemUserService
+		op findManagedWarehouse(employee : RCEmployee) : Collection<RCWarehouse>{
+			#[from RCWarehouse as e join e.storeManager as sm where sm = {employee} select distinct e].list
+		}
+		op findManagedWarehouse():Collection<RCWarehouse>{
+			findManagedWarehouse(systemUserService.currentUserAsParty as RCEmployee)
+		}
+	}
+	
+	//入库单
+	entity RCInStockRecord {
+		sid : String
+
+		operator : RCEmployee
+		date : Date
+		comment : String
+
+		store : RCWarehouse //目标仓库
+		supplier : RCSupplier //供应商
+		part items : RCInStockRecordItem[*] opposite inStockRecord
+		
+		committed : Boolean := false
+		
+		inStoreType : RCInStoreType //入库类型
+		invoiceNumber : String //发票号码
+		deliverNumber : String //送货单号
+		
+		op commit(operator : RCEmployee):void{
+			this.operator := operator
+			this.date := DateUtil::now
+			items.forEach[item|
+				create RCProductEntry()=>[
+					it.sid := item.sid
+					it.productSpec := item.productSpec
+					it.price := item.price
+					it.quantity := item.quantity
+					it.inStockRecord := this
+					
+					val storage := store.inStock(it,item.quantity)
+					
+					create RCInStoreTransaction(storage)=>[
+						it.inStoreRecord := this
+						it.quantity := item.quantity
+						it.date := DateUtil::now
+						it.operator := operator
+						transactionCommitted
+					]
+				]
+			]
+			committed := true
+		}
+	}
+	
+	criteria RCInStockRecordCriteria for RCInStockRecord{
+		sid : String //入库单号
+		condition self.sid = :sid
+		
+		dateFrom : Date
+		dateTo : Date
+		condition self.date >= :dateFrom
+		condition self.date <= :dateTo
+		
+		stores : Collection<Long> := newArrayList
+		condition self.store.id in :stores
+		
+		order by self.date desc
+		
+	}
+	entity RCInStockRecordItem{
+		belongs to inStockRecord : RCInStockRecord
+		sid : String //	批次
+		productSpec : RCProductSpecification
+		price : Double	//成本单价
+		quantity : Integer	//总数量
+	}
+
+	entity RCInStoreTransaction extends RCProductStoreTransaction{
+		inStoreRecord : RCInStockRecord
+		op getEventRecordSid() : String{
+			inStoreRecord.sid		
+		}
+		op getTransactionTypeDesc() : String{
+			inStoreRecord.inStoreType.name
+//			"产品入库"
+		}
+		op transactionCommitted():void{
+			transactionCommitted[it,quantity,amount|
+				it.inStockQuantity := it.inStockQuantity +quantity
+				it.inStockAmount := it.inStockAmount +amount
+				
+			]
+		}
+	}
+	
+	//------
+	
+	//------
+	
+	
+	/*
+	 * 物理产品目录：入库时每一条记录都被看做单独的产品（单价、供应商等信息不同）
+	 * 
+	 */
+	entity RCProductEntry implements INamedModelObject{
+		sid : String	//批次代码
+		productSpec : RCProductSpecification
+
+		inStockRecord : RCInStockRecord
+		price : Double	//成本单价
+		quantity : Integer	//入库时总数量
+		
+		op getEntityName():String{
+			productSpec.name
+		}
+	}
+
+	/*
+	 * 逻辑产品目录。
+	 * 对于同一个品种的产品，多个批次被看做为不同的物理产品。
+	 * 对于客户，大多数情况下只需要了解同一个品种产品的合计信息，包括数量和总金额。
+	 * 本实体对象给出了一个仓库中特定品种产品的汇总信息
+	 */
+	entity RCProductWarehouseStorageSummary{
+		store : RCWarehouse
+		productSpec : RCProductSpecification
+		quantity : Integer
+		amount : Double
+		
+		op getTransactions() : Collection<RCProductStoreTransaction>{
+			getProductWarehouseStorages().^map[transactions].flatten.sortBy[date].reverse
+		}
+		
+		op getProductWarehouseStorages() : Collection<RCProductWarehouseStorage>{
+			#[from RCProductWarehouseStorage as w where w.store = {store} and w.productEntry.productSpec = {productSpec}].list
+		}
+	}
+
+	criteria RCProductWarehouseStorageSummaryCriteria for RCProductWarehouseStorageSummary{
+		store : RCWarehouse
+		productSpec : RCProductSpecification
+		productType : RCProductType 
+		productInfo : String
+		stores : Collection<Long> := newArrayList
+		condition self.store.id in :stores
+		condition self.store = :store
+		condition self.productSpec.productType = :productType
+		condition self.productSpec = :productSpec	
+		condition self.productSpec.name like :productInfo or self.productSpec.simplePy like :productInfo or self.productSpec.sid like :productInfo 
+	}
+	
+	datatype RCProductSpecificationSummary{
+		productSpec : RCProductSpecification
+		quantity : Integer
+	}
+
+	/* */
+	entity RCProductStorage implements INamedModelObject{
+		productEntry : RCProductEntry
+		quantity : Integer
+		part transactions : RCProductStoreTransaction[*] opposite productStorage
+		
+		op getEntityName():String{
+			productEntry.productSpec.name
+		}
+		op getAmount() : Double{
+			productEntry.price * quantity
+		}
+	}
+	
+	/*
+	 * from RCProductStoreTransaction as e  select ()
+	 */
+	
+	entity RCProductWarehouseStorage extends RCProductStorage{
+		store : RCWarehouse
+		
+		op getSummary():RCProductWarehouseStorageSummary{
+			#[from RCProductWarehouseStorageSummary as e where e.productSpec = {productEntry.productSpec} and e.store = {store}].uniqueResult
+		}
+	}
+	
+	enum RCTransactionType{
+		
+	}
+	/*
+	 * 库存变动快照。以每一天为单位，记录每一个在仓库上发生的变动和当天结束是的库存。
+	 */
+	entity RCProductSummarySnapshot{
+		storageSummary : RCProductWarehouseStorageSummary
+		quantity: Integer:=0
+		amount : Double:=0d
+		date : Date
+		inStockQuantity :Integer := 0
+		inStockAmount : Double :=0d
+		outStockQuantity :Integer := 0
+		outStockAmount : Double :=0d
+		stockTakingStockQuantity :Integer := 0
+		stockTakingStockAmount : Double :=0d
+		transferStockQuantity :Integer := 0
+		transferStockAmount : Double :=0d
+		workitemStockQuantity :Integer := 0
+		workitemStockAmount : Double :=0d
+	}
+	entity-dao RCProductSummarySnapshotDAO for RCProductSummarySnapshot{
+		op createOrFindSnapshot(date : Date,storageSummary : RCProductWarehouseStorageSummary, init : (RCProductSummarySnapshot)=>void):RCProductSummarySnapshot{
+			val lastSnapshot := findLastSnapshot(date,storageSummary)
+			var result := #[from RCProductSummarySnapshot as e where e.storageSummary={storageSummary} and e.date = {date}].uniqueResult
+			if(result==null) result := create RCProductSummarySnapshot()=>[
+				it.storageSummary := storageSummary
+				it.date := date
+				it.quantity := lastSnapshot.quantity
+				it.amount := lastSnapshot.amount
+			]
+			init.apply(result)
+			result
+		}
+		
+		op findLastSnapshot(date : Date,storageSummary : RCProductWarehouseStorageSummary):RCProductSummarySnapshot{
+			var result := #[from RCProductSummarySnapshot as e where e.storageSummary={storageSummary} and e.date < {date} order by e.date desc].setMaxResults(1).uniqueResult
+			if(result==null) new impl.RCProductSummarySnapshotImpl()=>[
+				it.quantity := 0
+				it.amount := 0d
+			]
+			else result
+			
+		}
+	}
+	
+	criteria RCProductSummarySnapshotCriteria for RCProductSummarySnapshot{
+		dateFrom : Date
+		dateTo : Date
+		store : RCWarehouse
+		productSpec : RCProductSpecification
+		
+		condition self.date >= :dateFrom
+		condition self.date <= :dateTo
+		condition self.storageSummary.productSpec = :productSpec
+		condition self.storageSummary.store = :store
+		
+	}
+	
+	stat-criteria RCProductSummarySnapshotStatCriteria for RCProductSummarySnapshotCriteria{
+		group by storageSummary : self.storageSummary
+		inStockQuantity : sum(self.inStockQuantity)
+		inStockAmount :sum(self.inStockAmount)
+		outStockQuantity :sum(self.outStockQuantity)
+		outStockAmount :sum(self.outStockAmount)
+		stockTakingStockQuantity :sum(self.stockTakingStockQuantity)
+		stockTakingStockAmount : sum(self.stockTakingStockAmount)
+		transferStockQuantity :sum(self.transferStockQuantity)
+		transferStockAmount :sum(self.transferStockAmount)
+		workitemStockQuantity :sum(self.workitemStockQuantity)
+		workitemStockAmount : sum(self.workitemStockAmount)
+		
+		order by self.storageSummary.productSpec.sid
+		
+	}
+	entity RCWorkItemStorage extends RCProductStorage{
+		workItem : RCWorkItemTask
+	}
+	
+	criteria RCProductWarehouseStorageCriteria for RCProductWarehouseStorage{
+		productInfo : String
+		store : RCWarehouse
+		productSpec : RCProductSpecification
+		
+		condition self.productEntry.productSpec.name like :productInfo or self.productEntry.productSpec.simplePy like :productInfo or self.productEntry.productSpec.sid like :productInfo 
+		condition self.store = :store
+		condition self.productEntry.productSpec = :productSpec
+	}
+	
+	entity RCProductStoreTransaction{
+		belongs to productStorage : RCProductStorage
+		date : Date
+		quantity : Integer
+		operator : RCEmployee
+		
+		op getTransactionTypeDesc() : String
+		op getEventRecordSid() : String  //单据编号
+		op transactionCommitted(init:(RCProductSummarySnapshot,Integer, Double)=>void):void{
+			switch(productStorage){
+				RCProductWarehouseStorage:{
+					
+					beanFactory.getBean(typeof(RCProductSummarySnapshotDAO)).createOrFindSnapshot(DateUtil::trimDate(date),productStorage.summary)[
+						it.quantity := it.quantity + this.quantity
+						it.amount := it.amount + this.productStorage.productEntry.price*this.quantity
+						init.apply(it,this.quantity,this.productStorage.productEntry.price*this.quantity)
+					]
+				}
+			}
+		}
+		
+		op transactionCommitted():void
+	}
+	
+	criteria RCProductStoreTransactionCriteria for RCProductStoreTransaction{
+		productStorage : RCProductStorage
+		condition self.productStorage = :productStorage
+		
+		order by self.date desc
+	}
+	entity RCTransferRecord {
+		sid : String
+		operator : RCEmployee
+		date : Date
+		comment : String
+		
+		sourceStore : RCWarehouse
+		targetStore : RCWarehouse
+		part items : RCTransferRecordItem[*] opposite transferRecord
+		
+		committed : Boolean := false
+		
+		op initItemsFromSummary(summaryItems : Collection<RCProductSpecificationSummary>):void{
+			removeAllItems
+			summaryItems.forEach[summaryItem|
+				sourceStore.outStockCalculate(summaryItem.productSpec,summaryItem.quantity,false).forEach[resultItem|
+					createAndAddtoItems=>[
+						it.recordItem.productEntry := resultItem.productEntry
+						it.recordItem.quantity := resultItem.quantity
+					]
+				]
+			]
+		}
+		
+		op commit(operator : RCEmployee):void{
+			this.operator := operator
+			this.date := DateUtil::now
+			items.forEach[item|
+				val sourceStorage := sourceStore.inStock(item.recordItem.productEntry,-item.recordItem.quantity)
+				create RCTransferTransaction(sourceStorage)=>[
+					it.transferRecord := this
+					it.quantity := -item.recordItem.quantity
+					it.date := DateUtil::now
+					it.operator := operator
+					it.transactionCommitted
+				]
+				val targetStorage := targetStore.inStock(item.recordItem.productEntry,item.recordItem.quantity)
+				create RCTransferTransaction(targetStorage)=>[
+					it.transferRecord := this
+					it.quantity := item.recordItem.quantity
+					it.date := DateUtil::now
+					it.operator := operator
+					it.transactionCommitted
+				]
+			]
+			committed := true
+		}
+	}
+	
+	criteria RCTransferRecordCriteria for RCTransferRecord{
+		targetStore : RCWarehouse
+		condition self.targetStore = :targetStore	
+		dateFrom : Date
+		dateTo : Date
+		condition self.date >= :dateFrom
+		condition self.date <= :dateTo
+		stores : Collection<Long> := newArrayList
+		condition self.sourceStore.id in :stores
+		
+		order by self.date desc
+
+	}
+	
+	datatype RCRecordItem{
+		productEntry : RCProductEntry
+		quantity : Integer
+		op getTotalAmount():Double{
+			productEntry.price * quantity
+		}
+	}
+	
+	entity RCTransferRecordItem {
+		belongs to transferRecord : RCTransferRecord
+		recordItem : RCRecordItem
+	}
+	
+	entity RCTransferTransaction extends RCProductStoreTransaction{
+		transferRecord : RCTransferRecord
+		op getEventRecordSid() : String{
+			transferRecord.sid
+		}
+		op getTransactionTypeDesc() : String{
+			if(quantity<0)
+				"调拨出库"
+			else
+				"调拨入库"
+		}
+		op transactionCommitted():void{
+			transactionCommitted[it,quantity,amount|
+				it.transferStockQuantity := it.transferStockQuantity +quantity
+				it.transferStockAmount := it.transferStockAmount +amount
+				
+			]
+		}
+		
+	}
+	
+	
+	
+	service RCWarehouseService{
+		inject sequenceService : RCSequenceService
+		op getMajorWarehouse() : RCWarehouse{
+			#[from RCWarehouse as wh where wh.isMajor = true].uniqueResult
+		}
+		op getSubWarehouses() : Collection<RCWarehouse>{
+			#[from RCWarehouse as wh where wh.isMajor <> true].list
+		}
+		
+		op findOrCreateSummaryData(store : RCWarehouse, productSpec : RCProductSpecification) : RCProductWarehouseStorageSummary{
+			#[from RCProductWarehouseStorageSummary as s where s.productSpec = {productSpec} and s.store = {store}].uniqueResult
+				.withDefault[
+					create RCProductWarehouseStorageSummary()=>[
+						it.store := store
+						it.productSpec := productSpec
+						it.quantity := 0
+						it.amount := 0d
+					]				
+			]
+		}
+		
+		op createTransferRecord(preinit : (RCTransferRecord)=>void) : RCTransferRecord{
+			create RCTransferRecord()=>[
+				preinit.apply(it)
+				it.sid := sequenceService.nextTransferSequence
+			]
+		}
+		
+		op createWorkItemOutStockRecord(preinit : (RCWorkItemOutStockRecord)=>void):RCWorkItemOutStockRecord{
+			create RCWorkItemOutStockRecord()=>[
+				preinit.apply(it)
+				it.sid := sequenceService.nextWorkitemOutStockSequence
+			]
+		}
+		op createWorkItemReturnStockRecord(preinit : (RCWorkItemReturnStockRecord)=>void):RCWorkItemReturnStockRecord{
+			create RCWorkItemReturnStockRecord()=>[
+				preinit.apply(it)
+				it.sid := sequenceService.nextWorkitemReturnStockSequence
+			]
+		}
+		
+		op createOutStockRecord(preinit : (RCOutStockRecord) => void) : RCOutStockRecord{
+			create RCOutStockRecord()=>[
+				preinit.apply(it)
+				it.sid := sequenceService.nextOutStockSequence
+			]
+		}
+		op createStockTakingRecord(preinit : (RCStockTakingRecord) => void) : RCStockTakingRecord{
+			create RCStockTakingRecord()=>[
+				preinit.apply(it)
+				it.sid := sequenceService.nextStockTakingSequence
+			]
+		}
+		op getProductSpecificationSummary(workItemStorages : Collection<RCWorkItemStorage>) : Collection<RCProductSpecificationSummary>{
+			val result := <RCProductSpecification,RCProductSpecificationSummary>newHashMap
+			workItemStorages.forEach[workItemStorage|
+				result.get(workItemStorage.productEntry.productSpec).withDefault[
+					new RCProductSpecificationSummary=>[
+						it.productSpec := workItemStorage.productEntry.productSpec
+						it.quantity := 0
+					]=>[
+						result.put(workItemStorage.productEntry.productSpec,it)
+					]
+				]=>[
+					it.quantity := it.quantity + workItemStorage.quantity
+				]
+			]
+			result.values
+		}
+	}
+}

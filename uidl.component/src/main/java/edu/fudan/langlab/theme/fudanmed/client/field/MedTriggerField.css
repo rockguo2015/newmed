@@ -1,0 +1,43 @@
+@sprite .trigger {
+	gwt-image: 'triggerArrow';
+	height: 20px;
+	border-top: 1px solid #d6d6d6;
+	border-right: 1px solid #d6d6d6;
+	border-bottom: 1px solid #d6d6d6;
+}
+
+@sprite .focus .trigger {
+	gwt-image: 'triggerArrow';
+	height: 20px;
+	border-top: 1px solid #888 !important;
+	border-right: 1px solid #888 !important;
+	border-bottom: 1px solid #888 !important;
+}
+
+@sprite .over .trigger {
+	gwt-image: 'triggerArrow';
+	height: 20px;
+	border-top: 1px solid #d6d6d6;
+	border-right: 1px solid #d6d6d6;
+	border-bottom: 1px solid #d6d6d6;
+}
+
+@sprite .click .trigger {
+	gwt-image: 'triggerArrow';
+	height: 20px;
+	border-top: 1px solid #888 !important;
+	border-right: 1px solid #888 !important;
+	border-bottom: 1px solid #888 !important;
+}
+
+.noedit {
+	cursor: pointer;
+}
+
+.text {
+	border-right: none;
+}
+
+.text.focus {
+	border-right: none;
+}

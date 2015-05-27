@@ -1,0 +1,536 @@
+package com.fudanmed.platform.core.device.pm{
+	import com.uniquesoft.gwt.shared.^datatype.File
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.device.pm.events.*
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.entityextension.*
+	import edu.fudan.mylang.utils.DateUtil
+	import javax.persistence.Column
+	import static com.uniquesoft.uidl.validation.Validates
+	
+	entity RCPMDeviceTypeEntry{
+		deviceType : RCDeviceType
+		part intervals : RCPMDefaultIntervalAssociation[*] opposite entry 
+		
+		op createInterval(init:(RCPMDefaultIntervalAssociation)=>void):RCPMDefaultIntervalAssociation{
+			createAndAddtoIntervals=>[
+				init.apply(it)
+				checkValid
+			]
+		}
+		
+		op removeInterval(interval:RCPMDefaultIntervalAssociation):void{
+			removeFromIntervals(interval)
+		}
+		op populateToDevice(device : RCDevice):void{
+			Assert(device.deviceType == this.deviceType,"设备类型必须一致")
+			val dao := beanFactory.getBean(typeof( RCDevicePMSpecificationDAO))
+	  		intervals.forEach[interval|
+		  		dao.^create()[
+		  			it.device := device
+		  			it.pmType := interval.type
+		  			it.intervalInDays := interval.intervalInDays
+		  			it.description := interval.description
+		  		]
+	  		]
+		}
+	}
+	
+	entity-dao RCPMDeviceTypeEntryDAO for RCPMDeviceTypeEntry{
+		op findByDeviceType(deviceType : RCDeviceType) : RCPMDeviceTypeEntry{
+			#[from RCPMDeviceTypeEntry as e where e.deviceType = {deviceType}].uniqueResult
+		}
+		
+	}	
+		
+	/*维修计划类别，如大修/中修/小修等 */
+	entity RCDevicePMType extends Code{
+	}
+	
+	service RCDevicePMCodeTypeProvider implements CodeTypeProvider{
+		op getCodeTypes() : Collection<CodeType> {
+			newArrayList(
+				new CodeType("维修类别",typeof(impl.RCDevicePMTypeImpl))
+			)
+		}
+	}
+	
+	entity RCPMDefaultIntervalAssociation{
+		belongs to entry : RCPMDeviceTypeEntry
+		type : RCDevicePMType
+		intervalInDays: Integer
+		description : String
+		
+		op ^update(updater:(RCPMDefaultIntervalAssociation)=>void):void{
+			updater.apply(this)
+			checkValid
+		}
+	}
+
+	entity RCDevicePMSpecification{
+		
+		device : RCDevice
+		pmType : RCDevicePMType
+		@Column(length=2048)
+		description : String
+		intervalInDays : Integer
+		lastPMPlanDate : Date
+		
+		part plans : RCDevicePMPlan[*] opposite spec
+		
+		op removePlan(plan : RCDevicePMPlan):void{
+			removeFromPlans(plan)
+		}
+		
+		op createPlan(init:(RCDevicePMPlan)=>void):RCDevicePMPlan{
+			createAndAddtoPlans=>[
+				init.apply(it)
+			]
+		}
+		/*从指定日期开始生成到指定年内的PM计划 */
+		op initializePMPlanUptoYear(startDate : Date, year : Integer) : void{
+			var yearOut := false
+			var curDate := startDate
+			while(!yearOut){
+				val nextPMDate := DateUtil::addDays(curDate,intervalInDays)
+				if(nextPMDate.year+1900 <= year){
+					this.createAndAddtoPlans()=>[
+						it.planDate := nextPMDate
+						it.^start()
+						this.lastPMPlanDate := nextPMDate
+					]
+					curDate := nextPMDate
+				}else{
+					yearOut := true
+				}
+			}
+		}
+	}
+	
+	entity-criteria RCDevicePMSpecificationCriteria for RCDevicePMSpecification{
+		sid : String
+		pmType : RCDevicePMType
+		lastPMPlanDateFrom : Date
+		lastPMPlanDateTo : Date
+		
+		condition self.device.sid like :sid
+		condition self.pmType = :pmType
+		condition self.lastPMPlanDate >= :lastPMPlanDateFrom
+		condition self.lastPMPlanDate <= :lastPMPlanDateTo
+	}
+	
+	entity-dao RCDevicePMSpecificationDAO for RCDevicePMSpecification{
+		inject eventsManager : RCDevicePMSpecificationEventsManager
+		op ^create(preInit : (RCDevicePMSpecification)=>void) : RCDevicePMSpecification{
+			create RCDevicePMSpecification()=>[
+				preInit.apply(it)
+				eventsManager.fireCreated(it)
+			]
+		}
+		op ^delete(value : RCDevicePMSpecification, postProc : (RCDevicePMSpecification)=>void):void{
+			delete value
+			postProc.apply(value)
+			eventsManager.fireDeleted(value)
+		}
+		
+		op findByDevice(device : RCDevice) : Collection<RCDevicePMSpecification>{
+			#[from RCDevicePMSpecification as e where e.device = {device}].list
+		}
+		
+		op batchInitializePMPlanUptoYear(year : Integer) : void{
+			#[from RCDevicePMSpecification as e].list.forEach[devicePMSpec|
+				val lastPMPlanDate := 
+					if(devicePMSpec.lastPMPlanDate==null) DateUtil::today else devicePMSpec.lastPMPlanDate
+				devicePMSpec.initializePMPlanUptoYear(lastPMPlanDate,year)
+			]
+		}
+		op batchInitializePMPlanUptoYear(device : RCDevice,fromDate:Date,year : Integer) : void{
+			findByDevice(device).forEach[devicePMSpec|
+				val lastPMPlanDate := 
+					if(fromDate==null){
+						if(devicePMSpec.lastPMPlanDate==null) 
+							DateUtil::today 
+						else devicePMSpec.lastPMPlanDate
+					}else fromDate
+				devicePMSpec.initializePMPlanUptoYear(lastPMPlanDate,year)
+				
+			]
+		}
+	}
+	
+	enum RCDevicePMPlanStatus{
+		planed //待安排(待派发班组)
+		assigned //待派工
+		finished //已维保
+		workerAssigned //执行中
+	}
+
+	entity RCDevicePMPlan{
+		belongs to spec : RCDevicePMSpecification
+		planDate : Date
+		finishDate : Date
+		comment : String
+		status : RCDevicePMPlanStatus
+		
+		op hasAssignedWorker():Boolean{
+			isWorkerAssigned || isFinished
+		}
+		behavior SMStatus{
+			state planed
+			state assigned
+			state finished
+			state workerAssigned
+			
+			signal assign
+			signal reportInfo
+			signal finish
+			signal cancelAssign
+			signal assignWorker
+			
+			start(){
+				status := RCDevicePMPlanStatus::planed
+				next state planed
+			}
+			
+			on planed{
+				input assign(){
+					status := RCDevicePMPlanStatus::assigned
+					next state assigned
+				}
+			}
+			
+			on assigned{
+				input assignWorker(){
+					status := RCDevicePMPlanStatus::workerAssigned
+					next state workerAssigned
+				}
+				input cancelAssign(){
+					status := RCDevicePMPlanStatus::planed
+					next state planed
+				}
+			}
+			
+			on workerAssigned{
+				input finish(comment : String){
+					status := RCDevicePMPlanStatus::finished
+					finishDate := DateUtil::today
+					this.comment := comment
+					next state finished
+				}
+				input reportInfo(comment : String){
+					this.comment := comment
+					next state -
+				}
+				
+			}
+			
+		}
+	}
+	
+	entity-criteria RCDevicePMPlanCriteria for RCDevicePMPlan{
+		planDateFrom : Date
+		planDateTo : Date
+		deviceType : RCDeviceType
+		category : String
+		pmType : RCDevicePMType
+		status : RCDevicePMPlanStatus
+		transient location : RCOnsitePosition
+		
+		locationPathId : String
+		
+		op postInitialize():void{
+			if(location!=null)
+				locationPathId := '%[' + location.^id + ']%'
+		}
+		
+		condition self.planDate >= :planDateFrom
+		condition self.planDate <= :planDateTo
+		condition self.status = :status
+		condition self.spec.device.deviceType = :deviceType
+		condition self.spec.device.deviceType.path like :category
+		condition self.spec.pmType = :pmType
+		condition self.spec.device.location.path like :locationPathId
+		
+		order by self.planDate
+	}
+	
+	entity-dao RCDevicePMPlanDAO for RCDevicePMPlan{
+		op findByDevice(device : RCDevice) : Collection<RCDevicePMPlan>{
+			#[from RCDevicePMPlan as e where e.spec.device = {device}].list
+		}
+	}
+	
+	entity RCWorkItemPlanAssignment{
+		plan : RCDevicePMPlan
+		belongs to workitem : RCPMWorkItem
+		workerAssignment : RCPMWorkItemWorkerAssignment
+	}
+	
+	entity-dao RCWorkItemPlanAssignmentDAO for RCWorkItemPlanAssignment{
+		op findByDevice(device : RCDevice):Collection<RCWorkItemPlanAssignment>{
+			#[from RCWorkItemPlanAssignment as e where e.plan.spec.device = {device}].list.toList
+		}
+	}
+	
+	enum RCPMWorkItemWorkerAssignmentStatus{
+		planed pending finished
+	}	
+	
+	entity RCPMWorkItemWorkerAssignment{
+		belongs to workitem : RCPMWorkItem
+		workers : RCEmployee[*]
+		assignDate : Date
+		finishDate : Date
+		comment : String
+		finalComment : String
+		status : RCPMWorkItemWorkerAssignmentStatus
+		
+		op getWorkItemPlanAssignments():Collection<RCWorkItemPlanAssignment>{
+			#[from RCWorkItemPlanAssignment as e where e.workerAssignment = {this}].list
+		}
+		
+		op getAllTaskFinished():Boolean{
+			getWorkItemPlanAssignments().forall[it.plan.finished]
+		}
+		behavior SMState{
+			state planed
+			state pending
+			state finished
+			
+			signal pend
+			signal finish
+			
+			start(){
+				status := RCPMWorkItemWorkerAssignmentStatus::planed
+				next state planed
+			}			
+			
+			on planed{
+				input pend(){
+					status := RCPMWorkItemWorkerAssignmentStatus::pending
+					next state pending
+				}
+			}
+			
+			on planed,pending{
+				input finish(){
+					status := RCPMWorkItemWorkerAssignmentStatus::finished
+					next state finished
+					workitem.$workerAssignmentFinish
+				}
+			}
+		}
+	}
+
+	enum RCPMWorkItemStatue{
+		planed
+		teamAssigned
+		executing
+		teamFinished
+		finished
+		partialExecuting
+		ready4TeamFinishReport		
+	}
+	
+	datatype RCPMWorkItemEvaluate{
+		worker : String
+		notifyDate : Date
+		arriveDate : Date
+		price : Double
+		materials : String
+		arrivalOnTime : Integer
+		attitude : Integer
+		frequency : Integer
+		quality : Integer
+		problemsRemains : String
+		comment : String
+	}
+	
+	entity RCPMWorkItem{
+		title : String
+		description : String
+		sid : String
+		assignDate : Date
+		supplier : RCSupplier
+//		workers : RCEmployee[*]
+		part assignments :  RCWorkItemPlanAssignment[*] opposite workitem
+		part workerAssignment : RCPMWorkItemWorkerAssignment[*] opposite workitem
+		status : RCPMWorkItemStatue
+		team : RCMaintenanceTeam
+		teamComment : String
+		finishDate : Date
+		dispatchDate : Date
+		
+		evaluate : RCPMWorkItemEvaluate
+		
+		op allTaskAssigned():Boolean{
+			assignments.forall[it.plan.hasAssignedWorker]
+		}
+		//所有派工单都已完工
+		op allWorkerTaskFinished():Boolean{
+			workerAssignment.forall[finished]
+		}
+		op assignWorker(workItemPlanAssignments:Collection<RCWorkItemPlanAssignment>,postInit:(RCPMWorkItemWorkerAssignment)=>void):void{
+			createAndAddtoWorkerAssignment()=>[workerAssign|
+				postInit.apply(workerAssign)
+				workerAssign.^start()
+				workItemPlanAssignments.forEach[
+					it.workerAssignment := workerAssign
+					it.plan.assignWorker
+				]
+				this.workersAssigned
+			]
+		}
+		
+		behavior SMState{
+			state planed
+			state teamAssigned
+			state executing
+			state teamFinished
+			state finished
+			state partialExecuting 
+			state ready4TeamFinishReport //待完工上报
+		
+			signal assignTeam
+			signal workersAssigned
+			signal teamFinish
+			signal finish
+			signal assignPlan
+			signal deassignPlan
+			signal $workerAssignmentFinish
+			
+			start(){
+				status := RCPMWorkItemStatue::planed
+				dispatchDate := DateUtil::now
+				this.sid := beanFactory.getBean(typeof(RCSequenceService)).nextPMWorkItemSequence
+				next state planed
+			}
+			
+			on planed{
+				input assignPlan(plan : RCDevicePMPlan){
+					this.createAndAddtoAssignments=>[
+						it.plan := plan
+						plan.assign
+					]
+					next state -
+				}
+				
+				input deassignPlan(plan : RCDevicePMPlan){
+					removeFromAssignments(assignments.findFirst[it.plan == plan])
+					plan.cancelAssign
+					next state -
+				}
+
+				input assignTeam(){
+					status := RCPMWorkItemStatue::teamAssigned
+					next state teamAssigned
+				}
+				
+			}
+			on teamAssigned,partialExecuting{
+				input workersAssigned(){
+					if(allTaskAssigned){
+						next state executing
+						status := RCPMWorkItemStatue::executing
+					}else{
+						next state partialExecuting
+						status := RCPMWorkItemStatue::partialExecuting
+					}
+				}
+			}
+			
+			on partialExecuting,executing{
+				input $workerAssignmentFinish(){
+					if(allTaskAssigned &&allWorkerTaskFinished){
+						status := RCPMWorkItemStatue::ready4TeamFinishReport
+						next state ready4TeamFinishReport
+					}
+					else{
+						next state -
+					}
+				}
+			}
+			
+			on ready4TeamFinishReport{
+				input teamFinish(finishDate : Date, comment : String){
+					status := RCPMWorkItemStatue::teamFinished
+					this.teamComment := comment
+					this.finishDate :=  finishDate
+					next state teamFinished
+				}
+			}
+			
+			on teamFinished{
+				input finish(){
+					status := RCPMWorkItemStatue::finished
+					assignments.filter[plan.status != RCDevicePMPlanStatus::finished].forEach[
+						plan.finish('')
+					]
+					next state finished
+				}
+				
+			}
+		}
+	}
+	
+	entity-dao RCPMWorkItemDAO for RCPMWorkItem{
+		inject eventsManager : RCPMWorkItemEventsManager
+		op ^create(preInit : (RCPMWorkItem)=>void):RCPMWorkItem{
+			create RCPMWorkItem()=>[
+				preInit.apply(it)
+				it.^start()
+				eventsManager.fireCreated(it)
+			]
+		}
+		op ^delete(e : RCPMWorkItem,postAction : (RCPMWorkItem)=>void) : void{
+			e.assignments.forEach[
+				it.plan.cancelAssign
+			]
+			delete e;
+			postAction.apply(e)
+			eventsManager.fireDeleted(e)
+		}
+		op ^update(e:RCPMWorkItem, updator:(RCPMWorkItem)=>void) : void{
+			updator.apply(e)
+			eventsManager.fireUpdateded(e)
+		}
+		
+		op findWorkItem4Device(device : RCDevice) : Collection<RCPMWorkItem>{
+			#[from RCPMWorkItem as e join e.assignments as assignment where assignment.plan.spec.device = {device} order by e.assignDate select distinct e].list
+		}
+	}
+	
+	entity-criteria RCPMWorkItemCriteria for RCPMWorkItem{
+		assignDateFrom : Date
+		assignDateTo : Date
+		status : RCPMWorkItemStatue
+		team : RCMaintenanceTeam		
+		teams : Collection<Long> := newArrayList
+		
+		includeFinishedItems : Boolean
+		//derived
+		finishedStatus :RCPMWorkItemStatue
+		
+		op postInitialize():void{
+			if(includeFinishedItems==null) includeFinishedItems:=false
+			finishedStatus := RCPMWorkItemStatue::finished
+		}
+		
+		condition self.assignDate >= :assignDateFrom
+		condition self.assignDate <= :assignDateTo
+		condition self.status = :status
+		condition self.team.id in :teams
+		condition self.team = :team
+		condition :includeFinishedItems = true or self.status <> :finishedStatus
+		
+		order by self.sid desc
+	}
+}

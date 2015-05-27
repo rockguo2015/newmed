@@ -1,0 +1,22 @@
+package com.fudanmed.platform.core.organization{
+	import java.util.*
+	import org.springframework.test.annotation.Rollback
+
+	import edu.fudan.mylang.pf.*
+	import com.fudanmed.platform.core.domain.*
+	import org.hibernate.tool.hbm2ddl.SchemaExport
+	test-case ExportDDL{
+		inject organizationService : RCOrganizationService 
+		inject securityService : RCSecurityService
+		inject sessionFactory : org.springframework.orm.hibernate4.LocalSessionFactoryBean
+		test-op exportddl():void{
+			println(sessionFactory)
+			new SchemaExport(sessionFactory.getConfiguration)=>[
+				setFormat(true)
+				setOutputFile("/Users/zhangtiange/Documents/git/fudanmed/com.fudanmed.platform.core/ddl.sql")
+				^create(true,false)
+			]
+			
+		}
+	}
+}

@@ -1,0 +1,105 @@
+package com.fudanmed.platform.core.warehouse{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import  com.fudanmed.platform.core.warehouse.*
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	
+	entity RCOutStockRecord{
+		sid : String
+		
+		operator : RCEmployee
+		date : Date
+		comment : String
+
+		team : RCMaintenanceTeam 
+		worker : RCEmployee 
+		
+		type : RCOutStockType
+		
+		part items : RCOutStockRecordItem[*] opposite record
+		sourceStore : RCWarehouse
+		committed : Boolean := false
+		
+		op getTypeName() : String{
+			"出库"
+		}
+		
+		op getTotalAmount() : Double{
+			items.^map[recordItem.totalAmount].reduce[Double d1, Double d2|d1+d2].nullsafe
+		}
+		
+		op initItemsFromSummary(summaryItems : Collection<RCProductSpecificationSummary>):void{
+			removeAllItems
+			summaryItems.forEach[summaryItem|
+				sourceStore.outStockCalculate(summaryItem.productSpec,summaryItem.quantity,false).forEach[resultItem|
+					createAndAddtoItems=>[
+						it.recordItem.productEntry := resultItem.productEntry
+						it.recordItem.quantity := resultItem.quantity
+					]
+				]
+			]
+		}
+	
+		op commit(operator : RCEmployee):void{
+			this.operator := operator
+			this.date := DateUtil::now
+			items.forEach[item|
+				val sourceStorage := sourceStore.inStock(item.recordItem.productEntry,-item.recordItem.quantity)
+				create RCOutStockTransaction(sourceStorage)=>[
+					it.outStockRecord := this
+					it.quantity := -item.recordItem.quantity
+					it.date := DateUtil::now
+					it.operator := operator
+					transactionCommitted
+				]
+			]
+			committed := true
+		}
+	}
+	
+	criteria RCOutStockRecordCriteria for RCOutStockRecord{
+		sid : String
+		dateFrom : Date
+		dateTo : Date
+		condition self.sid like :sid
+		condition self.date >= :dateFrom
+		condition self.date <= :dateTo
+		
+		
+		stores : Collection<Long> := newArrayList
+		condition self.sourceStore.id in :stores
+		
+		order by self.date desc
+		
+	}
+	
+	entity RCOutStockRecordItem{
+		recordItem : RCRecordItem
+		belongs to record : RCOutStockRecord
+	}
+	
+	entity RCOutStockTransaction extends RCProductStoreTransaction{
+		outStockRecord : RCOutStockRecord
+		op getEventRecordSid() : String{
+			outStockRecord.sid
+		}
+		op getTransactionTypeDesc() : String{
+			"出库"
+		}
+		op transactionCommitted():void{
+			transactionCommitted[it,quantity,amount|
+				it.outStockQuantity := it.outStockQuantity + quantity
+				it.outStockAmount := it.outStockAmount + amount
+				
+			]
+		}
+		
+	}
+
+}

@@ -1,0 +1,15 @@
+package edu.fudan.langlab.domain.code{
+	import java.sql.*
+	import java.util.Collection
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*
+	
+	entity Code implements INamedModelObject{
+		codeid : String
+		name : String
+		
+		op getEntityName() : String{
+			name
+		}
+	}
+}

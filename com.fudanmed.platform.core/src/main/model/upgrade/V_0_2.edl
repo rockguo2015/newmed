@@ -1,0 +1,66 @@
+package com.fudanmed.platform.core.warehouse{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.entityextension.*
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+
+	upgrade V_0_2_upgrade from V_0_2 to V_0_3{
+		update primaryTypes1{
+			create RCStringType()
+			create RCDateType()
+			create RCNumberType()
+			create RCNumberWithUnitType()=>[
+				it.alias := "功率"
+				it.unit := "千瓦/时"
+			]
+			val t1 := create RCNumberWithUnitType()=>[
+				it.alias := "温度"
+				it.unit := "摄氏度"
+			]
+			create RCRangeType()=>[
+				it.numberType := t1
+			]
+			create RCNumberWithUnitType()=>[
+				it.alias := "流量"
+				it.unit := "m3/h"
+			]
+			create RCNumberWithUnitType()=>[
+				it.alias := "功"
+				it.unit := "KW"
+			]
+			create RCNumberWithUnitType()=>[
+				it.alias := "压强"
+				it.unit := "Pa"
+			]
+			val t2 := create RCNumberWithUnitType()=>[
+				it.alias := "音量"
+				it.unit := "dB(A)"
+			]
+			create RCNumberWithUnitType()=>[
+				it.alias := "压强"				
+				it.unit := "Kpa"
+			]
+			create RCNumberWithUnitType()=>[
+				it.alias := "压强"								
+				it.unit := "Mpa"
+			]
+			create RCNumberWithUnitType()=>[
+				it.alias := "流量"
+				it.unit := "m/s"
+			]
+			create RCRangeType()=>[
+				it.numberType := t2
+			]
+			
+		}		
+	}
+	
+}

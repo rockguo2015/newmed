@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- When updating your version of GWT, you should also update this DTD reference, 
+	so that your app can take advantage of the latest GWT module capabilities. -->
+<!DOCTYPE module PUBLIC "-//Google Inc.//DTD Google Web Toolkit 2.5.1//EN"
+  "http://google-web-toolkit.googlecode.com/svn/tags/2.5.1/distro-source/core/src/gwt-module.dtd">
+<module rename-to='fudanmed'>
+	<inherits name='com.sencha.gxt.theme.base.Base' />
+
+	<!-- panel -->
+
+	<replace-with
+		class="edu.fudan.langlab.theme.fudanmed.client.panel2.MedAccordionLayoutAppearance">
+		<when-type-is
+			class="com.sencha.gxt.widget.core.client.container.AccordionLayoutContainer.AccordionLayoutAppearance" />
+	</replace-with>
+
+	<!-- Field -->
+	<replace-with
+		class="edu.fudan.langlab.theme.fudanmed.client.field.MedTextFieldAppearance">
+		<when-type-is
+			class="com.sencha.gxt.cell.core.client.form.TextInputCell.TextFieldAppearance" />
+	</replace-with>
+	<replace-with
+		class="edu.fudan.langlab.theme.fudanmed.client.field.MedTriggerFieldAppearance">
+		<when-type-is
+			class="com.sencha.gxt.cell.core.client.form.TriggerFieldCell.TriggerFieldAppearance" />
+	</replace-with>
+
+	<replace-with
+		class="edu.fudan.langlab.theme.fudanmed.client.field.MedTwinTriggerFieldAppearance">
+		<when-type-is
+			class="com.sencha.gxt.cell.core.client.form.TwinTriggerFieldCell.TwinTriggerFieldAppearance" />
+	</replace-with>
+	<replace-with
+		class="edu.fudan.langlab.theme.fudanmed.client.field.MedDateCellAppearance">
+		<when-type-is
+			class="com.sencha.gxt.cell.core.client.form.DateCell.DateCellAppearance" />
+	</replace-with>
+	<replace-with
+		class="edu.fudan.langlab.theme.fudanmed.client.grid.MedGridAppearance">
+		<when-type-is
+			class="com.sencha.gxt.widget.core.client.grid.GridView.GridAppearance" />
+	</replace-with>
+	<!-- Grid <replace-with class="edu.fudan.langlab.theme.fudanmed.client.grid.MedColumnHeaderAppearance"> 
+		<when-type-is class="com.sencha.gxt.widget.core.client.grid.ColumnHeader.ColumnHeaderAppearance" 
+		/> </replace-with> -->
+	<!-- Buttons -->
+	<replace-with
+		class="edu.fudan.langlab.theme.fudanmed.client.button.MedButtonCellAppearance">
+		<when-type-is
+			class="com.sencha.gxt.cell.core.client.ButtonCell.ButtonCellAppearance" />
+	</replace-with>
+
+	<!-- ToolBar -->
+	<replace-with
+		class="edu.fudan.langlab.theme.fudanmed.client.toolbar.MedPagingToolBarAppearance">
+		<when-type-is
+			class="com.sencha.gxt.widget.core.client.toolbar.PagingToolBar.PagingToolBarAppearance" />
+	</replace-with>
+	<replace-with
+		class="edu.fudan.langlab.theme.fudanmed.client.toolbar.MedToolBarAppearance">
+		<when-type-is
+			class="com.sencha.gxt.widget.core.client.toolbar.ToolBar.ToolBarAppearance" />
+	</replace-with>
+
+	<!-- Tools -->
+	<replace-with class="edu.fudan.langlab.theme.fudanmed.client.tools.MedTools">
+		<when-type-is class="com.sencha.gxt.widget.core.client.button.Tools" />
+	</replace-with>
+
+	<!-- Panel -->
+	<replace-with
+		class="edu.fudan.langlab.theme.fudanmed.client.panel2.MedFramedPanelAppearance">
+		<when-type-is
+			class="com.sencha.gxt.widget.core.client.FramedPanel.FramedPanelAppearance" />
+	</replace-with>
+
+	<!-- Window -->
+	<replace-with
+		class="edu.fudan.langlab.theme.fudanmed.client.window.MedWindowAppearance">
+		<when-type-is
+			class="com.sencha.gxt.widget.core.client.Window.WindowAppearance" />
+	</replace-with>
+
+	<!-- Tabs -->
+	<replace-with
+		class="edu.fudan.langlab.theme.fudanmed.client.tabs.MedTabPanelAppearance">
+		<when-type-is
+			class="com.sencha.gxt.widget.core.client.TabPanel.TabPanelAppearance" />
+	</replace-with>
+
+	<replace-with
+		class="edu.fudan.langlab.theme.fudanmed.client.container.MedBorderLayoutAppearance">
+		<when-type-is
+			class="com.sencha.gxt.widget.core.client.container.BorderLayoutContainer.BorderLayoutAppearance" />
+	</replace-with>
+</module>

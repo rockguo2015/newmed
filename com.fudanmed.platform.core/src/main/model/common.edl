@@ -1,0 +1,282 @@
+package com.fudanmed.platform.core.common{
+	import java.util.Collection
+	import edu.fudan.mylang.pf.*
+	import java.util.*
+	import edu.fudan.langlab.domain.code.*
+	import javax.persistence.Column
+	import edu.fudan.mylang.utils.DateUtil
+	import java.sql.Blob
+
+	service RCProjectCodeTypeProvider implements CodeTypeProvider{
+		op getCodeTypes() : Collection<CodeType> {
+			newArrayList(
+				new CodeType("故障风险等级",typeof(impl.RCFaultLevelImpl)),
+				new CodeType("故障报修来源",typeof(impl.RCFaultReportSourceImpl)),
+				new CodeType("故障紧急度",typeof(impl.RCFaultEmergencyLevelImpl)),
+				new CodeType("工种",typeof(impl.RCWorkTypeImpl)),
+				new CodeType("出库类型",typeof(impl.RCOutStockTypeImpl)),
+				new CodeType("证书类别",typeof(impl.RCCredentialTypeImpl)),
+				new CodeType("材料品牌",typeof(impl.RCMaterialBrandImpl))
+			)
+		}
+	}
+	
+	/*故障报修来源 */
+	entity RCFaultReportSource extends Code{
+	}
+
+	/*故障风险等级 */
+	entity RCFaultLevel extends Code{
+	}
+	
+	enum RCStandardColor{
+		red	//红
+		blue  //蓝
+		gray  //灰
+		green  //绿
+		orange  //桔黄
+		purple  //紫
+		aqua  //天蓝
+		fuchsia //品红
+		yellow //黄
+		black //黑
+	}
+	
+	entity RCFaultLevelColorAdaptor{
+		color : RCStandardColor
+		faultLevel : RCFaultLevel
+	}
+	entity-events-listener FaultLevelColorConfigCreator for Code{
+		on entityCreated(){
+			if(^entity instanceof RCFaultLevel){
+				create RCFaultLevelColorAdaptor()=>[
+					color := RCStandardColor::black
+					faultLevel := ^entity as RCFaultLevel
+				]
+			}
+		}
+		
+		on entityDeleted(){
+			if(^entity instanceof RCFaultLevel){
+				val d := ^entity as RCFaultLevel
+				val toDelete :=  #[from RCFaultLevelColorAdaptor as e where e.faultLevel = {d}].uniqueResult
+				delete toDelete
+			}
+		}
+	}
+	
+	entity-dao RCFaultLevelColorAdaptorDao for RCFaultLevelColorAdaptor{
+		op findAll():Collection<RCFaultLevelColorAdaptor>{
+			#[from RCFaultLevelColorAdaptor as e order by e.faultLevel.codeid].list
+		}
+		op getColor(faultLevel : RCFaultLevel):String{
+			if(faultLevel==null) return ''
+			#[from RCFaultLevelColorAdaptor as e where e.faultLevel = {faultLevel}].uniqueResult.color.name
+		}
+		
+	}
+	
+	entity RCFaultEmergencyLevel extends Code{
+	}
+	entity RCWorkType extends Code{
+		
+	}
+	/*出库类型 */
+	entity RCOutStockType extends Code{
+		
+	}
+	/*证书类别 */
+	entity RCCredentialType extends Code{
+		
+	}
+	/*材料品种 */
+	entity RCMaterialBrand extends Code{
+		
+	}
+	
+	entity RCSequenceConfig{
+		sequenceDate : Date
+		inStockSequence : Integer
+		outStockSequence : Integer
+		stockTakingSequence : Integer
+		workitemOutStockSequence : Integer
+		workitemReturnStockSequence : Integer
+		transferSequence : Integer
+		workItemTaskSequence : Integer
+		repairTaskSequence : Integer
+		settlementSequence : Integer
+		pmWorkItemSequence : Integer
+		centerilzedTaskSequence : Integer
+		
+	}
+	
+	entity RCDocument{
+		description : String
+		fileName : String
+		contentType : String
+		refCount : Integer
+		file:Blob
+		
+		part references : RCDocumentReference[*] opposite document
+	}
+	
+	entity RCDocumentReference{
+		belongs to document : RCDocument
+		className : String 
+		objectId : Long
+	}
+	
+	entity-dao RCDocumentDAO for RCDocument{
+		op createFor(owner : IModelObject, postInit :(RCDocument)=>void ):RCDocument{
+			create RCDocument()=>[document|
+				create RCDocumentReference(document)=>[
+					it.className := owner.getClass.name
+					it.objectId := owner.^id
+				]
+				postInit.apply(document)
+			]
+		}
+	}
+	
+	service RCSequenceService{
+		 op getNextInStockSequence() : String{
+		 	val config := computeConfig
+		 	config.inStockSequence := config.inStockSequence + 1
+			val format := new java.text.SimpleDateFormat(  
+                "yyyyMMdd");  		 	
+		 	'RK' + format.format(config.sequenceDate) + String::format("%03d", config.inStockSequence)
+		}
+		 op getNextOutStockSequence() : String{
+		 	val config := computeConfig
+		 	config.outStockSequence := config.outStockSequence + 1
+			val format := new java.text.SimpleDateFormat(  
+                "yyyyMMdd");  		 	
+		 	'CK' + format.format(config.sequenceDate) + String::format("%03d", config.outStockSequence)
+		}
+		 op getNextStockTakingSequence() : String{
+		 	val config := computeConfig
+		 	config.stockTakingSequence := config.stockTakingSequence + 1
+			val format := new java.text.SimpleDateFormat(  
+                "yyyyMMdd");  		 	
+		 	'PD' + format.format(config.sequenceDate) + String::format("%03d", config.stockTakingSequence)
+		}
+		 op getNextWorkItemTaskSequence() : String{
+		 	val config := computeConfig
+		 	config.workItemTaskSequence := config.workItemTaskSequence + 1
+			val format := new java.text.SimpleDateFormat(  
+                "yyyyMMdd");  		 	
+		 	'GD' + format.format(config.sequenceDate) + String::format("%03d", config.workItemTaskSequence)
+		}
+		 op getNextRepairTaskSequence() : String{
+		 	val config := computeConfig
+		 	config.repairTaskSequence := config.repairTaskSequence + 1
+			val format := new java.text.SimpleDateFormat(  
+                "yyyyMMdd");  		 	
+		 	'BX' + format.format(config.sequenceDate) + String::format("%03d", config.repairTaskSequence)
+		}
+		 op getNextWorkitemOutStockSequence() : String{
+		 	val config := computeConfig
+		 	config.workitemOutStockSequence := config.workitemOutStockSequence + 1
+			val format := new java.text.SimpleDateFormat(  
+                "yyyyMMdd");  		 	
+		 	'LL' + format.format(config.sequenceDate) + String::format("%03d", config.workitemOutStockSequence)
+		}
+		 op getNextWorkitemReturnStockSequence() : String{
+		 	val config := computeConfig
+		 	config.workitemReturnStockSequence := config.workitemReturnStockSequence + 1
+			val format := new java.text.SimpleDateFormat(  
+                "yyyyMMdd");  		 	
+		 	'TL' + format.format(config.sequenceDate) + String::format("%03d", config.workitemReturnStockSequence)
+		}
+		 op getNextTransferSequence() : String{
+		 	val config := computeConfig
+		 	config.transferSequence := config.transferSequence + 1
+			val format := new java.text.SimpleDateFormat(  
+                "yyyyMMdd");  		 	
+		 	'DB' + format.format(config.sequenceDate) + String::format("%03d", config.transferSequence)
+		}
+		 op getNextSettlementSequence() : String{
+		 	val config := computeConfig
+		 	config.settlementSequence := config.settlementSequence + 1
+			val format := new java.text.SimpleDateFormat(  
+                "yyyyMMdd");  		 	
+		 	'JS' + format.format(config.sequenceDate) + String::format("%03d", config.settlementSequence)
+		}
+		 op getNextPMWorkItemSequence() : String{
+		 	val config := computeConfig
+		 	config.pmWorkItemSequence := config.pmWorkItemSequence + 1
+			val format := new java.text.SimpleDateFormat(  
+                "yyyyMMdd");  		 	
+		 	'PM' + format.format(config.sequenceDate) + String::format("%03d", config.pmWorkItemSequence)
+		}
+		 op getNextCenterilzedTaskSequence() : String{
+		 	val config := computeConfig
+		 	config.centerilzedTaskSequence := config.centerilzedTaskSequence + 1
+			val format := new java.text.SimpleDateFormat(  
+                "yyyyMMdd");  		 	
+		 	'PM' + format.format(config.sequenceDate) + String::format("%03d", config.centerilzedTaskSequence)
+		}
+		
+		op computeConfig() : 	RCSequenceConfig{
+			var today := DateUtil::today
+			var config := #[from RCSequenceConfig as config].uniqueResult.withDefault[
+				create RCSequenceConfig()
+			]
+			if(!today.equals(config.sequenceDate)){
+				config.sequenceDate := today
+				config.inStockSequence := 0
+				config.outStockSequence := 0
+				config.stockTakingSequence := 0
+				config.workItemTaskSequence := 0
+				config.workitemOutStockSequence := 0
+				config.transferSequence := 0
+				config.workitemReturnStockSequence := 0
+				config.repairTaskSequence := 0
+				config.settlementSequence := 0
+				config.pmWorkItemSequence := 0				
+				config.centerilzedTaskSequence := 0				
+			}
+			config			
+		}	
+	}
+	
+	entity RCSystemParameter{
+		/*应用系统大标题 */
+		applicationTitle : String := "医院后勤综合管理平台"
+		/*用户名称 */
+		orgName : String 
+		/*客户端读取状态时间间隔 */
+		refreshInterval : Integer := 30
+		/*客户评价延迟天数，超过此天数的保修单将自动以“满意”状态提交 */
+		customerEvalCommitInterval : Integer := 7
+		/*电子屏刷新间隔 */
+		eboardRefreshInterval : Integer := 10
+	}
+	
+	service RCSystemParameterService{
+		op getSystemParameter() : RCSystemParameter{
+			var result := #[from RCSystemParameter as p].uniqueResult
+			if(result==null){
+				result := create RCSystemParameter()
+			}
+			result
+		}
+	}
+	
+	entity RCEBoardMessage{
+		@Column(length=512)
+		message : String
+	}
+	
+	service RCEBoardMessageService{
+		op getEBoardMessage():RCEBoardMessage{
+			#[from RCEBoardMessage as e].uniqueResult
+		}
+		op getMessage():String{
+			getEBoardMessage().message
+		}
+		op updateMessage(message : String):void{
+			getEBoardMessage().message := message
+		}
+	}
+}

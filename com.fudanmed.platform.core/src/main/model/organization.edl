@@ -1,0 +1,455 @@
+package com.fudanmed.platform.core.domain{
+	import edu.fudan.mylang.pf.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.warehouse.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import java.util.*
+	
+	entity RCEmployee extends Party{
+		
+		eid : String	/*工号 */
+		mobil : String /*手机 */
+		tel : String /*宅电 */
+		workTel : String /*工作电话 */
+		comment : String	/*	备注  */
+		workTypes : RCWorkType[*] /*工种 */ 
+		organization : RCOrganization /*所属机构 */
+		cardNumber : String /*工牌号 */
+		/*记录了用"[]"分割的所有所属机构的字符串 */
+		orgPath : String
+		isLeaveJob : Boolean
+		
+		
+		op asUser() : User{
+			#[from RCEmployeeUser as eu where eu.employee = {this}].uniqueResult
+		}
+		
+		op getRoles() : Collection<Role>{
+			beanFactory.getBean(typeof(SecurityService)).getAllRoles4User(asUser)
+		}
+		
+		op updateOrgPath():void{
+			var orgp := ""
+			var curOrg := this.organization
+			while(curOrg!=null){
+				orgp := orgp + '['+curOrg.^id.toString+']'
+				curOrg := curOrg.parent
+			}
+			this.orgPath := orgp
+		}
+		behavior Status{
+			state onJob
+			state leaveJob
+			
+			signal leaveJob
+			signal returnJob
+			start(){
+				isLeaveJob := false
+				next state onJob	
+			}
+			on onJob{
+				input leaveJob(){
+					isLeaveJob := true
+					next state leaveJob
+				}
+			}
+			on leaveJob{
+				input returnJob(){
+					isLeaveJob := false
+					next state onJob
+				}
+			}
+		}
+	}
+	
+	service RCEmployeeDAO{
+		op findByEid(eid : String) : RCEmployee{
+			#[from RCEmployee as e where e.eid = {eid}].uniqueResult
+		}
+		
+		op findByName(name : String) : Collection<RCEmployee>{
+			#[from RCEmployee as e where e.name = {name}].list
+		}
+		
+		op allOnJobEmployees() : Collection<RCEmployee>{
+			val isLeaveJob := false
+			#[from RCEmployee as e where e.isLeaveJob = {isLeaveJob}].list
+		}
+		
+		op ^create(eid:String,preInit : (RCEmployee)=>void ) : RCEmployee{
+			create RCEmployee()=>[employee|
+				preInit.apply(employee)
+				employee.^start
+				create RCEmployeeUser()=>[
+					userid := eid
+					passwd := eid
+					it.employee := employee
+				]
+			]
+		}
+		
+		op ^delete(employee : RCEmployee) : void{
+			delete employee.asUser
+			delete employee
+		}
+	}
+	criteria RCEmployeeCriteria for RCEmployee{
+		info : String
+		includeLeaveEmployees : Boolean
+		orgPath : String
+		organization : RCOrganization
+		
+		condition 
+			self.eid like :info or
+			self.name like :info or
+			self.phone like :info or 
+			self.email like :info or
+			self.address like :info
+		condition self.organization = :organization 
+		condition self.orgPath like :orgPath
+		condition self.isLeaveJob = false or :includeLeaveEmployees = true
+	}
+	
+	criteria RCEmployeeByNameCriteria for RCEmployee{
+		name : String
+		isLeaveJob : Boolean
+		op initialize():void{
+			isLeaveJob := false
+		}
+		condition self.name like :name or self.simplePy like :name
+		condition self.isLeaveJob = :isLeaveJob
+	}
+	
+	entity RCEmployeeUser extends User {
+		employee : RCEmployee
+		op getEntityName(): String{
+			employee.name
+		}
+	}
+	
+	entity RCRepairReportUser extends User{
+		organization : RCOrganization
+		op getEntityName():String{
+			organization.name
+		}
+	}
+	
+	entity RCOrganization extends Party{
+		code : String
+		part subOrganizations : RCOrganization[*] opposite parent
+		belongs to parent : RCOrganization
+		positions : RCOnsitePosition[*]
+		
+		op getAllEmployees() : Collection<RCEmployee>{
+			#[from RCEmployee as e where e.organization={this}].list
+		}
+		op getEntityName():String{
+			fullPath
+		}
+		op getOnJobEmployees():Collection<RCEmployee>{
+			#[from RCEmployee as e where e.organization={this}].list.filter[!isLeaveJob].toSet
+		}
+		op fullPath():String{
+			if(parent==null) return name;
+
+			var path := name
+			var curParent := this.parent
+			while(curParent.parent!=null){
+				path := curParent.name + " " +path
+				curParent := curParent.parent
+			}
+			path
+		}		
+	}
+	
+	service RCOrganizationDAO{
+		
+		op findByCode(code : String) : RCOrganization{
+			#[from RCOrganization as o where o.code = {code}].uniqueResult
+		}
+		
+		op createOrganization(parent : RCOrganization,preinit:(RCOrganization)=>RCOrganization) : RCOrganization{
+			create RCOrganization(parent)=>[org|
+				preinit.apply(org)
+			]
+		}
+		
+		op deleteOrganization(organization : RCOrganization) : void{
+			delete organization
+		}
+		
+	}
+	criteria RCOrganizationCriteria for RCOrganization{
+		info : String
+		condition self.code like :info or self.name like :info or self.simplePy like :info
+	}
+	
+	/*
+	 * 往来单位
+	 */
+	entity RCEnterprise extends Party{
+		code : String	//代码.
+		shortName : String	//简称.
+		ename : String	//英文名称.
+		spell : String	//拼音
+		helpCode : String //助记码
+		enterpriseEnrolNum : String //企业注册号.
+		workNo : String //营业执照号.
+		regCapital : Double //注册资金.
+		legalPerson : String //法定代表人.
+		aptitudeName : String //已获得资质.
+		aptitudeNo : String //资质证号.
+	}
+	
+	enum RCSupplierType{
+		materialSupplier maintenanceProvider
+	}
+	
+	
+	entity RCSupplier extends RCEnterprise{
+		type : RCSupplierType //供应商类型
+	}
+	
+	service RCSupplierDAO{
+		op findByName(name : String) : RCSupplier{
+			println("findByName:"+name)
+			#[from RCSupplier as s where s.name = {name}].uniqueResult
+		}
+		
+	}
+	
+	criteria RCSupplierCriteria for RCSupplier{
+		info : String
+		type : RCSupplierType
+		
+		condition self.code like :info or
+				self.name like :info or
+				self.shortName like :info or
+				self.ename like :info or
+				self.spell like :info or
+				self.helpCode like :info or
+				self.enterpriseEnrolNum like :info or
+				self.workNo like :info or
+				self.legalPerson like :info or
+				self.aptitudeName like :info or
+				self.aptitudeNo like :info or
+				self.phone like :info or 
+				self.email like :info or
+				self.address like :info
+		condition self.type = :type 
+	}
+		
+	entity RCRoleAssignment{
+		roleType : String
+		employee : RCEmployee
+		startDate : Date
+	}
+	
+	criteria RCRoleAssignmentCriteria for RCRoleAssignment{
+		roleType : String
+		employee : RCEmployee
+		
+		condition self.roleType = :roleType
+		condition self.employee = :employee
+	}
+	
+	service RCSecurityService{
+		op employeeUserLogin(userid : String, passwd : String) : RCEmployeeUser{
+			val u := #[from RCEmployeeUser as u where u.userid = {userid} and u.passwd = {passwd}].uniqueResult
+			if(u!=null && !u.employee.isLeaveJob)
+				u
+			else null
+		}
+		op userLogin(userid : String, passwd : String) : User{
+			employeeUserLogin(userid,passwd)
+		}
+		op asEmployeeUser(userid : String) : RCEmployeeUser{
+			 #[from RCEmployeeUser as u where u.userid = {userid}].uniqueResult
+		}
+	}
+	
+	service RCOrganizationService{
+		
+		inject securityService : SecurityService
+		op getALlOrganization() : Collection<RCOrganization>{
+			#[from RCOrganization as o].list
+		}
+		
+		op getAllOnsitePositions() : Collection<RCOnsitePosition>{
+			#[from RCOnsitePosition as o].list
+		}
+				
+		op createRootOrganization(code : String, name : String): RCOrganization{
+			create RCOrganization(null)=>[
+				it.code := code
+				it.name := name
+			]
+		}
+				
+		op createRootOnsitePosition(code : String, name : String) : RCOnsitePosition{
+			create RCOnsitePosition(null)=>[
+				it.code := code
+				it.name := name
+			]
+		}
+		
+		op selectAsMaintenanceTeam(organization : RCOrganization) : RCMaintenanceTeam{
+			create RCMaintenanceTeam()=>[
+				it.organization := organization
+				it.role := securityService.createRole("__"+it.^id.toString+"__",organization.name+"管理员")=>[
+					isBuildin := true
+				]
+			]
+		}
+		
+		op removeMaintenanceTeam(team : RCMaintenanceTeam) : void{
+			delete team
+			delete securityService.findRoleByRoleId("__"+team.^id.toString+"__")
+		}
+	}
+	
+	entity RCMaintenanceTeam implements INamedModelObject{
+		aliasName : String
+		organization : RCOrganization
+		role : Role	
+		op getEntityName() : String{
+			if(aliasName.nullOrEmpty)
+				organization.entityName
+			else aliasName
+		}
+	}
+	
+	entity-dao RCMaintenanceTeamDao for RCMaintenanceTeam{
+		inject systemUserService : ISystemUserService
+		op getAllStoreValidTeam4CurrentUser():Iterable<RCMaintenanceTeam>{
+		val emp := systemUserService.currentUserAsParty as RCEmployee			
+			#[from RCWarehouse as e join e.storeManager as sm where sm = {emp} select distinct e].list.^map[it.relatedTeams].flatten.toSet
+		}
+	}
+	
+	enum RCFaultRiskDegree{
+		yiban jiaoda yanzhong zhongda 
+	}
+	
+	//维修类别
+	entity RCMaintenamceType implements IHasSimplePy{
+		code : String
+		name : String
+		simplePy : String
+		belongs to parent : RCMaintenamceType
+		part subTypes : RCMaintenamceType[*] opposite parent
+		part faultTypes : RCFaultType[*] opposite mtype
+		op getEntityName():String{
+			name
+		}
+		op getNameField():String{
+			"name"
+		}
+		op getAllSubFaultTypes():Collection<RCFaultType>{
+			val idTag := '%[' + ^id+']%'
+			#[from RCFaultType as ft where ft.mtypePath like {idTag}].list
+		}
+	}
+	
+	//维修项目
+	entity RCFaultType implements IHasSimplePy{
+		belongs to mtype : RCMaintenamceType
+		mtypePath : String
+		name : String
+		needAudit : Boolean
+		standardCostTime : Double
+		performanceWeight : Double
+		faultRiskLevel : RCFaultLevel
+		team : RCMaintenanceTeam
+		simplePy : String
+		workType : RCWorkType
+		op getEntityName() : String{
+			name
+		}
+		op getNameField():String{
+			"name"
+		}
+		op buildPath():void{
+			var curP := this.mtype
+			var mtypePath := ""
+			while(curP!=null){
+				mtypePath := mtypePath +'[' + curP.^id + ']'
+				curP := curP.parent
+			}
+			this.mtypePath := mtypePath
+		}
+	}
+	
+	criteria RCFaultTypeContentProviderCriteria for RCFaultType{
+		name : String
+		condition self.name like :name or self.simplePy like :name
+	}
+	
+	/*区域*/
+	entity RCOnsitePosition implements IHasSimplePy{
+		code : String
+		name : String
+		phone : String
+		belongs to parent : RCOnsitePosition
+		part subPosition : RCOnsitePosition[*] opposite parent
+		simplePy : String
+		path : String
+		
+		op getEntityName() : String{
+			fullPath
+		}
+		op getNameField():String{
+			"name"
+		}
+		op toIdBlock():String{
+			'['+^id.toString+']'
+		}
+		op fullIdPath():String{
+
+			var path := toIdBlock
+			var curParent := this.parent
+			while(curParent!=null){
+				path := curParent.toIdBlock + path
+				curParent := curParent.parent
+			}
+			path
+		}
+
+		op fullPath():String{
+			if(parent==null) return name;
+
+			var path := name
+			var curParent := this.parent
+			while(curParent.parent!=null){
+				path := curParent.name + " " +path
+				curParent := curParent.parent
+			}
+			if(phone!=null){
+				path + '[' + phone + ']'
+			}else 
+				path
+		}		
+		
+	}
+	
+	criteria RCOnsitePositionCriteria for RCOnsitePosition{
+		info : String
+		condition self.code like :info or self.name like :info or self.simplePy like :info
+	}
+	
+	service RCOnsitePositionDAO{
+		op findByCode(code : String) : RCOnsitePosition{
+			#[from RCOnsitePosition as p where p.code = {code}].uniqueResult
+		}
+	}
+	
+	service FudanmedRoleManager implements RoleManager{
+		inject securityService : SecurityService
+		 op getAllRoles() : Collection<AppRole>{
+		 	securityService.allRoles
+		 }
+	}
+}

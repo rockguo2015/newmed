@@ -1,0 +1,357 @@
+package com.fudanmed.platform.core.device{
+	import com.uniquesoft.gwt.shared.^datatype.File
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.document.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.device.events.*
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import com.fudanmed.platform.core.entityextension.*
+	import edu.fudan.mylang.utils.DateUtil
+	import java.sql.Blob
+	import javax.persistence.*
+	import static com.uniquesoft.uidl.validation.Validates
+	entity RCDeviceTypeCategory  implements IHasSimplePy{
+		code : String
+		name : String
+		simplePy : String		
+		belongs to parent : RCDeviceTypeCategory
+		part subCategories : RCDeviceTypeCategory[*] opposite parent
+		part deviceTypes : RCDeviceType[*] opposite category
+		op getEntityName():String{
+			name
+		}
+		op getNameField():String{
+			"name"
+		}		
+		op createDeviceType() : RCDeviceType{
+			createAndAddtoDeviceTypes()=>[
+				extensiableType := create RCExtensiableEntityType()=>[etype|
+					etype.rootType := create RCCompositeType(etype)
+				]
+				defaultValue := create RCExtensiableEntity()=>[extension|
+					extension.type := extensiableType
+					extension.value := extensiableType.rootType.createInstance(extension)
+				]				
+				beanFactory.getBean(typeof(RCDeviceTypeEventsManager)).fireCreated(it)
+			]
+		}
+		
+		op cloneDeviceType(sourceType : RCDeviceType):RCDeviceType{
+			createAndAddtoDeviceTypes()=>[
+				extensiableType := create RCExtensiableEntityType()=>[etype|
+					etype.rootType := sourceType.extensiableType.rootType.cloneType(etype)
+				]
+				defaultValue := create RCExtensiableEntity()=>[extension|
+					extension.type := extensiableType
+					extension.value := extensiableType.rootType.createInstance(extension)
+				]				
+				beanFactory.getBean(typeof(RCDeviceTypeEventsManager)).fireCreated(it)
+			]
+		}
+		
+		op deleteDeviceType(deviceType : RCDeviceType):void{
+			delete deviceType.defaultValue
+			delete deviceType.extensiableType
+			this.removeFromDeviceTypes(deviceType)
+			beanFactory.getBean(typeof(RCDeviceTypeEventsManager)).fireDeleted(deviceType)
+			
+		}
+	}
+	service RCDeviceTypeCategoryDAO{
+		op findByCode(code : String) : RCDeviceTypeCategory{
+			#[from RCDeviceTypeCategory as e where e.code = {code}].uniqueResult
+		}
+		
+		op allRootCategories() : Collection<RCDeviceTypeCategory>{
+			#[from RCDeviceTypeCategory as e where e.parent is null].list
+		}
+	}
+	
+	entity RCDeviceType implements INamedModelObject{
+		belongs to category : RCDeviceTypeCategory
+		code : String
+		name : String
+		depreciationYears : Integer //折旧年限
+		
+		path : String
+		
+		part extensiableType : RCExtensiableEntityType
+		part defaultValue : RCExtensiableEntity
+		partTypes : RCProductSpecification[*]
+		op getEntityName():String{
+			name
+		}
+		part files : RCDeviceTypeFile[*] opposite deviceType
+		part pictures : RCDeviceTypePicture[*] opposite deviceType
+		
+		op createFile(init:(RCDeviceTypeFile)=>void):RCDeviceTypeFile{
+			this.createAndAddtoFiles=>[
+				init.apply(it)
+			]
+		}
+		
+		op removeFile(document : RCDeviceTypeFile):void{
+			this.removeFromFiles(document)
+		}
+
+		op createPicture(init:(RCDeviceTypePicture)=>void):RCDeviceTypePicture{
+			this.createAndAddtoPictures=>[
+				init.apply(it)
+			]
+		}
+		
+		op removePicture(picture : RCDeviceTypePicture):void{
+			this.removeFromPictures(picture)
+		}		
+	}
+	entity RCDeviceTypeFile extends DocumentStorage{
+		belongs to deviceType : RCDeviceType
+		op getContainer():IDocumentContainer{
+			new DeviceTypeFileContainer(deviceType)
+		}
+	}
+	
+	adaptor DeviceTypeFileContainer for RCDeviceType to IDocumentContainer{
+		
+		op getDocuments():Collection<? extends IDocument>{
+			adaptee.files
+		}
+		op createDocument(init:(IDocument)=>void):IDocument{
+			adaptee.createFile[
+				init.apply(it)
+			]
+		}
+		op removeDocument(document : IDocument):void{
+			adaptee.removeFile(document as RCDeviceTypeFile)
+		}
+	}	
+	
+	entity RCDeviceTypePicture extends DocumentStorage{
+		belongs to deviceType : RCDeviceType
+		op getContainer():IDocumentContainer{
+			new DeviceTypePictureContainer(deviceType)
+		}
+	}
+
+
+	adaptor DeviceTypePictureContainer for RCDeviceType to IDocumentContainer{
+		
+		op getDocuments():Collection<? extends IDocument>{
+			adaptee.pictures
+		}
+		op createDocument(init:(IDocument)=>void):IDocument{
+			adaptee.createPicture[
+				init.apply(it)
+			]
+		}
+		op removeDocument(document : IDocument):void{
+			adaptee.removePicture(document as RCDeviceTypePicture)
+		}
+	}	
+		
+	entity-dao RCDeviceTypeDAO for RCDeviceType{
+		op findByCode(code : String):RCDeviceType{
+			#[from RCDeviceType as e where e.code = {code}].uniqueResult
+		}
+	}
+
+	
+	criteria RCDeviceTypeCriteria for RCDeviceType{
+		name : String
+		category : String
+		condition self.name like :name
+		condition self.path like :category
+	}
+	
+	
+	entity RCDeviceIndicator extends Code{
+		
+	}
+	
+	entity RCDeviceUsageType extends Code{
+		
+	}
+	
+	//增置方式
+	entity RCAcquireType extends Code{
+		
+	}
+
+	service RCDeviceCodeTypeProvider implements CodeTypeProvider{
+		op getCodeTypes() : Collection<CodeType> {
+			newArrayList(
+				new CodeType("设备标识",typeof(impl.RCDeviceIndicatorImpl)),
+				new CodeType("使用状况",typeof(impl.RCDeviceUsageTypeImpl)),
+				new CodeType("增置方式",typeof(impl.RCAcquireTypeImpl))
+			)
+		}
+	}	
+	
+	entity RCDevice implements INamedModelObject{
+		sid : String
+		name : String
+		specification : String
+		//TODO remove
+		location : RCOnsitePosition //区域位置
+		locationName : String	//安装地点
+		serviceLocationName : String //服务区域
+		productor : RCSupplier
+		supplier : RCSupplier
+		deviceType : RCDeviceType
+		deviceIndicator : RCDeviceIndicator
+		acquireType : RCAcquireType
+		usageType : RCDeviceUsageType
+		outStockTime : Date //出厂时间
+		buyTime : Date
+		@Column(length=1024)
+		comment : String
+		
+		buyPrice : Double
+		netPrice : Double
+		owner : RCEmployee
+		depreciationYears : Integer
+		netLeaveRate : Double 
+		operator : RCEmployee
+		//TODO remove
+		ownerDepartment : RCOrganization
+		ownerDepartmentName : String
+		op getEntityName():String{
+			name
+		}
+		
+		part extension : RCExtensiableEntity
+		part files : RCDeviceFile[*] opposite device
+		part pictures : RCDevicePicture[*] opposite device
+		
+		op createFile(init:(RCDeviceFile)=>void):RCDeviceFile{
+			this.createAndAddtoFiles=>[
+				init.apply(it)
+			]
+		}
+		
+		op removeFile(document : RCDeviceFile):void{
+			this.removeFromFiles(document)
+		}
+
+		op createPicture(init:(RCDevicePicture)=>void):RCDevicePicture{
+			this.createAndAddtoPictures=>[
+				init.apply(it)
+			]
+		}
+		
+		op removePicture(picture : RCDevicePicture):void{
+			this.removeFromPictures(picture)
+		}
+		
+		op checkValid():void{
+			Assert(#[from RCDevice as e where e.sid = {sid} select count(*)].uniqueResult==1,"设备序列号必须唯一")
+		}
+		
+	}
+	entity RCDeviceFile extends DocumentStorage{
+		belongs to device : RCDevice
+		op getContainer():IDocumentContainer{
+			new DeviceFileContainer(device)
+		}
+	}
+	
+	adaptor DeviceFileContainer for RCDevice to IDocumentContainer{
+		
+		op getDocuments():Collection<? extends IDocument>{
+			adaptee.files
+		}
+		op createDocument(init:(IDocument)=>void):IDocument{
+			adaptee.createFile[
+				init.apply(it)
+			]
+		}
+		op removeDocument(document : IDocument):void{
+			adaptee.removeFile(document as RCDeviceFile)
+		}
+	}	
+	
+	entity RCDevicePicture extends DocumentStorage{
+		belongs to device : RCDevice
+		op getContainer():IDocumentContainer{
+			new DevicePictureContainer(device)
+		}
+	}
+
+
+	adaptor DevicePictureContainer for RCDevice to IDocumentContainer{
+		
+		op getDocuments():Collection<? extends IDocument>{
+			adaptee.pictures
+		}
+		op createDocument(init:(IDocument)=>void):IDocument{
+			adaptee.createPicture[
+				init.apply(it)
+			]
+		}
+		op removeDocument(document : IDocument):void{
+			adaptee.removePicture(document as RCDevicePicture)
+		}
+	}	
+	
+	entity-criteria RCDeviceCriteria for RCDevice{
+		sid : String 
+		name : String
+		deviceType : RCDeviceType
+		category : String
+		transient location : RCOnsitePosition
+		locationPathName : String
+		
+		op postInitialize():void{
+			if(location!=null)
+				locationPathName := '%['+location.^id+']%'
+		}
+		
+		condition self.sid like :sid
+		condition self.name like :name
+		condition self.deviceType = :deviceType
+		condition self.deviceType.path like :category
+		condition self.location.path like :locationPathName
+	}
+	 
+	entity-criteria RCDeviceLookupCriteria for RCDevice{
+		info : String
+		
+		condition self.sid like :info or self.name like :info or self.specification like :info
+	}
+		
+	 entity-dao RCDeviceDAO for RCDevice{
+	 	inject eventsManager : RCDeviceEventsManager
+		op createDevice(sid : String,preInit : (RCDevice)=>void) : RCDevice{
+			create RCDevice()=>[device|
+				preInit.apply(device)
+				device.extension := create RCExtensiableEntity()=>[extension|
+					extension.type := device.deviceType.extensiableType
+					extension.value := device.deviceType.defaultValue.value.cloneIn(extension)
+				]
+				device.checkValid()
+				eventsManager.fireCreated(device)
+			]
+		}
+		op ^update(device : RCDevice, updater : (RCDevice)=>void):void{
+			updater.apply(device)
+			eventsManager.fireUpdateded(device)
+		}
+		op ^delete(device : RCDevice, postProc : (RCDevice)=>void) : void{
+			delete device
+			eventsManager.fireDeleted(device)
+		}
+		op findDeviceBySid(sid : String):RCDevice{
+			#[from RCDevice as e where e.sid = {sid}].uniqueResult
+		}
+		op findDevicesByType(deviceType : RCDeviceType):Collection<RCDevice>{
+			#[from RCDevice as e where e.deviceType = {deviceType}].list
+		}
+	 }
+}

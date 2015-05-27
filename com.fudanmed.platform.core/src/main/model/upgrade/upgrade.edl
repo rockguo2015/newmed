@@ -1,0 +1,677 @@
+package com.fudanmed.platform.core.warehouse{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import  com.fudanmed.platform.core.warehouse.*
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	
+	upgrade Initialize from V_0_0 to V_0_1{
+		inject organizationService : RCOrganizationService 
+		inject employeeDAO : RCEmployeeDAO 
+		inject entities : IObjectFactory
+		
+		update initAdmin{
+			employeeDAO.^create("admin",[])=>[
+				name := "系统管理员"
+			]		
+		}
+		
+		update initOrgzniation{
+			organizationService.createRootOrganization("1","XX医院")
+			organizationService.createRootOrganization("2","复旦后勤运营点")
+		}
+		
+		update initStore{
+			create RCWarehouse()=>[
+				name := '工程部主仓'
+				location := '工程部主仓'
+				isMajor := true
+			]
+		}
+		update initCodes{
+			//故障风险等级
+			create RCFaultLevel()=>[
+				codeid := '001'
+				name := '普通'
+			]
+			create RCFaultLevel()=>[
+				codeid := '002'
+				name := '较大'
+			]
+			create RCFaultLevel()=>[
+				codeid := '003'
+				name := '严重'
+			]
+			create RCFaultLevel()=>[
+				codeid := '004'
+				name := '重大'
+			]
+			
+			//故障紧急度
+			create RCFaultEmergencyLevel()=>[
+				codeid := '001'
+				name := '普通'
+			]
+			create RCFaultEmergencyLevel()=>[
+				codeid := '002'
+				name := '一般'
+			]
+			create RCFaultEmergencyLevel()=>[
+				codeid := '003'
+				name := '紧急'
+			]
+			create RCFaultEmergencyLevel()=>[
+				codeid := '004'
+				name := '特急'
+			]
+			
+			//出库类型
+			create RCOutStockType()=>[
+				codeid := '001'
+				name := '普通出库'
+			]
+			create RCOutStockType()=>[
+				codeid := '002'
+				name := '退货出库'
+			]
+						
+			//入库类型
+			create RCInStoreType()=>[
+				codeid := '001'
+				name := '采购入库'
+			]
+			create RCInStoreType()=>[
+				codeid := '001'
+				name := '普通入库'
+			]
+		}
+		
+		update initFrameworkFunctions{
+			create AppFunction()=>[
+				it.parentFunctionId := 'edu.fudan.langlab.uidl.domain.app.roleFunctionAssignmentPresenter'
+				it.functionId := 'edu.fudan.langlab.uidl.domain.app.client.security.RoleFunctionAssignmentPresenter.modifyAssignmentRequest'
+				it.name := '修改功能分配'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'edu.fudan.langlab.uidl.domain.app.roleManagementPresenter'
+				it.functionId := 'edu.fudan.langlab.uidl.domain.app.client.security.RoleManagementPresenter.createRoleRequest'
+				it.name := '新建'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'edu.fudan.langlab.uidl.domain.app.roleManagementPresenter'
+				it.functionId := 'edu.fudan.langlab.uidl.domain.app.client.security.RoleManagementPresenter.modifyRoleRequest'
+				it.name := '修改'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'edu.fudan.langlab.uidl.domain.app.roleManagementPresenter'
+				it.functionId := 'edu.fudan.langlab.uidl.domain.app.client.security.RoleManagementPresenter.deleteRoleRequest'
+				it.name := '删除'
+			]
+			create AppFunction()=>[
+				it.functionId := 'edu.fudan.langlab.uidl.domain.app.systemadmin'
+				it.name := '系统管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'edu.fudan.langlab.uidl.domain.app.systemadmin'
+				it.functionId := 'edu.fudan.langlab.uidl.domain.app.roleManagementPresenter'
+				it.name := '系统角色管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'edu.fudan.langlab.uidl.domain.app.systemadmin'
+				it.functionId := 'edu.fudan.langlab.uidl.domain.app.roleFunctionAssignmentPresenter'
+				it.name := '系统功能权限设置'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'edu.fudan.langlab.uidl.domain.app.systemadmin'
+				it.functionId := 'edu.fudan.langlab.uidl.domain.app.codeManagementPresenter'
+				it.name := '基础代码管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'edu.fudan.langlab.uidl.domain.app.codeManagementPresenter'
+				it.functionId := 'edu.fudan.langlab.uidl.domain.code.client.web.CodeManagementPresenter.createRequest'
+				it.name := '新建'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'edu.fudan.langlab.uidl.domain.app.codeManagementPresenter'
+				it.functionId := 'edu.fudan.langlab.uidl.domain.code.client.web.CodeManagementPresenter.deleteRequest'
+				it.name := '删除'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'edu.fudan.langlab.uidl.domain.app.codeManagementPresenter'
+				it.functionId := 'edu.fudan.langlab.uidl.domain.code.client.web.CodeManagementPresenter.modifyRequest'
+				it.name := '修改'
+			]
+			
+		}	
+		
+		update initApplicationFunctions{
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.organizationManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.OrganizationManagementPresenter.createRequest'
+				it.name := '新建'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.organizationManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.OrganizationManagementPresenter.importRequest'
+				it.name := '导入'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.organizationManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.OrganizationManagementPresenter.deleteRequest'
+				it.name := '删除'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.organizationManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.OrganizationManagementPresenter.modifyRequest'
+				it.name := '修改'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.systemParameterPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.workbench.SystemParameterPresenter.modifyParameterRequest'
+				it.name := '修改系统参数'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.employeeManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.EmployeeManagementPresenter.createRequest'
+				it.name := '新建'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.employeeManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.EmployeeManagementPresenter.importRequest'
+				it.name := '导入'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.employeeManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.EmployeeManagementPresenter.deleteRequest'
+				it.name := '删除'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.employeeManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.EmployeeManagementPresenter.modifyRequest'
+				it.name := '修改'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.employeeManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.EmployeeManagementPresenter.assignRolesRequest'
+				it.name := '分配角色'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.onsitePositionManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.OnsitePositionManagementPresenter.createRequest'
+				it.name := '新建'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.onsitePositionManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.OnsitePositionManagementPresenter.importRequest'
+				it.name := '导入'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.onsitePositionManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.OnsitePositionManagementPresenter.deleteRequest'
+				it.name := '删除'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.onsitePositionManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.OnsitePositionManagementPresenter.modifyRequest'
+				it.name := '修改'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.supplierManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.SupplierManagementPresenter.createRequest'
+				it.name := '新建'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.supplierManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.SupplierManagementPresenter.deleteRequest'
+				it.name := '删除'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.supplierManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.organization.SupplierManagementPresenter.modifyRequest'
+				it.name := '修改'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.workItemTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.WorkItemTaskManagementPresenter.showWorkItemOutStockRecordDetail'
+				it.name := '查看领/退料信息'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.workItemTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.WorkItemTaskManagementPresenter.createWorkItemOutStoreRequest'
+				it.name := '领料'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.workItemTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.WorkItemTaskManagementPresenter.createWorkItemReturnStoreRequest'
+				it.name := '退料'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.transferRecordListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.TransferRecordListPresenter.transferRequest'
+				it.name := '调拨'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.stockTakingListListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.StockTakingListListPresenter.createStockTakingListRequest'
+				it.name := '新建实盘清单'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.stockTakingListListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.StockTakingListListPresenter.cancelStockTakingListRequest'
+				it.name := '取消实盘'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.stockTakingListListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.StockTakingListListPresenter.inputQuantity'
+				it.name := '实盘信息录入'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.stockTakingListListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.StockTakingListListPresenter.commit'
+				it.name := '提交'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.stockTakingListListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.StockTakingListListPresenter.export'
+				it.name := '导出'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.stockTakingRecordListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.StockTakingRecordListPresenter.StockTakingRequest'
+				it.name := '物品盘点'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.stockTakingRecordListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.StockTakingRecordListPresenter.modifyStockTakingRequest'
+				it.name := '修改盘点单'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.ProductCategoryManagementPresenter.createRequest'
+				it.name := '新建物品大类'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.ProductCategoryManagementPresenter.deleteRequest'
+				it.name := '删除物品大类'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.ProductCategoryManagementPresenter.modifyRequest'
+				it.name := '修改物品大类'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.ProductCategoryManagementPresenter.createChildRequest'
+				it.name := '新建物品类别'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.ProductCategoryManagementPresenter.modifyChildRequest'
+				it.name := '修改物品类别'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productCategoryManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.ProductCategoryManagementPresenter.deleteChildRequest'
+				it.name := '删除物品类别'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productSpecificationManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.ProductSpecificationManagementPresenter.createRequest'
+				it.name := '新建'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productSpecificationManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.ProductSpecificationManagementPresenter.importRequest'
+				it.name := '导入'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productSpecificationManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.ProductSpecificationManagementPresenter.deleteRequest'
+				it.name := '删除'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.productSpecificationManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.ProductSpecificationManagementPresenter.modifyRequest'
+				it.name := '修改'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.outStockRecordListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.OutStockRecordListPresenter.OutStockRequest'
+				it.name := '物品出库'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.outStockRecordListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.OutStockRecordListPresenter.modifyOutStockRequest'
+				it.name := '修改出库单'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.inStockRecordListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.InStockRecordListPresenter.inStockRequest'
+				it.name := '物品入库'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.inStockRecordListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.InStockRecordListPresenter.modifyInStockRequest'
+				it.name := '修改入库单'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehouseManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.WarehouseManagementPresenter.createWarehouseRequest'
+				it.name := '新建'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehouseManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.WarehouseManagementPresenter.updateWarehouseRequest'
+				it.name := '修改'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehouseManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.WarehouseManagementPresenter.deleteWarehouseRequest'
+				it.name := '删除'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.maintenanceTypeManagerPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.MaintenamceTypeManagementPresenter.createRequest'
+				it.name := '新建维修类别'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.maintenanceTypeManagerPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.MaintenamceTypeManagementPresenter.deleteRequest'
+				it.name := '删除维修类别'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.maintenanceTypeManagerPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.MaintenamceTypeManagementPresenter.modifyRequest'
+				it.name := '修改维修类别'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.maintenanceTypeManagerPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.MaintenamceTypeManagementPresenter.createChildRequest'
+				it.name := '新建维修项目'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.maintenanceTypeManagerPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.MaintenamceTypeManagementPresenter.modifyChildRequest'
+				it.name := '修改维修项目'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.maintenanceTypeManagerPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.MaintenamceTypeManagementPresenter.deleteChildRequest'
+				it.name := '删除维修项目'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.maintenanceTeamManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.MaintenanceTeamManagementPresenter.selectAsTeam'
+				it.name := '选定维修班组'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.maintenanceTeamManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.MaintenanceTeamManagementPresenter.removeFromTeam'
+				it.name := '移除维修班组'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.settlementListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.SettlementListPresenter.createSettlementRequest'
+				it.name := '新建结算单'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.settlementListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.SettlementListPresenter.modifySettlementRequest'
+				it.name := '修改结算单'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.settlementListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.SettlementListPresenter.cancelSettlementRequest'
+				it.name := '取消结算'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.settlementListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.SettlementListPresenter.addRepairTaskItemsRequest'
+				it.name := '添加结算保修单'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.settlementListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.SettlementListPresenter.cancelSettlementItemRequest'
+				it.name := '移除结算报修单'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.reportManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.ReportManagementPresenter.createRequest'
+				it.name := '新建报修'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.reportManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.ReportManagementPresenter.complaintRequest'
+				it.name := '投诉'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.reportManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.ReportManagementPresenter.doEvaluate'
+				it.name := '评价'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.repairReportManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.RepairTaskManagementPresenter.createRequest'
+				it.name := '新建报修'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.repairReportManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.RepairTaskManagementPresenter.deleteRequest'
+				it.name := '删除报修'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.repairReportManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.RepairTaskManagementPresenter.modifyRequest'
+				it.name := '修改报修'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.repairReportManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.RepairTaskManagementPresenter.dispatchRequest'
+				it.name := '派发班组'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.repairReportManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.RepairTaskManagementPresenter.closeRepairTaskRequest'
+				it.name := '报修结单'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.repairReportManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.RepairTaskManagementPresenter.surveyRepairTaskRequest'
+				it.name := '报修回访'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.groupTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.GroupTaskManagementPresenter.createWorkItemTaskRequest'
+				it.name := '工单派工'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.groupTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.GroupTaskManagementPresenter.finishGroupTaskRequest'
+				it.name := '完工上报'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.groupTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.GroupTaskManagementPresenter.misDispatchGroupTaskRequest'
+				it.name := '串单上报'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.groupTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.GroupTaskManagementPresenter.pendWorkItemTaskRequest'
+				it.name := '工单挂起'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.groupTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.GroupTaskManagementPresenter.cancelPendWorkItemTaskRequest'
+				it.name := '结束挂起'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.groupTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.GroupTaskManagementPresenter.outsourceWorkItemTaskRequest'
+				it.name := '外协'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.groupTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.GroupTaskManagementPresenter.finishOutsourceWorkItemTaskRequest'
+				it.name := '完成外协'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.groupTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.GroupTaskManagementPresenter.misDispatchingWorkItemTaskRequest'
+				it.name := '串单'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.groupTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.GroupTaskManagementPresenter.finishWorkItemTaskRequest'
+				it.name := '工单完工'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.groupTaskManagementPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.GroupTaskManagementPresenter.followUpWOrkItemTaskRequest'
+				it.name := '跟进'
+			]
+			create AppFunction()=>[
+				it.functionId := 'com.fudanmed.platform.core.web.basic'
+				it.name := '基础数据维护'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.basic'
+				it.functionId := 'com.fudanmed.platform.core.web.onsitePositionManagementPresenter'
+				it.name := '区域位置维护'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.basic'
+				it.functionId := 'com.fudanmed.platform.core.web.organizationManagementPresenter'
+				it.name := '组织机构维护'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.basic'
+				it.functionId := 'com.fudanmed.platform.core.web.employeeManagementPresenter'
+				it.name := '员工维护'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.basic'
+				it.functionId := 'com.fudanmed.platform.core.web.supplierManagementPresenter'
+				it.name := '供应商维护'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.basic'
+				it.functionId := 'com.fudanmed.platform.core.web.systemParameterPresenter'
+				it.name := '系统参数维护'
+			]
+			create AppFunction()=>[
+				it.functionId := 'com.fudanmed.platform.core.web.project'
+				it.name := '设备工程数据维护'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.project'
+				it.functionId := 'com.fudanmed.platform.core.web.maintenanceTypeManagerPresenter'
+				it.name := '维修类别维护'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.project'
+				it.functionId := 'com.fudanmed.platform.core.web.maintenanceTeamManagementPresenter'
+				it.name := '维修班组设置'
+			]
+			create AppFunction()=>[
+				it.functionId := 'com.fudanmed.platform.core.web.department'
+				it.name := '科室日常业务'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.department'
+				it.functionId := 'com.fudanmed.platform.core.web.reportManagementPresenter'
+				it.name := '科室报修工作台'
+			]
+			create AppFunction()=>[
+				it.functionId := 'com.fudanmed.platform.core.web.process'
+				it.name := '工程日常业务'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.process'
+				it.functionId := 'com.fudanmed.platform.core.web.repairReportManagementPresenter'
+				it.name := '调度工作台'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.process'
+				it.functionId := 'com.fudanmed.platform.core.web.groupTaskManagementPresenter'
+				it.name := '班组工作台'
+			]
+			create AppFunction()=>[
+				it.functionId := 'com.fudanmed.platform.core.web.warehousecore'
+				it.name := '工程仓库数据维护'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehousecore'
+				it.functionId := 'com.fudanmed.platform.core.web.productCategoryManagementPresenter'
+				it.name := '物品类型信息维护'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehousecore'
+				it.functionId := 'com.fudanmed.platform.core.web.warehouseManagementPresenter'
+				it.name := '仓库信息维护'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehousecore'
+				it.functionId := 'com.fudanmed.platform.core.web.productSpecificationManagementPresenter'
+				it.name := '物品信息维护'
+			]
+			create AppFunction()=>[
+				it.functionId := 'com.fudanmed.platform.core.web.warehouse'
+				it.name := '工程仓库管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehouse'
+				it.functionId := 'com.fudanmed.platform.core.web.productWarehouseStorageSummaryManagementPresenter'
+				it.name := '库存台帐'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehouse'
+				it.functionId := 'com.fudanmed.platform.core.web.inStockRecordListPresenter'
+				it.name := '入库管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehouse'
+				it.functionId := 'com.fudanmed.platform.core.web.outStockRecordListPresenter'
+				it.name := '出库管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehouse'
+				it.functionId := 'com.fudanmed.platform.core.web.workItemTaskManagementPresenter'
+				it.name := '工单领/退料管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehouse'
+				it.functionId := 'com.fudanmed.platform.core.web.transferRecordListPresenter'
+				it.name := '调拨管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehouse'
+				it.functionId := 'com.fudanmed.platform.core.web.workItemStockRecordManagementPresenter'
+				it.name := '领料/退料单查询'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehouse'
+				it.functionId := 'com.fudanmed.platform.core.web.settlementListPresenter'
+				it.name := '结算管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehouse'
+				it.functionId := 'com.fudanmed.platform.core.web.stockTakingListListPresenter'
+				it.name := '盘点管理'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.warehouse'
+				it.functionId := 'com.fudanmed.platform.core.web.stockTakingRecordListPresenter'
+				it.name := '盘点管理'
+			]
+
+		}			
+	
+	}
+
+}

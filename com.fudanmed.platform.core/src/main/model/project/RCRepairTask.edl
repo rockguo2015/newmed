@@ -1,0 +1,212 @@
+package com.fudanmed.platform.core.domain{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*	
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	import com.fudanmed.platform.core.domain.*
+	import edu.fudan.langlab.domain.document.*	
+	
+	/*报修单 */
+	entity RCRepairTask  implements IHasDocuments{
+		faultReportSource : RCFaultReportSource
+		reportSid : String
+	
+		reportDate : Date
+		reportTime : Date
+		
+		reserveDate : Date
+		reserveTime : Date
+		
+		planFinishDate : Date
+		planFinishTime : Date
+
+		finishDate : Date
+		finishTime : Date
+		
+		location : String
+		comment : String
+		reporter : RCEmployee
+		reporterName : String
+		reporterPhone : String
+		reportOrg : RCOrganization
+		
+		faultLevel : RCFaultLevel
+		faultEmergencyLevel : RCFaultEmergencyLevel
+		faultType : RCFaultType
+		isFromReporter : Boolean
+		
+		operator : Party
+		
+		month : String
+		
+		part groupTasks : RCGroupTask[*] opposite repairTask
+		/*{
+		 * 	create-op createGroupTask() : RCGroupTask
+		 * 	delete-op deleteGroupTask()
+		 *}
+		 */
+		part complaints : RCComplaint[*] opposite repairTask
+		
+		activeGroupTask : RCGroupTask
+		
+		settlement : RCSettlement //结算
+		
+		part repairEvaluate : RCRepairEvaluate //客户评价
+		
+		op attachToSettlement(settlement : RCSettlement) : void{
+			this.settlement := settlement
+		}
+		op cancelSettlement() : void{
+			this.settlement := null
+		}
+		
+		op isEnd() : Boolean{
+			activeGroupTask != null && activeGroupTask.isEnd
+		}
+
+		op getStorage() : Collection<RCWorkItemStorage>{
+			groupTasks.^map[storage].flatten.toList
+		}
+		op getTaskDirtyManager():RCTaskDirtyManager{
+			beanFactory.getBean(typeof(RCTaskDirtyManager))
+		}
+		
+		op createCompaint() : RCComplaint{
+			createAndAddtoComplaints
+		}
+		
+		op getAmount() : Double{
+			groupTasks.^map[amount].reduce[Double d1, Double d2|d1+d2].nullsafe
+		}
+		
+		op isColsed():Boolean{
+			getStatus().name.equals("closed")
+		}
+		
+		op updateDerived():void{
+			month := DateUtil::getMonth(reportDate).serialize
+		}			
+		behavior Status{
+			state newCreated
+			state scheduled
+			state wait4SchedulerProcess
+			state wait4GroupTaskFinish
+			state wait4Close
+			state closed
+			state cancel
+			
+			signal cancel	//manual
+			signal close	//manual
+			signal updated	//manual
+			signal groupTaskFinished
+			signal createGroupTask
+			signal misdispatch
+			signal firstWorkItemCreated
+
+			start(byReporter : Boolean){
+				if(byReporter){
+					getTaskDirtyManager().notifyReported
+					isFromReporter :=true
+				}else
+					isFromReporter := false
+				repairEvaluate := create RCRepairEvaluate()
+				updateDerived
+				next state newCreated
+			}
+			
+			on newCreated,scheduled,wait4Close{
+				input cancel(){
+					if(this.scheduled){
+						groupTasks.forEach[
+							taskDirtyManager.notifyTeam(it.team)
+							it.cancel
+						]
+					}
+					next state cancel 
+				}
+			}
+			
+			on wait4SchedulerProcess,newCreated{
+				input updated(){
+					//next state -
+					switch(this.Status){
+						case RCRepairTaskStatus::newCreated:{
+							next state newCreated
+						}
+						default:{
+							next state wait4SchedulerProcess
+						}
+						
+					}
+				}
+			}
+			on scheduled{
+				input firstWorkItemCreated(){
+					next state wait4GroupTaskFinish
+				}
+			}
+		
+			on scheduled,wait4GroupTaskFinish{
+				input misdispatch(groupTask : RCGroupTask){
+					next state wait4SchedulerProcess
+				}
+			}
+			on wait4GroupTaskFinish{
+				input groupTaskFinished(groupTask : RCGroupTask){
+					next state wait4Close
+				}
+			}
+
+			on wait4Close{
+				input close(){
+					repairEvaluate.evaluateState := RCEvaluateState::waiting
+					finishDate := DateUtil::today
+					finishTime := DateUtil::now
+					next state closed
+				}
+			}
+		
+			on newCreated,wait4SchedulerProcess,wait4Close{
+				input createGroupTask(team : RCMaintenanceTeam){
+					
+					this.activeGroupTask := create RCGroupTask(this)=>[
+						it.team := team
+						it.date := DateUtil::today
+						it.time := DateUtil::now
+						it.operator := (beanFactory.getBean(typeof(ISystemUserService)).currentUser as RCEmployeeUser).employee
+						it.^start
+					]
+					next state scheduled
+				}
+			}
+		}
+		op getDocuments():Collection<? extends IDocument>{
+			groupTasks.^map[it.tasks].flatten.^map[it.documents].flatten.toList
+		}
+		
+	}	
+
+	
+	entity-dao RCRepairTaskDAO for RCRepairTask{
+		inject systemUserService : ISystemUserService
+		inject sequenceService : RCSequenceService
+		
+		op createRepairTask4Reporter(postCreate : (RCRepairTask)=>void) : RCRepairTask{
+			create RCRepairTask()=>[
+				postCreate.apply(it)		
+				it.reportSid := sequenceService.nextRepairTaskSequence
+				it.operator := systemUserService.currentUserAsParty
+				it.faultReportSource := #[from RCFaultReportSource as e].list.filter[it.codeid=='_01'].head	
+				it.faultLevel := #[from RCFaultLevel as e order by e.codeid].list.head	
+			]
+		}
+		
+	}	
+	
+}

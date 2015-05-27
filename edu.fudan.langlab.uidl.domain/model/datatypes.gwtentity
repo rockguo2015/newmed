@@ -1,0 +1,19 @@
+package edu.fudan.langlab.uidl.domain.common feature web{
+
+	import edu.fudan.langlab.domain.common.*
+	
+	ui-datatype UIDateRange for DateRange{
+		startDate : java.util.Date
+		finishDate : java.util.Date		
+		
+		op inRange(d:Date):boolean{
+			d >= startDate && d <= finishDate
+		}
+		
+		op inRange(range: DateRange):boolean{
+			inRange(range.startDate) || inRange(range.finishDate)
+		}
+				
+		
+	}
+}

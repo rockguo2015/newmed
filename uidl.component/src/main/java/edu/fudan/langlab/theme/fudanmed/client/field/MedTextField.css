@@ -1,0 +1,35 @@
+.text, .area {
+  background-color: #fff;
+  color: #000;
+  border: 1px #d6d6d6 solid;
+  padding: 1px 3px; 
+  resize: none;
+}
+
+.area {
+  overflow: visible; 
+}
+
+@if user.agent gecko1_8 gecko {
+  .area {
+    padding: 0px;
+  }
+}
+
+.text {
+  height: 20px;
+  line-height: 20px;
+  vertical-align: top;
+  padding : 0px;
+  vertical-align : middle;
+}
+
+@if user.agent ie6 ie8 ie9 {
+  .file {
+    height: 22px;
+    line-height: 22px;
+    vertical-align: top;
+  }
+} @else {
+  .file {}
+}

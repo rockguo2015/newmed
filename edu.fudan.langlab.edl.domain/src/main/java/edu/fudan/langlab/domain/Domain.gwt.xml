@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module rename-to='domain'>
+	<source path='code/proxy' />
+	<source path="common/proxy"/>
+	<source path="organization/proxy"/>
+	<source path="security/proxy"/>
+	<source path="statemachine/proxy"/>
+	<source path="task/proxy"/>
+	<source path="updater/proxy"/>
+	<source path="workflow/proxy"/>
+	<source path="document/proxy"/>
+</module>
+

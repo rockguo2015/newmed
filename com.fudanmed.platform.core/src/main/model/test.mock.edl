@@ -1,0 +1,25 @@
+package mock{
+	
+	import edu.fudan.mylang.pf.*
+	import com.shrct.businessprocess.domain.*
+	import edu.fudan.mylang.workflow.InvalidEntityStateException
+	import java.util.*	
+	import edu.fudan.langlab.domain.workflow.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.task.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	
+	service MockSystemUserService implements ISystemUserService{
+		op getCurrentUser() : User {
+			#[from RCEmployeeUser as eu].list.findFirst[true]
+		}
+		
+		op setCurrentUser(user : User):void{}
+	
+		op getCurrentUserAsParty() : Party{
+			
+		}
+	}
+	
+}

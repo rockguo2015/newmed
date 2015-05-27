@@ -1,0 +1,178 @@
+package com.fudanmed.platform.core.warehouse{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import  com.fudanmed.platform.core.warehouse.*
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	/*工单领/退料 */
+	
+	entity RCWorkItemStockRecord{
+		sid : String
+		
+		operator : RCEmployee
+		date : Date
+		comment : String
+		
+		workItem : RCWorkItemTask
+		part items : RCWorkItemStockRecordItem[*] opposite record
+		sourceStore : RCWarehouse
+		committed : Boolean := false
+		
+		op getTypeName() : String
+		
+		op getTotalAmount() : Double{
+			items.^map[recordItem.totalAmount].reduce[Double d1, Double d2|d1+d2].nullsafe
+		}
+		
+	}
+	
+	entity RCWorkItemOutStockRecord extends RCWorkItemStockRecord{
+		
+		
+		op getTypeName() : String{
+			"领料"
+		}
+	
+		op initItemsFromSummary(summaryItems : Collection<RCProductSpecificationSummary>):void{
+			removeAllItems
+			summaryItems.forEach[summaryItem|
+				sourceStore.outStockCalculate(summaryItem.productSpec,summaryItem.quantity,false).forEach[resultItem|
+					createAndAddtoItems=>[
+						it.recordItem.productEntry := resultItem.productEntry
+						it.recordItem.quantity := resultItem.quantity
+					]
+				]
+			]
+		}
+	
+		op commit(operator : RCEmployee):void{
+			this.operator := operator
+			this.date := DateUtil::now
+			items.forEach[item|
+				val targetStorage := workItem.inStock(item.recordItem.productEntry,item.recordItem.quantity)
+				create RCWorkItemStockTransaction(targetStorage)=>[
+					it.record := this
+					it.quantity := item.recordItem.quantity
+					it.date := DateUtil::now
+					it.operator := operator
+				]
+				val sourceStorage := sourceStore.inStock(item.recordItem.productEntry,-item.recordItem.quantity)
+				create RCWorkItemStockTransaction(sourceStorage)=>[
+					it.record := this
+					it.quantity := -item.recordItem.quantity
+					it.date := DateUtil::now
+					it.operator := operator
+				]
+			]
+			committed := true
+		}
+	}
+	
+	
+	criteria RCWorkItemStockRecordCriteria for RCWorkItemStockRecord{
+		sid : String
+		condition self.sid like :sid
+		
+		order by self.date desc
+	}
+	
+	entity RCWorkItemStockRecordItem{
+		recordItem : RCRecordItem
+		belongs to record : RCWorkItemStockRecord
+	}
+	
+	criteria RCWorkItemStockRecordItemStatCriteria for RCWorkItemStockRecordItem{
+		dateFrom : Date
+		dateTo : Date
+		team : RCMaintenanceTeam
+		
+		condition self.record.workItem.date>=:dateFrom
+		condition self.record.workItem.date<=:dateTo
+		condition self.record.workItem.groupTask.team = :team
+		
+	}
+	
+	stat-criteria RCWorkItemStockRecordItemStat4ProductEntryCriteria for RCWorkItemStockRecordItemStatCriteria{
+		group by productEntry : self.recordItem.productEntry.productSpec
+		cnt : sum(self.recordItem.quantity)
+	}
+	
+	entity RCWorkItemStockTransaction extends RCProductStoreTransaction{
+		record : RCWorkItemStockRecord
+		op getEventRecordSid() : String{
+			record.sid
+		}
+		op getTransactionTypeDesc() : String{
+			switch(record){
+				RCWorkItemOutStockRecord:{
+					if(quantity<0)
+						"工单领料出库"
+					else
+						"工单领料"
+				}
+				RCWorkItemReturnStockRecord:{
+					if(quantity>0)
+						"工单退料入库"
+					else
+						"工单退料料"
+					
+				}
+			}
+		}
+		op transactionCommitted():void{
+			transactionCommitted[it,quantity,amount|
+				it.workitemStockQuantity := it.workitemStockQuantity +quantity
+				it.workitemStockAmount := it.workitemStockAmount +amount
+				
+			]
+		}
+		
+	}
+
+	entity RCWorkItemReturnStockRecord extends RCWorkItemStockRecord{
+		op getTypeName() : String{
+			"退料"
+		}
+		op initItemsFromSummary(summaryItems : Collection<RCProductSpecificationSummary>):void{
+			removeAllItems
+			summaryItems.forEach[summaryItem|
+				workItem.outStockCalculate(summaryItem.productSpec,summaryItem.quantity,true).forEach[resultItem|
+					createAndAddtoItems=>[
+						it.recordItem.productEntry := resultItem.productEntry
+						it.recordItem.quantity := resultItem.quantity
+					]
+				]
+			]
+		}
+	
+		op commit(operator : RCEmployee):void{
+			this.operator := operator
+			this.date := DateUtil::now
+			items.forEach[item|
+				val targetStorage := workItem.inStock(item.recordItem.productEntry,-item.recordItem.quantity)
+				create RCWorkItemStockTransaction(targetStorage)=>[
+					it.record := this
+					it.quantity := -item.recordItem.quantity
+					it.date := DateUtil::now
+					it.operator := operator
+					it.transactionCommitted
+					
+				]
+				val sourceStorage := sourceStore.inStock(item.recordItem.productEntry,item.recordItem.quantity)
+				create RCWorkItemStockTransaction(sourceStorage)=>[
+					it.record := this
+					it.quantity := item.recordItem.quantity
+					it.date := DateUtil::now
+					it.operator := operator
+					it.transactionCommitted
+				]				
+			]
+			committed := true
+		}
+	}
+}

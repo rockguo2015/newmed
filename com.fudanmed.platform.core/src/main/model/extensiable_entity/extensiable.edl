@@ -1,0 +1,374 @@
+package com.fudanmed.platform.core.entityextension{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import java.util.*
+	import java.text.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	import static com.uniquesoft.uidl.validation.Validates
+	
+	entity RCExtensiableEntityType{
+		rootType : RCCompositeType
+		part compositeTypes : RCCompositeType[*] opposite extensiableEntity
+	}
+	
+	/*
+	 * 所有的复合类型都必须定义在一个RCExtensiableEntity中
+	 */
+	entity RCExtensiableEntity{
+		
+		type : RCExtensiableEntityType
+		part value : RCCompositeValue
+		
+		op getValueType():RCType{
+			type.rootType
+		}
+	}	
+	
+	entity RCType implements INamedModelObject{
+		op getTypeName():String
+		op createInstance(rootOwner : RCExtensiableEntity) : RCValue
+		op getEntityName():String{
+			typeName
+		}
+		op cloneType(extensiableEntity : RCExtensiableEntityType):RCType
+	}
+	
+	entity RCAttribute{
+		belongs to type : RCCompositeType
+		name : String
+		typeRef : RCType
+	}
+	
+	entity RCAttributeSlot{
+		belongs to attrValue : RCCompositeValue
+		attr : RCAttribute
+		part value : RCValue
+		op getValueType():RCType{
+			attr.typeRef
+		}
+	}
+
+	entity RCValue implements INamedModelObject{
+		instanceName : String
+		type : RCType
+		rootOwner : RCExtensiableEntity
+		slotOwner : RCAttributeSlot
+		op getEntityName() : String
+		op cloneIn(rootOwner : RCExtensiableEntity) : RCValue
+		
+	}	
+	
+	entity RCPrimaryType extends RCType{
+		op getTypeName():String
+		op createInstance(owner : RCExtensiableEntity) : RCPrimaryValue
+		op cloneType(extensiableEntity : RCExtensiableEntityType):RCType{
+			this
+		}
+	}	
+
+	entity RCPrimaryValue extends RCValue{
+		op getEntityName():String
+	}
+	
+	entity RCNumberType extends RCPrimaryType{
+		op getTypeName() : String{
+			'数值'
+		}
+		op createInstance(rootOwner : RCExtensiableEntity) : RCNumberValue{
+			create RCNumberValue()=>[
+				it.rootOwner := rootOwner
+			]
+		}
+	}
+	
+	entity RCNumberValue extends RCPrimaryValue{
+		value : Double
+		
+		op getEntityName():String{
+			if(value!=null) value.toString
+			else ""
+		}
+		
+		op cloneIn(rootOwner : RCExtensiableEntity) : RCNumberValue{
+			create RCNumberValue()=>[
+				it.rootOwner := rootOwner
+				it.type := this.type
+				it.value := this.value
+			]
+		}
+	}
+	
+	entity RCCustomizableType extends RCPrimaryType{
+		op getTypeName():String
+		op getAlias():String
+		op createInstance(owner : RCExtensiableEntity) : RCPrimaryValue
+		
+	}
+	
+	entity RCNumberWithUnitType extends RCCustomizableType{
+		alias:String
+		unit : String
+		op getTypeName() : String{
+			unit
+		}
+		op createInstance(rootOwner : RCExtensiableEntity) : RCNumberWithUnitValue{
+			create RCNumberWithUnitValue()=>[
+				it.rootOwner := rootOwner
+			]
+		}
+	}
+	
+	criteria RCCustomizableTypeCriteria for RCCustomizableType{
+		
+	}
+	
+	entity RCNumberWithUnitValue extends RCPrimaryValue{
+		value : Double
+		op getEntityName():String{
+			if(value!=null) value.toString
+			else ""
+		}
+		op cloneIn(rootOwner : RCExtensiableEntity) : RCNumberWithUnitValue{
+			create RCNumberWithUnitValue()=>[
+				it.rootOwner := rootOwner
+				it.type := this.type
+				it.value := this.value
+			]
+		}
+		
+	}
+	
+	entity RCStringType extends RCPrimaryType{
+		op getTypeName() : String{
+			'文字'
+		}
+		op createInstance(rootOwner : RCExtensiableEntity) : RCStringValue{
+			create RCStringValue()=>[
+				it.rootOwner := rootOwner
+			]
+		}
+	}
+	
+	entity RCStringValue extends RCPrimaryValue{
+		stringValue : String
+		op getEntityName():String{
+			if(value!=null) value.toString
+			else ""
+		}
+		op getValue() : String{
+			stringValue
+		}
+		op setValue(v : String) : void{
+			this.stringValue := v
+		}
+		op cloneIn(rootOwner : RCExtensiableEntity) : RCStringValue{
+			create RCStringValue()=>[
+				it.rootOwner := rootOwner
+				it.type := this.type
+				it.stringValue := this.stringValue
+			]
+		}
+		
+	}
+	
+	entity RCRangeType extends RCCustomizableType{
+		numberType : RCNumberWithUnitType
+		op getTypeName() : String{
+			numberType.unit + '[范围]'
+		}
+		op getAlias():String{
+			numberType.alias +  '[范围]'
+		}
+		op createInstance(rootOwner : RCExtensiableEntity) : RCRangeValue{
+			create RCRangeValue()=>[
+				it.rootOwner := rootOwner
+			]
+		}
+	}
+	
+	service RCRangeTypeDAO{
+		op ^create(baseType : RCNumberWithUnitType) : RCRangeType{
+			Assert(!rangeTypeCreated(baseType),"该类型的范围类型已定义")
+			create RCRangeType()=>[
+				it.numberType := baseType
+			]
+		}
+		op rangeTypeCreated(baseType:RCNumberWithUnitType) : Boolean{
+			#[from RCRangeType as e where e.numberType = {baseType}].uniqueResult!=null
+		}
+	}
+	
+	entity RCRangeValue extends RCPrimaryValue{
+		lowerBound : Double
+		upperBound : Double
+		op getEntityName():String{
+			'[' + 
+			(if(lowerBound!=null)lowerBound else '_') + 
+			',' +
+			(if(upperBound!=null)upperBound else '_') +
+			']'
+		}
+		op setValue(lowerBound : Double, upperBound : Double) : void{
+			this.lowerBound := lowerBound
+			this.upperBound := upperBound
+		}
+		op cloneIn(rootOwner : RCExtensiableEntity) : RCRangeValue{
+			create RCRangeValue()=>[
+				it.rootOwner := rootOwner
+				it.type := this.type
+				it.lowerBound := this.lowerBound
+				it.upperBound := this.upperBound
+			]
+		}
+		
+	}
+
+	entity RCDateType extends RCPrimaryType{
+		op getTypeName():String{
+			"日期"
+		}
+		op createInstance(rootOwner : RCExtensiableEntity) : RCDateValue{
+			create RCDateValue()=>[
+				it.rootOwner := rootOwner
+			]
+		}
+	}
+	
+	entity RCDateValue extends RCPrimaryValue{
+		date : Date
+		op getEntityName():String{
+			if(date==null) ""
+			else new SimpleDateFormat(  
+                "yyyy-MM-dd").format(date)
+
+		}
+		op setValue(date : Date) : void{
+			this.date := date
+		}
+		op cloneIn(rootOwner : RCExtensiableEntity) : RCDateValue{
+			create RCDateValue()=>[
+				it.rootOwner := rootOwner
+				it.type := this.type
+				it.date := this.date
+			]
+		}
+		
+	} 
+	entity RCCompositeType extends RCType{
+		name : String
+		op getTypeName():String{
+			name
+		}
+		belongs to extensiableEntity : RCExtensiableEntityType
+		part attrs : RCAttribute[*] opposite type
+		op createInstance(rootOwner : RCExtensiableEntity) : RCCompositeValue{
+			create RCCompositeValue()=>[compositeValue|
+				compositeValue.rootOwner := rootOwner
+				compositeValue.type := this
+				attrs.forEach[attr|
+					compositeValue.createAndAddtoSlots()=>[slot|
+						slot.attr := attr
+						slot.value := attr.typeRef.createInstance(rootOwner)
+					]
+				]
+			]
+		}
+		op cloneType(extensiableEntity : RCExtensiableEntityType):RCCompositeType{
+			create RCCompositeType(extensiableEntity)=>[newType|
+				newType.name := this.name
+				attrs.forEach[oldAttr|
+					newType.createAndAddtoAttrs=>[newAttr|
+						newAttr.name := oldAttr.name
+						newAttr.typeRef := oldAttr.typeRef.cloneType(extensiableEntity)
+					]
+				]
+			]
+		}
+	}
+
+	/*
+	 * 基本数据类型直接引用。
+	 * 复合数据类型需要将类型复制到ExtensiableEntity后引用。
+	 */
+	entity RCCompositeValue extends RCValue{
+		part slots : RCAttributeSlot[*] opposite attrValue
+		
+		//create an attribute of type
+		op createAttribute(name : String, typeRef : RCType) : RCAttributeSlot{
+			// TODO： duplicate name check
+			val t := (this.type as RCCompositeType).createAndAddtoAttrs=>[
+				it.name := name
+				it.typeRef := typeRef
+			]
+
+			#[from RCValue as v where v.type = {this.type}].list.filter[it!=this].filter(typeof(RCCompositeValue)).forEach[
+				it.createAndAddtoSlots=>[
+					it.attr := t
+					it.value := typeRef.createInstance(rootOwner)
+					it.value.slotOwner := it
+				]
+			]
+
+			this.createAndAddtoSlots=>[
+				it.attr := t
+				it.value := typeRef.createInstance(rootOwner)
+				it.value.slotOwner := it
+			]
+			
+		}
+		
+		op createAttribute(name : String,typeName : String) : RCAttributeSlot{
+			val type := rootOwner.type.createAndAddtoCompositeTypes()=>[
+				it.name := typeName
+			]
+			val attr := (this.type as RCCompositeType).createAndAddtoAttrs=>[
+				it.name := name
+				it.typeRef := type
+			]
+			
+			#[from RCValue as v where v.type = {this.type}].list.filter[it!=this].filter(typeof(RCCompositeValue)).forEach[
+				it.createAndAddtoSlots=>[
+					it.attr := attr
+					it.value := type.createInstance(rootOwner)
+					it.value.slotOwner := it
+				]
+			]
+			
+			this.createAndAddtoSlots=>[
+				it.attr := attr
+				it.value := type.createInstance(rootOwner)
+				it.value.slotOwner := it
+			]
+		}
+		
+		op removeAttribute(attr :RCAttribute ) : void{
+			#[from RCAttributeSlot as s where s.attr = {attr}].list.forEach[
+				delete it
+			]
+			delete attr
+		}
+		
+		op getEntityName():String{
+			slots.^map[slot|slot.attr.name + ":{" + slot.value.entityName + "}"].^join(",")
+		}
+		
+		op cloneIn(rootOwner : RCExtensiableEntity) : RCCompositeValue{
+			create RCCompositeValue()=>[compositeValue|
+				compositeValue.rootOwner := rootOwner
+				compositeValue.type := this.type
+				slots.forEach[slot|
+					compositeValue.createAndAddtoSlots=>[
+						it.attr := slot.attr
+						it.value := slot.value.cloneIn(rootOwner)
+						it.value.slotOwner := it
+					]
+				]
+			]
+		}
+		
+	}	
+}

@@ -1,0 +1,135 @@
+package com.fudanmed.platform.core.deliver{
+	
+	import java.util.Date
+	import java.util.Collection
+	import edu.fudan.mylang.utils.DateUtil
+	import edu.fudan.mylang.pf.*
+	import com.fudanmed.platform.core.domain.*
+	import edu.fudan.langlab.domain.code.Code
+	import edu.fudan.langlab.domain.common.*
+	import static com.uniquesoft.uidl.validation.Validates
+	import edu.fudan.langlab.domain.security.ISystemUserService
+	entity DLResourceType extends Code{
+	}
+	
+	/*运送相关资源：需要借还的，有编号的设备 */
+	
+	enum DLResourceEventType{
+		register repair finishRepair unregister
+	}
+	
+	entity DLResourceEvent{
+		date : Date
+		comment : String
+		belongs to resource : DLResource
+	}
+	
+	entity DLResourceLifecycleEvent extends DLResourceEvent{
+		type : DLResourceEventType
+	}
+	
+	entity DLResourceExtBorrowEvent extends DLResourceEvent{
+		dateTime : Date
+		returnDateTime : Date
+		returned : Boolean := false
+	}
+	
+	criteria DLResourceExtBorrowEventCriteria for DLResourceExtBorrowEvent{
+		returned : Boolean
+		dateFrom : Date
+		dateTo : Date
+		
+		condition self.returned = :returned
+		condition self.date >= :dateFrom
+		condition self.date <= :dateTo
+	}
+	
+	entity DLResource{
+		sid : String
+		type : DLResourceType
+		description : String
+		part events : DLResourceEvent[*] opposite resource
+		
+		op createLifeCycleEvent(type : DLResourceEventType):DLResourceEvent{
+			create DLResourceLifecycleEvent(this)=>[
+				it.date := DateUtil::today
+				it.type := type
+				it.comment := comment
+			]
+		}
+		
+		op createExtBorrowEvent(comment : String):DLResourceExtBorrowEvent{
+			create DLResourceExtBorrowEvent(this)=>[
+				it.date := DateUtil::today
+				it.dateTime := DateUtil::now
+				it.comment := comment
+			]
+		}
+		
+		behavior Status{
+			state ready4use "可用"
+			state borrowed "借出"
+			state extBorrowed "外借中"
+			state repairing "检修中"
+			state unregistered "报废"
+			
+			signal repair 
+			signal borrow
+			signal doReturn
+			signal extBorrow
+			signal doExtReturn
+			signal unregister
+			signal finishRepair
+			
+			start(){
+				createLifeCycleEvent(DLResourceEventType::register)
+				next state ready4use
+			}
+			
+			on ready4use{
+				input repair(comment : String){
+				createLifeCycleEvent(DLResourceEventType::repair)=>[it.comment := comment]
+					next state repairing
+				}
+				input borrow(){
+					next state borrowed
+				}
+				input extBorrow(comment : String){
+					createExtBorrowEvent(comment)
+					next state extBorrowed
+				}
+			}
+			
+			on ready4use,repairing{
+				input unregister(comment : String){
+					createLifeCycleEvent(DLResourceEventType::unregister)=>[it.comment := comment]
+					next state unregistered
+				}
+				
+			}
+			
+			on repairing{
+				input finishRepair(comment : String){
+					createLifeCycleEvent(DLResourceEventType::finishRepair)=>[it.comment := comment]
+					next state ready4use
+				}
+			}
+			
+			on extBorrowed{
+				input doExtReturn(){
+					val event := #[from DLResourceExtBorrowEvent as e where e.resource = {this} and e.returnDateTime is null].uniqueResult
+					event.returned := true
+					event.returnDateTime := DateUtil::now
+					next state ready4use
+				}
+			}
+			
+			on borrowed{
+				input doReturn(){
+					next state ready4use
+				}
+			}
+		}
+		
+	}
+}

@@ -1,0 +1,54 @@
+package edu.fudan.langlab.uidl.domain.app feature security{
+	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.*	
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import  com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.uidl.domain.app.server.^service.login.ISecurityService
+	import edu.fudan.langlab.uidl.domain.app.client.tree.*
+	import edu.fudan.langlab.gxt.shared.component.treegrid.ITreeContentProvider
+	
+	ui-datatype UIAppRole{
+		roleId : String "角色ID"
+		name : String "角色名"
+		
+		functions : Collection<UIAppFunction>
+		
+		ui-component AppRoleListGrid as GXTGrid{
+			binding{name}
+		}
+	}
+
+	ui-entity UIAppFunction for AppFunction{
+		parentFunctionId : String
+		functionId : String
+		name : String "功能名"
+		map AppFunctionMapper{
+			direct{parentFunctionId,functionId,name}
+		}
+		
+		ui-component AppFunctionListGrid as GXTTreeGrid{
+			required functionTreeContentProvider :UIAppFunctionTreeContentProvider
+			binding{name}
+			op getTreeContentProvider() : ITreeContentProvider<UIAppFunction>{
+				functionTreeContentProvider
+			}
+		}
+	}
+	
+	ui-datatype UIAppFunctionAssignment{
+		roleId : String
+		functions : UIAppFunction[*] "系统功能"
+		
+		ui-component AppFunctionAssignmentForm as GXTForm{
+			required treeContentProvider : UIAppFunctionTreeContentProvider
+			binding{functions as CheckboxTreeItem(treeContentProvider) content from AllAppFunctionContentProvider}
+		}
+	}	
+	
+}

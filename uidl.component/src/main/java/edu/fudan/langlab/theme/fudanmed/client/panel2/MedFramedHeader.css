@@ -1,0 +1,14 @@
+.header {
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  padding-left: 0px;
+  font-size: 14px;  
+}
+
+.headerText {
+  font-family: Verdana,"宋体 ","Lucida Grande",sans-serif;
+  font-weight: 700;
+  line-height: 35px;
+}
+

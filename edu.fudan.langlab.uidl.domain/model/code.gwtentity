@@ -1,0 +1,304 @@
+package edu.fudan.langlab.uidl.domain.code feature web{
+	
+	import edu.fudan.langlab.domain.common.*
+	import edu.fudan.langlab.domain.code.*
+	import edu.fudan.langlab.domain.code.^proxy.*
+	import com.google.gwt.user.client.^ui.*	
+	import com.sencha.gxt.widget.core.client.button.TextButton
+	import edu.fudan.langlab.security.client.Securities
+	import java.util.*
+	import com.uniquesoft.gwt.shared.GWTNamedEntity
+	import com.sencha.gxt.widget.core.client.container.VerticalLayoutContainer
+	import com.uniquesoft.gwt.client.common.*
+	import com.sencha.gxt.widget.core.client.*
+	import com.google.gwt.editor.client.HasEditorErrors	
+	import com.uniquesoft.uidl.transform.IConvertService
+	import edu.fudan.langlab.domain.code.events.*
+
+	import edu.fudan.langlab.uidl.domain.app.*
+
+	signal CodesChanged
+	signal InputNextCode(codeType : UICodeType)
+	
+	content-provider UICodeTypeContentProvider for UICodeType{
+		@Inject codeService : CodeService
+		contents{
+			codeService.allCodeTypes.^map[codeType|
+				new UICodeType=>[
+					name = codeType.name
+					className = codeType.className
+				]
+			].toList
+		}
+	}
+	
+	ui-datatype UICodeType for CodeType{
+		name : String
+		className : String
+	}
+	
+	ui-entity UICode for Code{
+		codeid : String "代码"
+		name : String "名称"
+		inputNext : Boolean "继续输入"
+		map CodeMapper validate by CodeValidator{
+			direct{codeid,name}
+		}
+		
+		ui-component CodeForm as GXTForm{
+			binding{codeid,name,inputNext}
+			con : VerticalLayoutContainer
+			op asWidget() : VerticalLayoutContainer{
+				con = con.lazy[
+					new VerticalLayoutContainer=>[
+						it += codeid.asWidget
+						it += name.asWidget	
+						it += inputNext.asWidget=>[inputNext.value=true]
+					]	
+				]
+			}		
+		}
+		
+		ui-component CodeListGrid as GXTGrid{
+			binding{codeid,name}
+		}
+		
+		constraints CodeValidator{
+			rule Required on codeid
+			rule Required on name
+		}
+	}
+	
+	ui-datatype UICodeCriteria{
+		codeType : UICodeType "代码类型"
+		ui-component CodeCriteriaForm as GXTForm{
+			binding{codeType as ComboBoxItem content from UICodeTypeContentProvider}
+		}
+	}
+	
+	ui-command ShowCodeManagementCommand "基础代码维护" @!codeManagementPresenter{
+		@Inject roleManagementPresenter : CodeManagementPresenter
+		execute{
+			roleManagementPresenter.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}	
+	presenter CodeManagementPresenter{
+		view interface{
+			signal in showResults(results : Collection<UICode>)
+			signal in refresh()
+			signal in showFirst()
+
+			signal out createRequest(codeType : UICodeType) @codeManagementPresenter "新建"
+			signal out deleteRequest(value : proxy of Code) @codeManagementPresenter "删除"
+			signal out modifyRequest(value : proxy of Code) @codeManagementPresenter "修改"
+			signal out filterRequest(c : UICodeCriteria)
+		}
+	
+		interaction{
+			factory createOrUpdatePresenter : CreateOrUpdateCodePresenter
+			
+			input prepare.setup(){
+				this.activate[
+					done
+				]
+			}
+			start{
+				fire view.showFirst()
+			}
+	
+			input view.createRequest(codeType : UICodeType){
+				var p = createOrUpdatePresenter.get
+				p.setCodeType(codeType)
+				p.asDialog("新建",300,200)
+			}
+			input eventbus.InputNextCode(codeType : UICodeType){
+				var p = createOrUpdatePresenter.get
+				p.setCodeType(codeType)
+				p.asDialog("新建",300,200)
+			}
+			input view.modifyRequest(value : proxy of Code){
+				var p = createOrUpdatePresenter.get
+				p.setValue(value)
+				p.asDialog("修改",300,200)
+			}
+			input view.deleteRequest(value : proxy of Code){
+				service.delete(value,onSuccess[
+					fire eventbus.CodesChanged
+				])
+			}
+			input view.filterRequest(c : UICodeCriteria){
+				service.filter(c,onSuccess[
+					fire view.showResults(it)
+				])
+			}
+			input eventbus.CodesChanged(){
+				fire view.refresh
+			}
+		}
+	
+		service{
+			@Inject mapper : CodeMapper
+			@Inject codeService : CodeService
+			op filter(uicriteria : UICodeCriteria) : Collection<UICode>{
+				var codeType = codeService.findCodeType(uicriteria.codeType.className)
+				codeType.getAllCodes(entities).^map[mapper.transform(it)].toList
+			}
+	
+			op delete(value : proxy of Code) : void{
+				codeService.deleteCode(resolve value)
+			}
+		}
+	}	
+	
+
+	view CodeManagementView for CodeManagementPresenter{
+		@Inject listGrid : CodeListGrid
+		@Inject criteriaForm : CodeCriteriaForm
+		
+		con: FramedPanel
+		asWidget() : FramedPanel{
+			con
+		}		
+		layout{
+			listGrid.asWidget
+			con = widgets.FramedPanel("基础代码维护")=>[
+				setWidget(widgets.VLayout=>[
+					add(
+						widgets.HTableLayout()=>[
+							add(<Widget>newArrayList(
+								criteriaForm.codeType.asWidget=>[
+									criteriaForm.codeType.addSelectionChangedListener[
+										it.forOnlySelected[codeType|
+											fire view.filterRequest(criteriaForm.value=>[
+												it.codeType = codeType
+											])
+										]
+									]
+								]
+							)	
+						)]
+					)
+
+					add(listGrid.asWidget,widgets.VLayoutData(1,1))
+				])
+				
+				val ac = listGrid.createActionContext
+				addButton(widgets.TextButton("新建")=>[
+					addSelectHandler[
+						fire view.createRequest(criteriaForm.codeType.value)					
+						
+					]
+				])
+				securities.check(ui-requester.modifyRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UICode selectedValue |
+							fire view.modifyRequest(selectedValue.toProxy)
+						]
+					].asButtonRequester("修改"))					
+				]				
+				securities.check(ui-requester.deleteRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UICode selectedValue |
+							widgets.ConfirmMessageBox("确认","确认删除"+selectedValue.name)[
+								fire view.deleteRequest(selectedValue.toProxy)
+							].show
+						]
+					].asButtonRequester("删除"))					
+				]
+			]					
+		}
+		
+		op showResults(results : Collection<UICode>) : void{
+			listGrid.objects = results
+		}
+		
+		op refresh() : void{
+			fire view.filterRequest(criteriaForm.value)
+		}
+		
+		op showFirst() : void{
+			criteriaForm.codeType.selectFirst
+			fire view.filterRequest(criteriaForm.value=>[
+				it.codeType = criteriaForm.codeType.value
+			])
+		}
+	}
+	
+	presenter CreateOrUpdateCodePresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UICode
+			op setValue(Code : UICode) : void
+		}
+	
+		interaction{
+			used4Update : boolean
+			codeType : UICodeType
+			input call.setCodeType(codeType : UICodeType){
+				this.codeType = codeType
+			}
+			input call.setValue(code : proxy of Code){
+				used4Update = true
+				service.loadValue(code,onSuccess[
+					getView().setValue(it)
+				])
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.CodesChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(codeType,getView().value,onSuccess[
+						fire eventbus.CodesChanged()
+						notifier.success
+						if(getView().value.inputNext.isLogicTrue){
+							fire eventbus.InputNextCode(codeType)
+						}
+						
+					])
+				}
+			}			
+		}
+		
+		service{
+			@Inject mapper : CodeMapper
+			@Inject convertService : IConvertService
+			@Inject codeService : CodeService
+			@Inject eventsManager : CodeEventsManager
+			
+			op loadValue(pvalue : proxy of Code) : UICode{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UICode) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uiCodeType : UICodeType,uivalue : UICode) : void{
+				var codeType = codeService.findCodeType(uiCodeType.className)
+				
+//				var codeType = convertService.toValue(typeof(CodeType),uiCodeType)
+				mapper.transform(uivalue,codeService.createCode(codeType))
+			}
+		}
+	}
+	
+	view CreateOrUpdateCodeView for CreateOrUpdateCodePresenter{
+		@Inject form : CodeForm
+		initializer{
+			this += widgets.DialogContent(form.asWidget)
+		}
+		op getValue() : UICode{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op setValue(UICode shop) : void{
+			form.value = shop
+			form.inputNext.asWidget.hide
+		}			
+	}
+		
+}

@@ -1,0 +1,36 @@
+package edu.fudan.langlab.domain.statemachine{
+	
+	import java.util.*
+	import edu.fudan.mylang.pf.IModelObject
+	
+	entity StateMachineLog{
+		type : String
+		targetid : Long
+		smid : String
+		date : Date
+		actionName : String
+	}
+
+	service ModelObjectLogService{
+	
+		op createLog(modelObject:IModelObject ,smid : String, actionName : String) : StateMachineLog{
+			create StateMachineLog()=>[
+				it.type := modelObject.getClass().name
+				it.targetid := modelObject.^id
+				it.smid := smid
+				it.actionName := actionName
+				it.date:= new Date
+			]
+		}
+	
+		op findLog(modelObject : IModelObject, smid : String) : Collection<StateMachineLog>{
+			val typeName := modelObject.getClass().name
+			var objectId := modelObject.^id
+			#[from StateMachineLog as sm where 
+				sm.type = {typeName} and sm.targetid = {objectId} and sm.smid = {smid}
+				order by sm.date
+			].list
+		}
+	}
+}
+

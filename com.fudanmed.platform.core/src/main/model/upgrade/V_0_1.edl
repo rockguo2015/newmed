@@ -1,0 +1,112 @@
+package com.fudanmed.platform.core.warehouse{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*
+	import com.fudanmed.platform.core.device.*
+	import com.fudanmed.platform.core.entityextension.*
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	
+	upgrade V_0_1_upgrade from V_0_1 to V_0_2{
+		
+		update primaryTypes{
+			create RCNumberType()
+			create RCNumberWithUnitType()=>[
+				it.unit := "千瓦/时"
+			]
+			val t1 := create RCNumberWithUnitType()=>[
+				it.unit := "摄氏度"
+			]
+			create RCRangeType()=>[
+				it.numberType := t1
+			]
+			create RCStringType()
+			create RCDateType()
+			create RCNumberWithUnitType()=>[
+				it.unit := "m3/h"
+			]
+			create RCNumberWithUnitType()=>[
+				it.unit := "KW"
+			]
+			create RCNumberWithUnitType()=>[
+				it.unit := "Pa"
+			]
+			val t2 := create RCNumberWithUnitType()=>[
+				it.unit := "dB(A)"
+			]
+			create RCNumberWithUnitType()=>[
+				it.unit := "Kpa"
+			]
+			create RCNumberWithUnitType()=>[
+				it.unit := "Mpa"
+			]
+			create RCNumberWithUnitType()=>[
+				it.unit := "m/s"
+			]
+			create RCRangeType()=>[
+				it.numberType := t2
+			]
+			
+		}
+		
+		update deviceCodes{
+			create RCDeviceUsageType()=>[
+				codeid := "001"
+				name := "在用"
+			]
+			create RCDeviceUsageType()=>[
+				codeid := "002"
+				name := "停用"
+			]
+			create RCDeviceUsageType()=>[
+				codeid := "003"
+				name := "报废"
+			]
+			create RCDeviceUsageType()=>[
+				codeid := "004"
+				name := "封存"
+			]
+		}
+		
+		update test001{
+			#[from RCRepairTask as t].list.forEach[
+				it.finishDate := new Date
+				it.finishTime := new Date
+			]
+		}
+		
+		update initAdditionalFunctions{
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.stockTakingListListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.warehouse.StockTakingListListPresenter.printListlRequest'
+				it.name := '打印盘点单'
+			]
+			create AppFunction()=>[
+				it.parentFunctionId := 'com.fudanmed.platform.core.web.settlementListPresenter'
+				it.functionId := 'com.fudanmed.platform.core.web.client.project.SettlementListPresenter.printSettlementRequest'
+				it.name := '打印结算单'
+			]			val funcId := 'com.fudanmed.platform.core.web.stockTakingRecordListPresenter'
+
+			#[from AppFunction as e1 where e1.parentFunctionId = {funcId}].list.forEach[
+				#[from RoleFunctionAssignment as rf1 where rf1.function = {it}].list.forEach[
+					delete it
+				]
+				delete it
+			]
+			#[from AppFunction as e2 where e2.functionId = {funcId}].list.forEach[
+				#[from RoleFunctionAssignment as rf2 where rf2.function = {it}].list.forEach[
+					delete it
+				]
+				delete it
+			]
+		}
+		
+		
+	}
+	
+}

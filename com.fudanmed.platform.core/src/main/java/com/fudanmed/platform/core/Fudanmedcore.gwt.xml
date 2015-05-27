@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module rename-to='fudanmedcore'>
+	<source path='common/proxy' />
+	<source path='device/proxy' />
+	<source path='device/pm/proxy' />
+	<source path='domain/proxy' />
+	<source path='entityextension/proxy' />
+	<source path='organization/proxy' />
+	<source path='security/proxy' />
+	<source path='warehouse/proxy' />
+	<source path='deliver/proxy' />
+	<source path='measure/proxy' />
+</module>
+

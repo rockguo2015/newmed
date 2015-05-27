@@ -1,0 +1,47 @@
+.menuStyle{
+	background-color: #FFFFFF;
+	border-bottom: 1px solid #D7D7D7;
+	line-height:25px;
+}
+
+.menuStyleSelected{
+	background-color: #EBF3FF;
+}
+
+.titleStyle{
+	height: 29px;
+	width: 100%;
+	display: inline-block;
+	padding-left: 65px;
+	text-indent: 0px;
+	color: rgb(102, 102, 102);;
+	position: relative;
+}
+
+.titleStyleSelected{
+	color:0022a9
+}
+
+@sprite .leadImage{
+	gwt-image : 'nav_bt';
+	width : 8px;
+	height : 15px;
+	left : 50px;
+	top : 8px;
+	position : absolute;
+	background-color : transparent;
+}
+
+@sprite .leadImageSelected{
+	gwt-image : 'nav_bts';
+}
+
+@sprite .tailImageSelected{
+	gwt-image : 'nav_select';
+	width : 4px;
+	height : 10px;
+	right : 20px;
+	top : 10px;
+	position : absolute;
+	background-color : transparent;
+}

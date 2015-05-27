@@ -1,0 +1,18 @@
+package com.uniquesoft.gwt feature datatype{
+	ui-datatype Color{
+		colorCode : String
+	}
+
+	ui-datatype UIPicture{
+		classType : String
+		objectId : Long
+		objectField : String
+	}
+	
+	ui-datatype File{
+		fileName : String
+		fullPathName : String
+		contentType : String
+	}
+
+}

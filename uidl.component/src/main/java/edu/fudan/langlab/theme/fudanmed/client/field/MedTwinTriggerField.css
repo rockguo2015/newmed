@@ -1,0 +1,17 @@
+.text {
+	border: 1px #d6d6d6 solid;
+}
+
+.text.focus {
+	border: 1px solid #888;
+}
+
+.twinTriggerClick {}
+
+.twinTriggerOver {}
+
+.triggerClick {}
+
+.triggerOver {}
+
+.twinTrigger {}

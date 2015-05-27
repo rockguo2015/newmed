@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module rename-to='uidlgxt'>
+	<!-- Inherit the core Web Toolkit stuff. -->
+	<inherits name='com.google.gwt.user.User' />
+	
+	<inherits name="com.google.gwt.inject.Inject" />
+	<inherits name="com.google.common.collect.Collect" />
+	<inherits name='org.eclipse.xtext.xbase.lib.Lib' />	
+	<inherits name='com.uniquesoft.gwt.Sharedlib' />
+	
+	<inherits name='com.sencha.gxt.ui.GXT'/>
+	<inherits name='net.gfbridge.flashemul.FlashEmul'/>
+
+	<source path='client' />
+	<source path='shared' />
+
+  <replace-with class="edu.fudan.langlab.gxt.client.widget.ScoreField.ScoreFieldDefaultAppearance">
+    <when-type-is class="edu.fudan.langlab.gxt.client.widget.ScoreField.ScoreFieldCell.ScoreFieldAppearance" />
+  </replace-with>
+  <replace-with class="com.sencha.gxt.theme.base.client.field.DualListFieldDefaultAppearance">
+    <when-type-is class="com.sencha.gxt.widget.core.client.form.DualListField.DualListFieldAppearance" />
+  </replace-with>
+  	<replace-with class="edu.fudan.langlab.gxt.client.component.form.factory.daterange.DateRangeFieldDefaultAppearance">
+    	<when-type-is class="edu.fudan.langlab.gxt.client.component.form.factory.daterange.DateRangeField.DateRangeFieldAppearance" />
+    </replace-with>
+  
+</module>
+

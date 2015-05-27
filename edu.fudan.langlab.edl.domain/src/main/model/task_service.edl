@@ -1,0 +1,44 @@
+package edu.fudan.langlab.domain.task{
+	import java.util.*
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.task.*
+	import edu.fudan.mylang.utils.DateUtil
+
+	service TaskService{
+		inject taskEventListeners : Collection<TaskEventListener>
+		op findTasks4Owner(owner : Party) : Collection<Task>{
+			#[from Task as task where task.owner = {owner} order by task.genDate].list
+		}
+		
+		op registerNormalTask(preInitializer : (NormalTask)=>void) : NormalTask{
+			(create NormalTask()=>[
+				preInitializer.apply(it)
+				it.taskType := "__NormalTask__"
+				it.genDate := DateUtil::now
+				notifyTaskCreated(it)
+			])
+		}
+		
+		op deleteNormalTask(task : NormalTask) : void{
+			notifyTaskTeBeDeleted(task)
+			delete task
+		}
+		
+		op redistributeTask(task : edu.fudan.langlab.domain.task.Task, party : Party):void{
+			task.setOwner(party)
+		}
+		
+		op notifyTaskCreated(task : edu.fudan.langlab.domain.task.Task) : void{
+			taskEventListeners.forEach[it.afterTaskCreated(task)]
+		}
+		
+		op notifyTaskTeBeDeleted(task : Task) : void{
+			taskEventListeners.forEach[it.beforeTaskDelete(task)]
+		}
+		
+	}
+	
+
+	
+}

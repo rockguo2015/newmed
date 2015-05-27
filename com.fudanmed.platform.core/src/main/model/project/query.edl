@@ -1,0 +1,141 @@
+package com.fudanmed.platform.core.domain{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*	
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	import com.fudanmed.platform.core.domain.*
+	
+	criteria RCRepairTaskCriteria for RCRepairTask{
+		comment : String
+		reportOrg : RCOrganization
+		includeFinishedTask : Boolean := true
+		includeFinishedTask4Reporter : Boolean := true
+		closeStatus : RCRepairTaskStatus		
+		cancelStatus : RCRepairTaskStatus		
+		finishState : RCEvaluateState
+		autoCommitState : RCEvaluateState
+		faultReportSource : RCFaultReportSource
+			
+		reportDateFrom : Date
+		reportDateTo : Date
+		status : RCRepairTaskStatus
+		month : String
+	
+		condition
+			self.reporterName like :comment or
+			self.reportOrg.name like :comment or
+			self.operator.name like :comment or
+			self.faultType.name like :comment or
+			self.faultReportSource.name like :comment or
+			self.faultLevel.name like :comment or 
+			self.faultEmergencyLevel.name like :comment or
+			self.comment like :comment or 
+			self.reportSid like :comment or 
+			self.location like :comment 
+		condition self.reportOrg = :reportOrg
+		condition :includeFinishedTask = true or (self.Status <> :closeStatus and self.Status <> :cancelStatus)
+		condition :includeFinishedTask4Reporter = true or (self.repairEvaluate.evaluateState <> :finishState and self.repairEvaluate.evaluateState <> :autoCommitState)
+		condition self.reportDate >= :reportDateFrom
+		condition self.reportDate <= :reportDateTo
+		condition self.Status = :status
+		condition self.month = :month
+		condition self.faultReportSource = :faultReportSource
+		
+		order by self.reportTime desc
+	}
+	
+	stat-criteria RCRepairTaskStatByMonthCriteria for RCRepairTaskCriteria{
+		group by month : self.month
+		cnt : count(*)
+	}
+	
+	stat-criteria RCRepairTaskStatByReportSourceCriteria for RCRepairTaskCriteria{
+		group by faultReportSource : self.faultReportSource
+		cnt : count(*)
+	}
+	stat-criteria RCRepairTaskStatByFaultTypeCriteria for RCRepairTaskCriteria{
+		group by faultType : self.faultType
+		cnt : count(*)
+	}
+
+	stat-criteria RCRepairTaskStatByOrganizationTypeCriteria for RCRepairTaskCriteria{
+		group by reportOrg : self.reportOrg
+		cnt : count(*)
+	}
+
+	
+	criteria RCRepairTask4SettlementCriteria for distinct RCRepairTask{
+		join self.groupTasks as groupTask
+		
+		hasMadeSettlement : Boolean 
+		closeStatus : RCRepairTaskStatus
+		finishDateFrom : Date
+		finishDateTo : Date
+		team : RCMaintenanceTeam
+		reportOrg : RCOrganization
+		
+		condition self.Status = :closeStatus
+		condition self.settlement is null
+		condition self.finishDate >= :finishDateFrom
+		condition self.finishDate <= :finishDateTo
+		condition groupTask.team = :team
+		condition self.reportOrg = :reportOrg
+		
+		order by self.finishDate desc
+	}
+	
+	criteria RCGroupTaskCriteria for RCGroupTask{
+		dateFrom : Date
+		dateTo : Date
+		includeFinishedTask : Boolean
+		finishedStatus : RCGroupTaskStatus
+		misDispatchedStatus : RCGroupTaskStatus 
+		cancelStatus : RCGroupTaskStatus
+		teams : Collection<Long> := newArrayList
+		status : RCGroupTaskStatus
+		reportOrg : RCOrganization
+		faultReportSource : RCFaultReportSource
+		
+		month : String
+		
+		condition self.date >= :dateFrom
+		condition self.date <= :dateTo
+		condition :includeFinishedTask = true or (self.Status <> :finishedStatus and self.Status <> :misDispatchedStatus and self.Status <> :cancelStatus)
+		condition self.team.id in :teams
+		condition self.Status = :status
+		condition self.repairTask.reportOrg = :reportOrg
+		condition self.repairTask.faultReportSource = :faultReportSource
+		condition self.month = :month
+		order by self.time desc
+	}
+	
+	stat-criteria RCGroupTaskStatByTeamCriteria for RCGroupTaskCriteria{
+	  	cnt : count(*)
+	  	group by team : self.team
+	}
+
+	criteria RCWorkItemTaskCriteria for RCWorkItemTask{
+		
+		sid : String
+		team : RCMaintenanceTeam
+		showAll : Boolean
+		processingStatus : RCWorkItemTaskStatus
+		teams : Collection<Long> := newArrayList
+
+		op postInitialize():void{
+			teams := beanFactory.getBean(typeof(RCMaintenanceTeamDao)).getAllStoreValidTeam4CurrentUser.^map[it.^id].toSet
+		}		
+
+		condition self.groupTask.team.id in :teams
+		condition self.sid like :sid
+		condition :showAll = true or self.Status = :processingStatus
+		condition self.groupTask.team = :team
+		order by self.time desc
+	}		
+}

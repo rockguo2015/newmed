@@ -1,2 +1,2 @@
 # newmed
-this is  a new repository
+this is an initial file

@@ -1,0 +1,30 @@
+
+<module>
+  <inherits name="com.sencha.gxt.theme.blue.Blue" />
+  <!-- Tab Panel -->
+  <replace-with class="edu.fudan.langlab.theme.blue.client.tabs.MyBlueTabPanelApperance">
+    <when-type-is class="com.sencha.gxt.widget.core.client.TabPanel.TabPanelAppearance" />
+  </replace-with>
+  
+  <replace-with class="edu.fudan.langlab.theme.blue.client.grid.MyBlueGridAppearance">
+    <when-type-is class="com.sencha.gxt.widget.core.client.grid.GridView.GridAppearance" />
+  </replace-with>  
+  
+
+  <replace-with class="edu.fudan.langlab.theme.blue.client.grid.MyColumnHeaderDefaultAppearance">
+    <when-type-assignable class="com.sencha.gxt.widget.core.client.grid.ColumnHeader.ColumnHeaderAppearance" />
+  </replace-with> 
+   <!-- Buttons -->
+	
+	<replace-with class="edu.fudan.langlab.theme.blue.client.button.MyButtonCellDefaultAppearance">
+    <when-type-is class="com.sencha.gxt.cell.core.client.ButtonCell.ButtonCellAppearance" />
+  	</replace-with>  
+	<replace-with class="edu.fudan.langlab.theme.blue.client.navbar.NavMenuItemBaseAppearance">
+    <when-type-is class="edu.fudan.langlab.theme.blue.client.navbar.NavMenuItem.NavMenuItemAppearance" />
+  	</replace-with>  
+  
+<!--   <replace-with class="edu.fudan.langlab.theme.blue.client.fieldset.MyBlueFieldSetAppearance">
+    <when-type-is class="com.sencha.gxt.widget.core.client.form.FieldSet.FieldSetAppearance" />
+  </replace-with>  
+ -->   
+</module>

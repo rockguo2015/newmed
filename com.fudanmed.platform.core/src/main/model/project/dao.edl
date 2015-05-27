@@ -1,0 +1,22 @@
+package com.fudanmed.platform.core.domain{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*	
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	import com.fudanmed.platform.core.domain.*
+	
+	entity-dao RCWorkItemTaskDAO for RCWorkItemTask{
+		
+		op workerIsBusy(employee : RCEmployee):Boolean{
+			val processingStatus := RCWorkItemStatusAccessor::processing
+			#[from RCWorkItemTask as e join e.workers as worker where e.Status = {processingStatus} and worker = {employee} select count(worker)].uniqueResult!=0
+		}
+		
+	}	
+}

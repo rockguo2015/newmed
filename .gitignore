@@ -1,0 +1,8 @@
+.DS_Store
+*._trace
+*.smap
+logs/
+target/
+.gwt/
+.metadata/
+*.patch

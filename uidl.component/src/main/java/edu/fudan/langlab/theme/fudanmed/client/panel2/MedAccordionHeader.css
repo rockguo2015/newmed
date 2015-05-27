@@ -1,0 +1,15 @@
+@sprite .header {
+  padding-top: 5px;
+  padding-left: 10px;
+  border-top: 0 none;
+  gwt-image: 'headerBackground';
+  background-position: 0 -9px;
+  height: auto;
+  line-height:15px;
+}
+
+.headerText {
+  color: #0e419c;
+  font-weight: 700;
+  padding-left: 35px;
+}

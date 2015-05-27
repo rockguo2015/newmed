@@ -1,0 +1,282 @@
+package edu.fudan.langlab.domain.workflow{
+	
+	import java.util.*
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.task.*
+	import edu.fudan.langlab.domain.workflow.*
+	import static edu.fudan.mylang.utils.DateUtil.*
+	enum SystemState{
+		__end__
+	}
+	
+	entity ProcessTask extends Task{
+		token : Token
+		op getTaskTypeName() : String{
+			token.bp.processName + ":" + token.targetActivity.description
+		}
+		op getTaskCategory() : String{
+			"流程任务"
+		}
+	}
+
+	entity ForkStatus{
+		activeActivities : Integer := 0
+		required joinPoint : String
+	}
+	
+	entity Token{
+		belongs to bp : BusinessProcess
+		required targetActivity : ActivityNodeDef
+		
+		forkJoinPoints : ForkStatus[*]
+		decisionMergePoints : String[*]
+		
+		op getProcessTask():ProcessTask{
+			#[from ProcessTask as pt where pt.token = {this}].uniqueResult
+		}
+		
+		op pushMergePoint(activityId : String) : void{
+			decisionMergePoints += activityId
+			this
+		}
+		
+		op popMergePoint() : String{
+			var result := (decisionMergePoints as List<String>).get(decisionMergePoints.size-1)
+			decisionMergePoints.^remove(decisionMergePoints.size-1)
+			result
+		}
+		
+		op peekForkPoint() : ForkStatus{
+			(forkJoinPoints as List<ForkStatus>).get(forkJoinPoints.size-1)
+		}
+		
+		op popForkPoint() : ForkStatus{
+			var result := (forkJoinPoints as List<ForkStatus>).get(forkJoinPoints.size-1)
+			forkJoinPoints.^remove(result)
+			delete result
+			result
+		}
+	
+		op pushForkPoint(joinPoint : String) : ForkStatus{
+			var result := create ForkStatus(joinPoint)
+			forkJoinPoints.^add(result)
+			result
+		}
+	
+		op cloneWith(newActivityId : String) : Token{
+			create Token(bp.getActivityDef(newActivityId),bp)=>[newToken|
+				forkJoinPoints.forEach[
+					newToken.forkJoinPoints.^add(it)
+				]
+				decisionMergePoints.forEach[
+					newToken.decisionMergePoints.^add(it)
+				]
+			]
+		}
+		
+//		op registTask(taskOwner : Party, description : String) : ProcessTask{
+//			create ProcessTask()=>[
+//				it.description := description
+//				it.taskType := bp.processType + "." + targetActivity.activityId
+//				it.owner := taskOwner
+//				it.genDate := new Date()
+//				it.token := this
+//			]
+//		}
+	}
+
+	interface IHasProcess{
+		op getProcess() : BusinessProcess
+	}
+
+	entity BusinessProcess implements INamedModelObject{
+		part activities : Activity[*] opposite bp
+		part tokens : Token[*] opposite bp
+		isFinished : Boolean := false
+		startDate : Date
+		
+		op getProcessManager():ProcessManager{
+			beanFactory.getBean(typeof(ProcessManager))
+		}
+				
+		op  getProcessId() : String{
+			this.getClass().toString + "." + getId
+		}
+		
+		op finish() : void{
+			isFinished := true
+			tokens.forEach[
+				processManager.deleteToken(it)
+			]
+		}
+	
+		op getActivityDef(activityId : String) : ActivityNodeDef
+		
+		op getProcessName() : String
+		
+		op getProcessType() : String
+	
+		op systemExecute() : void{
+			var boolean stateChanged := false
+			do{
+				if(processManager.tokenPresent(this,"__end__")){
+					finish()
+					return
+				}
+				stateChanged := _systemExecute()
+			}while(stateChanged)
+		}
+		
+		op _systemExecute() : boolean
+		
+		op getEntityName():String{
+			getProcessName();
+		}
+		
+		op getStatusSummary():String{
+			if(tokens.size==0) "流程已结束"
+			else 
+				tokens.^map[
+					it.targetActivity.description
+				].^join(',')
+		}
+	}
+	
+	datatype ActivityNodeDef{
+		activityId : String
+		description : String
+	}
+	
+	entity Activity  implements INamedModelObject{
+		executer : User
+		executeDate : Date
+		activityName : String
+		comment : String
+		belongs to bp : BusinessProcess
+		
+		op getProcessManager():ProcessManager{
+			beanFactory.getBean(typeof(ProcessManager))
+		}
+		
+		op getEntityName() : String{
+			comment
+		}
+		op toString() : String{
+			activityName + "," + comment
+		}
+	}
+	
+	entity StartActivity extends Activity{
+		op description() : String{
+			"启动流程:" + bp.getProcessName
+		}
+		
+		op doFinish() : void{}
+	}
+	service ProcessManager{
+		inject systemUserService : ISystemUserService
+		inject taskService : TaskService
+		op ^start(bp : BusinessProcess,targetActivity : String) : Token{
+			bp.startDate := new Date
+			create Token(bp.getActivityDef(targetActivity),bp)
+		}
+		
+		op assertToken(bp : BusinessProcess, activityId : String) : Token{
+			var result := #[from Token as tk where tk.bp = {bp} and tk.targetActivity.activityId = {activityId}].uniqueResult
+			if(result==null)
+				throw new RuntimeException("invalid state")
+			return result
+		}
+	
+		op tokenPresent(bp : BusinessProcess, activityId : String) : boolean{
+			var result := #[from Token as tk where tk.bp = {bp} and tk.targetActivity.activityId = {activityId}].uniqueResult
+			result != null
+			
+		}
+		
+		op forwardTo(token : Token, activityId : String) : Token{
+			var newToken := token.cloneWith(activityId)
+			deleteToken(token)
+			newToken
+		}	
+		
+		op enterDecision(token : Token, decisionId : String, mergePoint : String) : Token{
+			token.pushMergePoint(mergePoint)
+			token
+		}
+				
+		op ^merge(token : Token) : Token{
+			forwardTo(token,token.popMergePoint)
+		}
+		
+		op prepareFork(token : Token, joinPoint : String) : Token{
+			token.pushForkPoint(joinPoint)
+			token
+		}
+		
+		op ^fork(token : Token, activityId : String) : Token {
+			token.cloneWith(activityId)=>[
+				var f := it.peekForkPoint
+				f.activeActivities := f.activeActivities + 1
+			]
+		}	
+		
+		op ^join(token : Token, joinedAction : (Token)=>void ) : void{
+			var f := token.peekForkPoint
+			f.activeActivities := f.activeActivities - 1
+			if(f.activeActivities == 0){
+				delete token.popForkPoint
+				var newToken := forwardTo(token,f.joinPoint)
+				if(joinedAction!=null)
+					joinedAction.apply(newToken)
+			}else{
+				deleteToken(token)
+			}
+		}
+	
+		op ^join(token : Token) : void{
+			^join(token,null)
+		}
+		
+		op tokenForked(token : Token) : void{
+			deleteToken(token)
+		}
+		
+		op deleteToken(token : Token) : void{
+			//delete related tasks
+			#[from ProcessTask as pt where pt.token = {token}].list.forEach[
+				removeTask(it)
+			]
+			delete token
+		}
+
+		op createActivity(p : BusinessProcess, activityName : String, comment : String) : Activity{
+			p.createAndAddtoActivities=>[
+				it.executer := systemUserService.currentUser
+				it.executeDate := new Date
+				it.activityName := activityName
+				it.comment := comment
+			]
+		}
+		
+		op removeTask(task : ProcessTask) : void{
+			taskService.notifyTaskTeBeDeleted(task)
+			delete task
+		}
+		
+		op registTask(bp : BusinessProcess,token:Token,taskOwner : Party, description : String) : ProcessTask{
+			create ProcessTask()=>[
+				it.description := description
+				it.taskType := bp.processType + "." + token.targetActivity.activityId
+				it.owner := taskOwner
+				it.genDate := new Date()
+				it.token := token
+				taskService.notifyTaskCreated(it)
+			]
+		}
+		
+	}	
+
+}

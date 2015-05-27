@@ -1,0 +1,27 @@
+
+.header {
+  padding: 4px 3px 2px 5px;
+  position: relative;
+}
+
+.headerIcon {
+  float: left;
+}
+
+.headerHasIcon .headerIcon {
+  width: 18px; 
+}
+
+.headerHasIcon .headerText {
+  left: 20px;
+}
+
+.headerText {
+  font-family: Verdana,"宋体 ","Lucida Grande",sans-serif;
+  font-size: 16px;
+  line-height: 35px;
+}
+
+.headerBar {
+  float: right;
+}

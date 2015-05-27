@@ -1,0 +1,49 @@
+package com.fudanmed.platform.core.domain{
+	import edu.fudan.mylang.pf.*
+	import edu.fudan.langlab.domain.common.*	
+	import edu.fudan.langlab.domain.code.*	
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.*
+	import com.fudanmed.platform.core.domain.*
+	import com.fudanmed.platform.core.warehouse.*	
+	import java.util.*
+	import com.fudanmed.platform.core.common.*
+	import edu.fudan.mylang.utils.DateUtil
+	import com.fudanmed.platform.core.domain.*
+	
+	criteria RCRepairTaskStatisticCriteria for distinct RCRepairTask{
+		join self.groupTasks as groupTask
+		join groupTask.tasks as workItem
+		join workItem.workers as worker
+		
+		reportOrg : RCOrganization
+		team : RCMaintenanceTeam
+		worker : RCEmployee
+		comment : String
+		status : RCRepairTaskStatus
+		
+		reportDateFrom : Date
+		reportDateTo : Date
+		condition
+			self.reporterName like :comment or
+			self.reportOrg.name like :comment or
+			self.operator.name like :comment or
+			self.faultType.name like :comment or
+			self.faultReportSource.name like :comment or
+			self.faultLevel.name like :comment or 
+			self.faultEmergencyLevel.name like :comment or
+			self.comment like :comment or 
+			self.reportSid like :comment or 
+			self.location like :comment 
+	
+		condition self.reportOrg = :reportOrg
+		condition worker = :worker
+		condition groupTask.team = :team
+		condition self.reportDate >= :reportDateFrom
+		condition self.reportDate <= :reportDateTo
+		condition self.Status = :status
+		
+		order by self.reportTime desc
+	}
+	
+}

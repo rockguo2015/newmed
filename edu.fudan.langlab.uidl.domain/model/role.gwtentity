@@ -1,0 +1,383 @@
+package edu.fudan.langlab.uidl.domain.app feature security{
+	import edu.fudan.langlab.domain.organization.*
+	import edu.fudan.langlab.domain.security.^proxy.*
+	import edu.fudan.langlab.domain.security.*
+	import edu.fudan.langlab.uidl.domain.app.*	
+	import com.google.gwt.user.client.^ui.*	
+	import com.google.gwt.editor.client.HasEditorErrors
+	import java.util.*
+	import edu.fudan.langlab.uidl.domain.app.client.web.*
+	import com.uniquesoft.gwt.client.common.*
+	import com.uniquesoft.gwt.client.common.widgets.*
+	import edu.fudan.langlab.uidl.domain.app.server.^service.login.ISecurityService
+	import edu.fudan.langlab.uidl.domain.app.client.tree.*
+	import edu.fudan.langlab.gxt.shared.component.treegrid.ITreeContentProvider
+	import edu.fudan.langlab.uidl.domain.app.*
+
+	ui-entity UIRole for Role{
+		roleId : String "角色代码"
+		isBuildin : Boolean "系统角色"
+		name : String "角色名称"
+		inputNext : Boolean "继续输入"
+		
+		map RoleMapper validate by RoleValidator{
+			direct{roleId,name,isBuildin readonly}
+		}
+	
+		constraints RoleValidator{
+			rule Required on roleId
+			rule Required on name
+			constraint C1 on roleId "角色代码必须唯一"{
+				entity.isUnique[
+					entities.all(typeof(Role)).filter[it.roleId==entity.roleId].head
+				]
+			}
+		}
+
+		ui-component RoleForm as GXTForm{
+			binding{roleId, name,inputNext}
+			con : Widget
+			op asWidget() : Widget{
+				con = con.lazy[
+					widgets.VLayout=>[
+						addFill(roleId.asWidget)
+						addFill(name.asWidget)
+						addFill(inputNext.asWidget=>[inputNext.value=true])
+					]
+				]
+			}
+		}
+	
+		ui-component RoleListGrid as GXTGrid{
+			binding{roleId,name}
+		}
+	}
+	
+	signal RolesChanged
+	signal InputNextRole
+	
+	presenter CreateOrUpdateRolePresenter with-validation implements CommitablePresenter{
+		view interface{
+			op getValue() : UIRole
+			op setValue(value : UIRole) : void
+		}
+		
+		interaction{
+			used4Update : boolean
+			input call.setup4Create(
+				(CreateOrUpdateRolePresenter)=>void postInitializer
+			){
+				used4Update = false
+				this.activate[postInitializer.apply(this)]
+			}
+			
+			input call.setup4Update(
+				value : proxy of Role,
+				(CreateOrUpdateRolePresenter)=>void postInitializer
+			){
+				used4Update = true
+				this.activate[
+					service.loadValue(value,onSuccess[
+						getView().setValue(it)
+						postInitializer.apply(this)
+					])
+				]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				if(used4Update)
+					service.updateValue(getView().value,onSuccess[
+						fire eventbus.RolesChanged()
+						notifier.success
+					])
+				else{
+					service.createValue(getView().value,onSuccess[
+						fire eventbus.RolesChanged()
+						notifier.success
+						if(getView().value.inputNext.isLogicTrue){
+							fire eventbus.InputNextRole()
+						}
+						
+					])
+				}
+			}			
+		}
+	
+		service{
+			@Inject mapper : RoleMapper
+			op loadValue(pvalue : proxy of Role) : UIRole{
+				mapper.transform(resolve pvalue)
+			}
+			op updateValue(uivalue : UIRole) : void{
+				mapper.transform(uivalue,(resolve uivalue))
+			}
+			op createValue(uivalue : UIRole) : void{
+				var value = entities.create(typeof(Role))
+				mapper.transform(uivalue,value)
+			}
+		}
+	}
+
+	view CreateOrUpdateRoleView for CreateOrUpdateRolePresenter implements IHasSize, IHasTitle{
+		@Inject form : RoleForm
+		initializer{
+			this += form.asWidget
+		}
+		op getValue() : UIRole{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setValue(UIRole value) : void{
+			form.value = value
+			form.roleId.asWidget.disable
+			form.inputNext.asWidget.hide
+		}
+		op getSize():Size{
+			new Size(300,200)
+		}
+		op getTitle():String{
+			'系统角色维护'
+		}
+					
+	}		
+	
+	signal RolesChanged
+
+	ui-command ShowRoleManagementCommand "系统角色管理" @!roleManagementPresenter{
+		@Inject roleManagementPresenter : RoleManagementPresenter
+		execute{
+			roleManagementPresenter.setup[
+				fire eventbus.ShowActivePresenter(it)
+			]
+		}
+	}
+	
+	presenter RoleManagementPresenter{
+		view interface{
+			signal in setResults(results : UIRole[*])
+			signal out createRoleRequest() @roleManagementPresenter"新建"
+			signal out modifyRoleRequest(role : proxy of Role) @roleManagementPresenter "修改"
+			signal out deleteRoleRequest(role : proxy of Role) @roleManagementPresenter"删除"
+		}
+		
+		interaction{
+			factory createOrUpdateRolePresenter : CreateOrUpdateRolePresenter
+			input call.setup(postInit : (RoleManagementPresenter)=>void){
+				this.activate[
+					service.loadRoleList(onSuccess[items|
+						fire view.setResults(items)
+						postInit.apply(this)
+					])
+				]
+			}
+			
+			input call.refresh(){
+					service.loadRoleList(onSuccess[items|
+						fire view.setResults(items)
+					])
+			}
+			
+			input eventbus.RolesChanged(){
+				refresh
+			}
+			
+			input view.createRoleRequest(){
+				createOrUpdateRolePresenter.get=>[
+					setup4Create[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			input eventbus.InputNextRole(){
+				createOrUpdateRolePresenter.get=>[
+					setup4Create[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			
+			input view.modifyRoleRequest(role : proxy of Role){
+				createOrUpdateRolePresenter.get=>[
+					setup4Update(role)[
+						fire eventbus.PopActivatedPresenter(it)
+					]
+				]
+			}
+			
+			input view.deleteRoleRequest(role : proxy of Role){
+				service.canDelete(role,onSuccess[canDelete|
+					if(canDelete){
+						service.delete(role,onSuccess[
+							fire eventbus.RolesChanged
+						])
+					}else{
+						display("错误","该角色已有用户使用，无法删除")
+					}
+				])
+			}
+		}
+		
+		service{
+			@Inject mapper : RoleMapper
+			@Inject securityService : SecurityService
+			
+			op loadRoleList() : UIRole[*]{
+				entities.all(typeof(Role)).^map[mapper.transform(it)].sortBy[roleId].unlazy
+			}
+			
+			op canDelete(role : proxy of Role) : Boolean{
+				securityService.getAllUsers4Role(resolve role).size==0
+			}
+			
+			op delete(role : proxy of Role):void{
+				if(canDelete(role))
+					entities.delete(resolve role)
+				else
+					throw new RuntimeException("cann't delete")
+			}
+		}
+	}
+
+	view RoleManagementView for RoleManagementPresenter{
+		con : Widget
+		@Inject listGrid : RoleListGrid
+		asWidget():Widget{
+			con
+		}
+		layout{
+			con = widgets.FramedPanel("系统角色管理")=>[
+				widget = listGrid.asWidget
+				val ac = listGrid.createActionContext
+				securities.check(ui-requester.createRoleRequest)[v|
+					addButton(widgets.TextButton("新建")[
+						fire view.createRoleRequest()
+					])
+				]
+				
+				securities.check(ui-requester.modifyRoleRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIRole role|
+							fire view.modifyRoleRequest(role.toProxy)
+						]
+						onCheckEnable[
+							listGrid.singleSelectedAnd[!isBuildin]
+						]
+					].asButtonRequester("修改"))
+				]
+				securities.check(ui-requester.deleteRoleRequest)[v|
+					addButton(ac.onSingleObjectAction[
+						onExecute[UIRole role|
+							widgets.ConfirmMessageBox("确认","确认删除角色"+role.name)[
+								fire view.deleteRoleRequest(role.toProxy)
+							].show
+						]
+						onCheckEnable[
+							listGrid.singleSelectedAnd[
+								!isBuildin
+							]
+						]
+						
+					].asButtonRequester("删除"))
+				]
+			]
+		}
+		
+		interaction{
+			input view.setResults(results : UIRole[*]){
+				listGrid.objects = results
+			}
+		}
+	}
+	
+	content-provider AllRolesContentProvider for proxy of Role{
+		contents{
+			entities.all(typeof(Role))
+		}
+	}
+	
+	ui-datatype UIUserRoles{
+		roles : proxy of Role[*] "用户角色"
+		
+		ui-component UserRolesForm as GXTForm{
+			binding{
+				roles as DualListItem content from AllRolesContentProvider
+			}
+		}
+	}
+	
+	presenter SelectRoles4UserPresenter  with-validation implements CommitablePresenter{
+		view interface{
+			signal in setRoles(roles : proxy of Role[*])
+			op getValue() :UIUserRoles
+		}
+		
+		interaction{
+			user : proxy of User
+			input call.setup(user : proxy of User,postInit : (SelectRoles4UserPresenter)=>void){
+				this.user = user
+				this.activate[
+				service.loadRoles4User(user,onSuccess[
+					fire view.setRoles(it)
+					postInit.apply(this)
+				])]
+			}
+			input call.performCommit(CommitResultNotifier notifier) {
+				service.updateUserRoles(user,getView().value,onSuccess[
+					notifier.success 
+				])
+			}			
+		}
+	
+		service{
+			@Inject securityService : SecurityService
+			op loadRoles4User(user : proxy of User) : proxy of Role[*]{
+				securityService.getAllRoles4User((resolve user)).^map[toProxy].toList
+			}
+			
+			op updateUserRoles(user : proxy of User,userRoles : UIUserRoles):void{
+				securityService.getAllRoles4User((resolve user).userid).forEach[
+					entities.delete(it)
+				]
+				val u = resolve user
+				userRoles.roles.forEach[role|
+					entities.^create(typeof(UserRoleAssignment))=>[
+						it.roleId = entities.get(typeof(Role),role.id).roleId
+						it.user = u
+					]
+				]
+			}
+		}
+	}
+	
+	view SelectRoles4UserView for SelectRoles4UserPresenter implements IHasSize, IHasTitle{
+		@Inject form : UserRolesForm
+		initializer{
+			this += form.roles.asWidget=>[width="400" height="230"]
+		}
+		op getValue() : UIUserRoles{
+			form.value
+		}	
+		op mapField(String errorKey): HasEditorErrors {
+			form.mapToErrorEditor(errorKey)
+		}
+		op clearErrors():void{
+			form.clearErrors
+		}
+		
+		op setRoles(roles : proxy of Role[*]): void{
+			form.roles.value = roles
+		}
+		op getSize():Size{
+			new Size(420,350)
+		}
+		op getTitle():String{
+			'用户角色设置'
+		}
+		
+	}
+}
