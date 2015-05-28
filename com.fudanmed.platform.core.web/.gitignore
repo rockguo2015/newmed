@@ -6,4 +6,4 @@ target/
 gwt-unitCache/
 src/main/webapp/fudanmedcoreweb/
 src/main/webapp/WEB-INF/deploy/
-src/main/java/*.java
+src/main/java/**/*.java
